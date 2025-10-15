@@ -9,8 +9,7 @@ import LeadItem from './components/LeadItem';
 
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [setters, setSetters] = useState([]);
-    const [closerName, setCloserName] = useState('');
+    const [closerMap, setCloserMap] = useState({});
 const [setterMap, setSetterMap] = useState({});
     const { closer } = useParams();   // 👈 this is the “best way” to get it
     const navigate = useNavigate();
@@ -29,7 +28,7 @@ const [setterMap, setSetterMap] = useState({});
 
   // Fetch leads from Supabase on component mount
   useEffect(() => {
-    fetchAll(searchTerm, activeTab,sortBy, sortOrder, setLeads, setSetterMap, null, setLoading, closer, null);
+    fetchAll(searchTerm, activeTab,sortBy, sortOrder, setLeads, setSetterMap, setCloserMap, setLoading, closer, null);
   }, [activeTab, sortBy, sortOrder,searchTerm]);
 
 
@@ -40,7 +39,7 @@ const [setterMap, setSetterMap] = useState({});
       <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb',boxSizing: 'border-box', padding: '24px', display: 'flex', width: '100%'}}>
         <div style={{ width: '80%', maxWidth: 1000, margin: '0 auto' }}>
             <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
-              Closer: {leads[0]?.closers?.name || ""}
+              Closer: {closerMap[closer] || ""}
             </h1>
 
                     <Header setActiveTab={setActiveTab} setSearchTerm={setSearchTerm}
@@ -53,6 +52,12 @@ const [setterMap, setSetterMap] = useState({});
             {leads.map((lead) => (
               <LeadItem key={lead.id} lead={lead} setterMap={setterMap} mode='closer'/>
             ))}
+
+            {(leads.length === 0 && !loading) && (
+            <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
+              No leads found.
+            </div>
+          )}
           </div>
         </div>
       </div>

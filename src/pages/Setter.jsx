@@ -37,7 +37,7 @@ import LeadItem from './components/LeadItem';
         <div style={{ width: '70%', margin: '0 auto' }}>
           <div style={{ marginBottom: '24px' }}>
             <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
-              Setter: {leads[0]?.setters?.name || ""}
+              Setter: {setterMap[setter] || ""}
             </h1>
           </div>
 
@@ -55,6 +55,12 @@ import LeadItem from './components/LeadItem';
             {leads.map((lead) => (
               <LeadItem key={lead.id} lead={lead} closerMap = {closerMap} setterMap={setterMap} mode="setter"/>
             ))}
+
+            {(leads.length === 0 && !loading) && (
+            <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
+              No leads found.
+            </div>
+          )}
           </div>
         </div>
       </div>

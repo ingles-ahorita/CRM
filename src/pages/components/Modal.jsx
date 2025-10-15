@@ -312,7 +312,7 @@ if (noteId) {
   ) : (
     <>
       <h2 style={{ fontSize: '30px', marginBottom: '26px' }}>
-        {noteData ? 'Edit' : 'Add'} Closer Note for <b>{lead.name}</b>
+        {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
       </h2>
 
       <form onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '40px', paddingRight: '40px', paddingBottom: '20px' }}>

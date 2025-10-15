@@ -1,10 +1,11 @@
 import { supabase } from '../../lib/supabaseClient';
 import {Modal, NotesModal} from './Modal';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Mail, Phone, User, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 import * as DateHelpers from '../../utils/dateHelpers';
+import * as ManychatService from '../../utils/manychatService';
 
 const formatStatusValue = (value) => {
   if (value === true) return 'true';
@@ -23,6 +24,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteButtonText, setNoteButtonText] = useState();
   const [tempSetter, setTempSetter] = useState(setter);
+  const { setter: currentSetter } = useParams();  
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -93,13 +95,13 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'left' }}>
           <StatusDropdown
             value={pickUp}
-            onChange={(value) => updateStatus(lead.id, 'picked_up', value, setPickUp)}
+            onChange={(value) => updateStatus(lead.id, 'picked_up', value, setPickUp, lead.manychat_user_id)}
             label="Pick Up"
             disabled={mode === 'closer'}
           />
           <StatusDropdown
             value={confirmed}
-            onChange={(value) => updateStatus(lead.id, 'confirmed', value, setConfirmed)}
+            onChange={(value) => updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id)}
             label="Confirmed"
             disabled={mode === 'closer'}
           />
@@ -204,7 +206,15 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
               <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.call_date, lead.timezone) + " " + DateHelpers.getUTCOffset(lead.timezone) || 'N/A'}</span>
             </div>)}
 
+            {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id !== currentSetter) && (
+              <span style={{ fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '-4px' }}> From {setterMap[lead.first_setter_id] || 'N/A'} </span>
+            )}
 
+            {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id === currentSetter) && (
+              <span style={{ fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '-4px' }}> Transferred to {setterMap[lead.setter_id] || 'N/A'} </span>
+            )}
+
+              
             <div style={{ display: 'flex', alignSelf: 'flex-end', gap: '4px' }}>
               <span>{DateHelpers.formatTimeAgo(lead.book_date) || 'N/A'}</span>
             </div>
@@ -249,7 +259,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   );
 }
 
-  const updateStatus = async (id, field, value, setterF) => {
+  const updateStatus = async (id, field, value, setterF, mcID) => {
 
     console.log('Updating', field, 'to', value, 'for lead ID:', id);
     setterF(value); // Update local state immediately for responsiveness
@@ -269,6 +279,8 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     }
 
     const { error } = await supabase.from('calls').update({ [field]: formattedValue }).eq('id', id);
+
+    const { error: mcError } = await ManychatService.updateManychatField(mcID, field, formattedValue);
 
     if (error) {
       console.error('Error updating lead:', error);

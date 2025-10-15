@@ -51,6 +51,13 @@ const [searchTerm, setSearchTerm] = useState('');
               mode='full'
             />
           ))}
+
+
+          {(leads.length === 0 && !loading) && (
+            <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
+              No leads found.
+            </div>
+          )}
         </div>
       </div>
     </div>
