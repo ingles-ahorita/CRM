@@ -1,17 +1,22 @@
 import LeadItem from './components/LeadItem';
-
-import { supabase } from '../lib/supabaseClient';
   import { useState, useEffect } from 'react';
   import { useParams, useNavigate } from 'react-router-dom';
+  import { fetchAll } from '../utils/fetchLeads';
+  import Header from './components/Header';
 
   export default function Setter() {
 
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [setters, setSetters] = useState([]);
     const { setter } = useParams();   // 👈 this is the “best way” to get it
+    const [closerMap, setCloserMap] = useState({});
+    const [setterMap, setSetterMap] = useState({});
     const navigate = useNavigate();
-
+    const [activeTab, setActiveTab] = useState('today');
+    const [showSearch, setShowSearch] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+     const [sortBy, setSortBy] = useState('book_date');
+     const [sortOrder, setSortOrder] = useState('desc');
 
 
 
@@ -21,34 +26,8 @@ import { supabase } from '../lib/supabaseClient';
 
   // Fetch leads from Supabase on component mount
   useEffect(() => {
-    fetchLeads();
-  }, []);
-
-    async function fetchLeads() {
-    const { data, error } = await supabase
-      .from('crm_main')
-      .select('*')
-      .eq('setter', setter)
-      .order('parsed_book_date_st', { ascending: false, nullsFirst: false})
-      .limit(50); // Limit to 1000 for performance
-    
-    if (error) {
-      console.error('Error fetching leads:', error);
-    } else {
-      setLeads(data || []);
-    }
-    setLoading(false);
-  }
-
-
-    if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
-      </div>
-    );
-  }
-
+    fetchAll(searchTerm, activeTab,sortBy, sortOrder, setLeads, setSetterMap, setCloserMap, setLoading, null, setter);
+  }, [activeTab, sortBy, sortOrder, searchTerm]);
 
 
 
@@ -58,13 +37,23 @@ import { supabase } from '../lib/supabaseClient';
         <div style={{ width: '70%', margin: '0 auto' }}>
           <div style={{ marginBottom: '24px' }}>
             <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
-              Setter: {setter}
+              Setter: {leads[0]?.setters?.name || ""}
             </h1>
           </div>
+
+          <Header setActiveTab={setActiveTab} setSearchTerm={setSearchTerm}
+          setShowSearch={setShowSearch} setSortBy={setSortBy}
+          setSortOrder={setSortOrder} activeTab={activeTab}
+          showSearch={showSearch} searchTerm={searchTerm} sortBy={sortBy}
+          sortOrder={sortOrder} mode="setter"  />
+
+          {loading && <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
+      </div>}
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {leads.map((lead) => (
-              <LeadItem key={lead.call_uuid} lead={lead} setters={setters}/>
+              <LeadItem key={lead.id} lead={lead} closerMap = {closerMap} setterMap={setterMap} mode="setter"/>
             ))}
           </div>
         </div>

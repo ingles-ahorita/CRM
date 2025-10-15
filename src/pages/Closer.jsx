@@ -1,16 +1,24 @@
 import LeadItem from './components/LeadItem';
 
-import { supabase } from '../lib/supabaseClient';
   import { useState, useEffect } from 'react';
   import { useParams, useNavigate } from 'react-router-dom';
+  import Header from './components/Header';
+  import { fetchAll } from '../utils/fetchLeads';
 
   export default function Closer() {
 
     const [leads, setLeads] = useState([]);
     const [loading, setLoading] = useState(true);
     const [setters, setSetters] = useState([]);
+    const [closerName, setCloserName] = useState('');
+const [setterMap, setSetterMap] = useState({});
     const { closer } = useParams();   // 👈 this is the “best way” to get it
     const navigate = useNavigate();
+    const [activeTab, setActiveTab] = useState('all');
+    const [sortBy, setSortBy] = useState('call_date');
+    const [sortOrder, setSortOrder] = useState('desc');
+    const [showSearch, setShowSearch] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
 
 
@@ -21,33 +29,8 @@ import { supabase } from '../lib/supabaseClient';
 
   // Fetch leads from Supabase on component mount
   useEffect(() => {
-    fetchLeads();
-  }, []);
-
-    async function fetchLeads() {
-    const { data, error } = await supabase
-      .from('calls')
-      .select('*')
-      .eq('closer_id', closer)
-      .order('book_date', { ascending: false, nullsFirst: false})
-      .limit(50); // Limit to 1000 for performance
-    
-    if (error) {
-      console.error('Error fetching leads:', error);
-    } else {
-      setLeads(data || []);
-    }
-    setLoading(false);
-  }
-
-
-    if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
-      </div>
-    );
-  }
+    fetchAll(searchTerm, activeTab,sortBy, sortOrder, setLeads, setSetterMap, null, setLoading, closer, null);
+  }, [activeTab, sortBy, sortOrder,searchTerm]);
 
 
 
@@ -55,16 +38,20 @@ import { supabase } from '../lib/supabaseClient';
 
   return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb',boxSizing: 'border-box', padding: '24px', display: 'flex', width: '100%'}}>
-        <div style={{ width: '70%', margin: '0 auto' }}>
-          <div style={{ marginBottom: '24px' }}>
+        <div style={{ width: '80%', maxWidth: 1000, margin: '0 auto' }}>
             <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
-              Closer: {closer}
+              Closer: {leads[0]?.closers?.name || ""}
             </h1>
-          </div>
+
+                    <Header setActiveTab={setActiveTab} setSearchTerm={setSearchTerm}
+          setShowSearch={setShowSearch} setSortBy={setSortBy}
+          setSortOrder={setSortOrder} activeTab={activeTab}
+          showSearch={showSearch} searchTerm={searchTerm} sortBy={sortBy}
+          sortOrder={sortOrder}  />
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {leads.map((lead) => (
-              <LeadItem key={lead.call_uuid} lead={lead} setters={setters}/>
+              <LeadItem key={lead.id} lead={lead} setterMap={setterMap} mode='closer'/>
             ))}
           </div>
         </div>

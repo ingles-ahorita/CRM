@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabaseClient';
-import Modal from './Modal';
+import {Modal, NotesModal} from './Modal';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Phone, User, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -13,13 +13,15 @@ const formatStatusValue = (value) => {
   return value;
 };
 
-export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'default' }) {
+export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }) {
   const [pickUp, setPickUp] = useState(() => formatStatusValue(lead.picked_up));
   const [confirmed, setConfirmed] = useState(() => formatStatusValue(lead.confirmed));
   const [showUp, setShowUp] = useState(() => formatStatusValue(lead.showed_up));
   const [purchase, setPurchase] = useState(() => formatStatusValue(lead.purchased));
   const [setter, setSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [noteButtonText, setNoteButtonText] = useState(lead.setter_note_id ? "📝 Edit note" : "✚ Add note");
   const [tempSetter, setTempSetter] = useState(setter);
   const navigate = useNavigate();
 
@@ -29,7 +31,8 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     setShowUp(formatStatusValue(lead.showed_up));
     setPurchase(formatStatusValue(lead.purchased));
     setSetter(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
-  }, [lead]);
+
+  }, [lead, showNoteModal]);
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
     id,
@@ -92,25 +95,29 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             value={pickUp}
             onChange={(value) => updateStatus(lead.id, 'picked_up', value, setPickUp)}
             label="Pick Up"
+            disabled={mode === 'closer'}
           />
           <StatusDropdown
             value={confirmed}
             onChange={(value) => updateStatus(lead.id, 'confirmed', value, setConfirmed)}
             label="Confirmed"
+            disabled={mode === 'closer'}
           />
           <StatusDropdown
             value={showUp}
             onChange={(value) => updateStatus(lead.id, 'showed_up', value, setShowUp)}
             label="Show Up"
+            disabled={mode === 'setter'}
           />
           <StatusDropdown
             value={purchase}
             onChange={(value) => updateStatus(lead.id, 'purchased', value, setPurchase)}
             label="Purchased"
+            disabled={mode === 'setter'}
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6b7280', paddingLeft: '20px', borderLeft: '1px solid #e5e7eb', minWidth: '150px', maxWidth: '200px', fontWeight: '400' }}>
+        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6b7280', paddingLeft: '20px', borderLeft: '1px solid #e5e7eb', minWidth: '150px', maxWidth: '200px', fontWeight: '400', flexDirection: 'column' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
 
 {(mode !== 'setter') && (
@@ -118,7 +125,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <User size={12} />
               <span
-                onClick={() => navigate(`/closer/${lead.closer_id}`)}
+                onClick={() => navigate(`/setter/${lead.setter_id}`)}
                 style={{
                   cursor: 'pointer',
                   color: '#001749ff',
@@ -139,7 +146,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
               </span>
             </div>
   )}
-
+      {(mode !== 'closer') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'}}>
               <User size={12} />
               <span
@@ -162,9 +169,26 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
               >
                 Closer: {closerMap[lead.closer_id] || 'N/A'}
               </span>
-            </div>
+            </div> )}
           </div>
-        </div>
+          
+          <button
+  onClick={() => setShowNoteModal(true)}
+  style={{
+    padding: '5px 0px',
+    backgroundColor: '#001749ff',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap', // Prevents text wrapping
+    width: '60%'
+  }}> {noteButtonText} </button>
+
+          
+        </div> 
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', color: '#6b7280',fontSize: '12px', marginLeft: 'auto'  }}>
 
@@ -214,6 +238,10 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
           Transfer
         </button>
       </Modal>
+
+
+      <NotesModal isOpen={showNoteModal} onClose={() => setShowNoteModal(false)} lead={lead} callId={lead.id} mode={'setter'} />
+
     </div>
   );
 }
@@ -289,7 +317,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     borderRadius: '6px',
     fontSize: '13px',
     fontWeight: '500',
-    cursor: 'pointer',
+    cursor: disabled ? 'not-allowed' : 'pointer',
     transition: 'all 0.1s',
     outline: 'none',
     textAlign: 'center'
