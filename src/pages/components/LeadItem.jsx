@@ -21,7 +21,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   const [setter, setSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
-  const [noteButtonText, setNoteButtonText] = useState(lead.setter_note_id ? "📝 Edit note" : "✚ Add note");
+  const [noteButtonText, setNoteButtonText] = useState();
   const [tempSetter, setTempSetter] = useState(setter);
   const navigate = useNavigate();
 
@@ -31,7 +31,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     setShowUp(formatStatusValue(lead.showed_up));
     setPurchase(formatStatusValue(lead.purchased));
     setSetter(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
-
+    setNoteButtonText((mode === 'closer' ? lead.closer_note_id : lead.setter_note_id) ? "📝 Edit note" : "✚ Add note");
   }, [lead, showNoteModal]);
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
@@ -215,10 +215,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
 
       </div>
 
-  <ThreeDotsMenu
-    onEdit={() => setIsModalOpen(true)}
-    onDelete={() => console.log('Delete')}
-  />
+  
 
       <Modal isOpen={isModalOpen} onClose={() => {setIsModalOpen(false); setTempSetter(setter);}}>
         <span style={{ display: 'block', fontSize: '30px', marginBottom: '26px' }}>
@@ -232,7 +229,9 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
         />
 
         <button onClick={() => {
+          console.log('Transferring to setter ID:', tempSetter);
           updateStatus(lead.id, 'setter_id', tempSetter, setSetter);
+          lead.setter_id = tempSetter; // Update the local lead object
           setIsModalOpen(false);
           }} style={{ marginTop: '16px', padding: '8px 16px', backgroundColor: '#001749ff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
           Transfer
@@ -240,13 +239,19 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
       </Modal>
 
 
-      <NotesModal isOpen={showNoteModal} onClose={() => setShowNoteModal(false)} lead={lead} callId={lead.id} mode={'setter'} />
+      <NotesModal isOpen={showNoteModal} onClose={() => setShowNoteModal(false)} lead={lead} callId={lead.id} mode={mode} />
+        <ThreeDotsMenu
+    onEdit={() => setIsModalOpen(true)}
+    onDelete={() => console.log('Delete')}
+  />
 
     </div>
   );
 }
 
   const updateStatus = async (id, field, value, setterF) => {
+
+    console.log('Updating', field, 'to', value, 'for lead ID:', id);
     setterF(value); // Update local state immediately for responsiveness
 
     let formattedValue = value;
@@ -260,7 +265,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
         formattedValue = null;
       }
     } else if (field === 'setter_id') {
-      formattedValue = value ? Number(value) : null;
+      formattedValue = value ? value : null;
     }
 
     const { error } = await supabase.from('calls').update({ [field]: formattedValue }).eq('id', id);

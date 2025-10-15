@@ -18,6 +18,8 @@ export function Modal({ isOpen, onClose, children }) {
 
 
 export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
+    const [isLoading, setIsLoading] = useState(false);
+  
 
     const [noteData, setNoteData] = useState(null);
 
@@ -27,11 +29,12 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
   // Fetch note data when modal opens
   useEffect(() => {
     const fetchNote = async () => {
-      if (!isOpen || !lead) {
+      if (!isOpen || !noteId) {
         setNoteData(null);
+        setIsLoading(false);
         return;
       }
-      
+      setIsLoading(true);
       const { data, error } = await supabase
         .from(table)
         .select('*')
@@ -43,9 +46,10 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
       }
       
       setNoteData(data);
+      setIsLoading(false);
     };
-
     fetchNote();
+        console.log("note data is: ", noteData);
   }, [isOpen, noteId, mode]);
 
 
@@ -59,7 +63,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
     console.log(noteId);
     const formData = new FormData(e.target);
     
-    const notePayload = {
+    const setterPayload = {
   commitment_level: parseInt(formData.get('commitment_level')) || null,
   practice_daily: formData.get('practice_daily') === 'on',
   motivation: formData.get('motivation'),
@@ -68,6 +72,21 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
   show_up_confirmed: formData.get('show_up_confirmed') === 'on',
   notes: formData.get('notes')
 };
+
+
+
+const closerPayload = {
+  prepared_score: parseInt(formData.get('prepared_score')) || null,
+  prepared_reason: formData.get('prepared_reason'),
+  budget_max: formData.get('budget_max'),
+  objection: formData.get('objection'),
+  notes: formData.get('notes')
+};
+
+
+const notePayload = mode === 'closer' ? closerPayload : setterPayload;
+
+
 
 if (noteId) {
     // UPDATE: note exists
@@ -119,9 +138,9 @@ if (noteId) {
     border: '1px solid #d1d5db',
     borderRadius: '6px',
     fontSize: '14px',
-    width: '100%',
+    width: '80%',
     backgroundColor: 'white',
-    color: '#111827'
+    color: '#111827', MozAppearance: 'textfield', WebkitAppearance: 'none'
   };
 
   const labelStyle = {
@@ -131,17 +150,75 @@ if (noteId) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
+    <>
+    <style>{`
+        input[type="checkbox"] {
+          width: 18px;
+          height: 18px;
+          cursor: pointer;
+          appearance: none;
+          -webkit-appearance: none;
+          border: 2px solid #d1d5db;
+          border-radius: 3px;
+          background-color: white;
+          position: relative;
+        }
+
+        input[type="checkbox"]:checked {
+          background-color: #001749ff;
+          border-color: #001749ff;
+        }
+        
+        input[type="checkbox"]:checked::after {
+          content: '✓';
+          position: absolute;
+          color: white;
+          font-size: 14px;
+          left: 2px;
+          top: -2px;
+        }
+      
+      `}</style>
+
+    {(mode === 'setter' )&&(
+          <Modal isOpen={isOpen} onClose={onClose}>
+      {isLoading ? (
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          alignItems: 'center', 
+          justifyContent: 'center',
+          padding: '60px',
+          gap: '16px',
+          height: '500px'
+        }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #f3f4f6',
+            borderTop: '4px solid #001749ff',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+          <span style={{ color: '#6b7280', fontSize: '14px' }}>Loading note...</span>
+        </div>
+      ) : ( <>
       <h2 style={{ fontSize: '30px', marginBottom: '26px' }}>
-        {noteData ? 'Edit' : 'Add'} Note for <b>{lead.id}</b>
+        {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
       </h2>
 
-<form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+<form onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '40px', paddingRight: '40px', paddingBottom: '20px' }}>
   
-  <div>
+  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
     <label style={labelStyle}>🔥 Commitment level (1–10):</label>
     <input name="commitment_level" type="number" min="1" max="10" 
-           defaultValue={noteData?.commitment_level || ''} style={inputStyle} />
+           defaultValue={noteData?.commitment_level || ''} style={{...inputStyle, width: '10%', textAlign: 'center'}} />
   </div>
 
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -197,37 +274,105 @@ if (noteId) {
     fontSize: '14px',
     fontWeight: '500'
   }}>
-    Save Note
+    {noteData ? 'Update Note' : 'Add Note'}
   </button>
 </form>
-    </Modal>
-  );
+      </> )}
+    </Modal>)}
+
+
+    {(mode === 'closer' )&&(
+      <Modal isOpen={isOpen} onClose={onClose}>
+  {isLoading ? (
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column',
+      alignItems: 'center', 
+      justifyContent: 'center',
+      padding: '60px',
+      gap: '16px',
+      height: '500px'
+    }}>
+      <div style={{
+        width: '40px',
+        height: '40px',
+        border: '4px solid #f3f4f6',
+        borderTop: '4px solid #001749ff',
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite'
+      }} />
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+      <span style={{ color: '#6b7280', fontSize: '14px' }}>Loading note...</span>
+    </div>
+  ) : (
+    <>
+      <h2 style={{ fontSize: '30px', marginBottom: '26px' }}>
+        {noteData ? 'Edit' : 'Add'} Closer Note for <b>{lead.name}</b>
+      </h2>
+
+      <form onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '40px', paddingRight: '40px', paddingBottom: '20px' }}>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} >
+          <label style={labelStyle}>🟢 Prepared score:</label>
+            <input name="prepared_score" type="number" min="1" max="10" 
+           defaultValue={noteData?.prepared_score || ''} style={{...inputStyle, width: '10%', textAlign: 'center'}} />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <textarea name="prepared_reason" rows="3" placeholder='Reason for score'
+                    defaultValue={noteData?.prepared_reason || ''} 
+                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
+  </div>
+
+        <div>
+          <label style={labelStyle}>💲 Budget (max):</label>
+          <input name="budget_max" type="text" 
+                 defaultValue={noteData?.budget_max || ''} 
+                 placeholder="e.g., $1000"
+                 style={inputStyle} />
+        </div>
+
+        <div>
+          <label style={labelStyle}>⚡ Objection:</label>
+          <textarea name="objection" rows="3" 
+                    defaultValue={noteData?.objection || ''} 
+                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
+        </div>
+
+        <div>
+          <label style={labelStyle}>📝 Note:</label><br></br>
+          <textarea name="notes" rows="3" 
+                    defaultValue={noteData?.notes || ''} 
+                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
+        </div>
+
+        <button type="submit" style={{ 
+          marginTop: '8px', 
+          padding: '10px 20px', 
+          backgroundColor: '#001749ff', 
+          color: 'white', 
+          border: 'none', 
+          borderRadius: '6px', 
+          cursor: 'pointer',
+          fontSize: '14px',
+          fontWeight: '500'
+        }}>
+          {noteData ? 'Update Note' : 'Add Note'}
+        </button>
+      </form>
+    </>
+  )}
+</Modal>
+    )}
+     </>
+  ); 
 };
 
 
 
 
-
-
-
-
-
-
-
-const handleAddNoteClick = async (id, mode) => {
-  const notetype = mode === 'closer' ? 'closer_notes' : 'setter_notes'; // Determine note type based on mode
-
-  // Fetch the note for this lead
-  const { data, error } = await supabase
-    .from(notetype)
-    .select('*')
-    .eq('id', id) // or whatever your foreign key column is named
-    .single(); // Use .single() if there's only one note per call
-    
-  if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-    console.error('Error fetching note:', error);
-  }
-  
-  setNoteData(data);
-  setShowNoteModal(true);
-};
