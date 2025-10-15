@@ -16,7 +16,7 @@ import LeadItem from './components/LeadItem';
     const [showSearch, setShowSearch] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
      const [sortBy, setSortBy] = useState('book_date');
-     const [sortOrder, setSortOrder] = useState('desc');
+     const [sortOrder, setSortOrder] = useState('asc');
 
 
 
@@ -51,7 +51,7 @@ import LeadItem from './components/LeadItem';
         <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
       </div>}
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
             {leads.map((lead) => (
               <LeadItem key={lead.id} lead={lead} closerMap = {closerMap} setterMap={setterMap} mode="setter"/>
             ))}

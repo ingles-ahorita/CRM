@@ -1,11 +1,12 @@
 import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 
 
 
 
 export default function Header({setActiveTab, setSearchTerm, setShowSearch, setSortBy, setSortOrder, activeTab, showSearch, searchTerm, sortBy, sortOrder, mode}) {
      const searchInputRef = useRef(null);
+       const [on, setOn] = useState(false);
     return (
         <div style={{ marginBottom: '24px' }}>
 
@@ -60,30 +61,41 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
 
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 
-  {/* Date type toggle */}
-  <button
-    onClick={() => {
+    <div
+      onClick={() =>{
+        setOn(!on)
         setSortBy(sortBy === 'book_date' ? 'call_date' : 'book_date');
-        console.log('Sorting by:', sortBy);}}  
-    style={{
-      display: mode === 'full'? 'flex': 'none',
-      alignItems: 'center',
-      gap: '6px',
-      backgroundColor: '#f3f4f6',
-      color: '#111827',
-      border: '1px solid #d1d5db',
-      borderRadius: '6px',
-      padding: '8px 14px',
-      cursor: 'pointer',
-      fontWeight: '500',
-      fontSize: '13px',
-      transition: 'all 0.2s',
-      outline: 'none'
-    }}
+      }}
+      style={{
+        width: '50px',
+        height: '28px',
+        borderRadius: '20px',
+        backgroundColor: on ? '#d1d5db' : '#d1d5db',
+        position: 'relative',
+        cursor: 'pointer',
+        transition: 'background-color 0.2s'
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: '3px',
+          left: on ? '26px' : '3px',
+          width: '22px',
+          height: '22px',
+          borderRadius: '50%',
+          backgroundColor: '#fff',
+          transition: 'left 0.2s'
+        }}
+      />
+    </div>
+
+  {/* Date type toggle */}
+  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#111827' }}
   >
     <Calendar size={16} />
     {sortBy === 'book_date' ? 'Book Date' : 'Call Date'}
-  </button>
+  </span>
 
   {/* Sort order toggle */}
   <button
@@ -123,15 +135,14 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
   <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
 
           <input
-          onChange={(e) => setSearchTerm(e.target.value)}
           ref={searchInputRef}
         type="text"
         placeholder="Search lead..."
-        value={searchTerm}
+        defaultValue={searchTerm}
         onKeyDown={(e) => {
     if (e.key === 'Enter') {
-      // Your search functionality here
-      console.log('Searching for:', searchTerm);
+            setSearchTerm(e.target.value);
+            setActiveTab('all');
     }
   }}
         style={{
@@ -196,7 +207,7 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
     }}
     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#d1d5db')}
     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
-    onClick={() => console.log('Analytics clicked')}
+    onClick={() => window.open('/analytics', '_blank')}
   >
     <ChartSpline size={18} />
   </button>
@@ -217,7 +228,7 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
     }}
     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f3f39f')}
     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f9ffa6')}
-    onClick={() => console.log('Reaction Time clicked')}
+    onClick={() => window.open('https://www.inglesahorita.com/call-reaction-time', '_blank')}
   >
    <AlarmClock size={18} />
   </button>
@@ -225,3 +236,4 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
         </div>
     )
 }
+

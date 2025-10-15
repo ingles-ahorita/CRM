@@ -13,9 +13,9 @@ import LeadItem from './components/LeadItem';
 const [setterMap, setSetterMap] = useState({});
     const { closer } = useParams();   // 👈 this is the “best way” to get it
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState('all');
+    const [activeTab, setActiveTab] = useState('today');
     const [sortBy, setSortBy] = useState('call_date');
-    const [sortOrder, setSortOrder] = useState('desc');
+    const [sortOrder, setSortOrder] = useState('asc');
     const [showSearch, setShowSearch] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -48,7 +48,7 @@ const [setterMap, setSetterMap] = useState({});
           showSearch={showSearch} searchTerm={searchTerm} sortBy={sortBy}
           sortOrder={sortOrder}  />
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
             {leads.map((lead) => (
               <LeadItem key={lead.id} lead={lead} setterMap={setterMap} mode='closer'/>
             ))}

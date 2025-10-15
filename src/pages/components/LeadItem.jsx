@@ -22,6 +22,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   const [setter, setSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [modeState, setModeState] = useState(mode);
   const [noteButtonText, setNoteButtonText] = useState();
   const [tempSetter, setTempSetter] = useState(setter);
   const { setter: currentSetter } = useParams();  
@@ -68,9 +69,16 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
           <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px' }}>
             <a
               onClick={() => navigate(`/lead/${lead.lead_id}`)}
-              style={{ cursor: 'pointer', color: '#323232ff', textDecoration: 'none' }}
+              style={{ cursor: 'pointer', color: '#323232ff', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             >
-              {lead.name || 'No name'}
+              {lead.name || 'No name'} {(lead.is_reschedule) && <div style={{
+                                                                          display: 'inline',
+                                                                          fontSize: '11px',
+                                                                          color: '#8c0bf5ff',
+                                                                          fontWeight: '600',
+                                                                          marginLeft: '5%', 
+                                                                          overflow: 'hidden',
+    textOverflow: 'ellipsis'}}> Reschedule</div>}
             </a>
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', fontSize: '12px', color: '#6b7280', gap: '4px' }}>
@@ -127,18 +135,20 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <User size={12} />
               <span
-                onClick={() => navigate(`/setter/${lead.setter_id}`)}
+                onClick={mode === "full" ? () => navigate(`/setter/${lead.setter_id}`) : undefined}
                 style={{
-                  cursor: 'pointer',
+                  cursor: mode ==="full" ? 'pointer': 'default',
                   color: '#001749ff',
                   textDecoration: 'none',
                 }}
                 onMouseEnter={(e) => {
+                  if (mode !== "full") return;
                   e.currentTarget.style.opacity = '0.8';
                   e.currentTarget.style.fontWeight = '600';
                   e.currentTarget.style.transition = 'all 0.2s';
                 }}
                 onMouseLeave={(e) => {
+                  if (mode !== "full") return;
                   e.currentTarget.style.textDecoration = 'none';
                   e.currentTarget.style.opacity = '1';
                   e.currentTarget.style.fontWeight = '400';
@@ -152,18 +162,20 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'}}>
               <User size={12} />
               <span
-                onClick={() => navigate(`/closer/${lead.closer_id}`)}
+                onClick={mode ==="full" ? () => navigate(`/closer/${lead.closer_id}`) : undefined}
                 style={{
-                  cursor: 'pointer',
+                  cursor: mode === "full" ? 'pointer': 'default',
                   color: '#001749ff',
                   textDecoration: 'none',
                 }}
                 onMouseEnter={(e) => {
+                  if (mode !== "full") return;
                   e.currentTarget.style.opacity = '0.8';
                   e.currentTarget.style.fontWeight = '600';
                   e.currentTarget.style.transition = 'all 0.2s';
                 }}
                 onMouseLeave={(e) => {
+                  if (mode !== "full") return;
                   e.currentTarget.style.textDecoration = 'none';
                   e.currentTarget.style.opacity = '1';
                   e.currentTarget.style.fontWeight = '400';
@@ -178,7 +190,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   onClick={() => setShowNoteModal(true)}
   style={{
     padding: '5px 0px',
-    backgroundColor: '#001749ff',
+    backgroundColor: (lead.setter_note_id && mode !== 'closer') || (lead.closer_note_id && mode === 'closer') ? '#7053d0ff' : '#3f2f76ff',
     color: 'white',
     border: 'none',
     borderRadius: '6px',
@@ -187,14 +199,14 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     cursor: 'pointer',
     whiteSpace: 'nowrap', // Prevents text wrapping
     width: '60%'
-  }}> {noteButtonText} </button>
+  }}> {(mode === "full") ? "📝 Notes" : (noteButtonText) }</button>
 
           
         </div> 
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', color: '#6b7280',fontSize: '12px', marginLeft: 'auto'  }}>
 
-           {(mode === 'closer' || mode === 'full') && (
+           {(mode === 'closer' || mode === 'full' || mode === 'view') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
               <Calendar size={12} />
               <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.call_date)|| 'N/A'}</span>
@@ -214,12 +226,10 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
               <span style={{ fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '-4px' }}> Transferred to {setterMap[lead.setter_id] || 'N/A'} </span>
             )}
 
-              
+            {(mode !== 'closer') && (
             <div style={{ display: 'flex', alignSelf: 'flex-end', gap: '4px' }}>
               <span>{DateHelpers.formatTimeAgo(lead.book_date) || 'N/A'}</span>
-            </div>
-            <div style={{ marginLeft: 'auto' }}>
-            </div>
+            </div>)}
           </div>
 
 
@@ -249,10 +259,14 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
       </Modal>
 
 
-      <NotesModal isOpen={showNoteModal} onClose={() => setShowNoteModal(false)} lead={lead} callId={lead.id} mode={mode} />
+      <NotesModal isOpen={showNoteModal} onClose={() => setShowNoteModal(false)} lead={lead} callId={lead.id} mode={modeState} />
+        
         <ThreeDotsMenu
     onEdit={() => setIsModalOpen(true)}
     onDelete={() => console.log('Delete')}
+    mode={mode}
+    modalSetter={setShowNoteModal}
+    setMode={setModeState}
   />
 
     </div>
@@ -396,7 +410,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   };
 
 
-const ThreeDotsMenu = ({ onEdit, onDelete }) => {
+const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -420,72 +434,126 @@ const ThreeDotsMenu = ({ onEdit, onDelete }) => {
       ⋮
       
       {menuOpen && (
-        <>
-          <div style={{
-            position: 'absolute',
-            right: '0',
-            top: '100%',
-            backgroundColor: 'white',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-            borderRadius: '4px',
-            minWidth: '150px',
-            zIndex: 1000
-          }}>
-            <button 
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                onEdit(); 
-                setMenuOpen(false); 
-              }}
-              style={{
-                width: '100%',
-                padding: '8px 16px',
-                border: 'none',
-                background: 'none',
-                textAlign: 'left',
-                cursor: 'pointer',
-                color: '#6b7280',
-                fontWeight: '300',
-                fontSize: '14px'
-              }}
-            >
-              Transfer
-            </button>
-            <button 
-              onClick={(e) => { 
-                e.stopPropagation(); 
-                onDelete(); 
-                setMenuOpen(false); 
-              }}
-              style={{
-                width: '100%',
-                padding: '8px 16px',
-                border: 'none',
-                background: 'none',
-                textAlign: 'left',
-                cursor: 'pointer',
-                color: '#ef4444',
-                fontWeight: '300',
-                fontSize: '14px'
-              }}
-            >
-              Report
-            </button>
-          </div>
-          
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-            }}
-            style={{
-              position: 'fixed',
-              top: 0, left: 0, right: 0, bottom: 0,
-              zIndex: 999
-            }}
-          />
-        </>
+  <>
+    <div style={{
+      position: 'absolute',
+      right: '0',
+      top: '100%',
+      backgroundColor: 'white',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+      borderRadius: '4px',
+      minWidth: '150px',
+      zIndex: 1000
+    }}>
+      <button 
+        onClick={(e) => { 
+          e.stopPropagation(); 
+          onEdit(); 
+          setMenuOpen(false); 
+        }}
+        style={{
+          width: '100%',
+          padding: '8px 16px',
+          border: 'none',
+          background: 'none',
+          textAlign: 'left',
+          cursor: 'pointer',
+          color: '#6b7280',
+          fontWeight: '300',
+          fontSize: '14px',
+          outline: 'none'
+        }}
+      >
+        Transfer
+      </button>
+      
+      {(mode === 'closer' || mode === 'view' || mode === 'full') && (
+        <button 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            modalSetter(true);
+            setMode('setter');
+            setMenuOpen(false); 
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: '#6b7280',
+            fontWeight: '300',
+            fontSize: '14px',
+          outline: 'none'
+          }}
+        >
+          Setter Notes
+        </button>
       )}
+
+      {(mode === 'setter' || mode === 'view' || mode === 'full') && (
+        <button 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            modalSetter(true);
+            setMode('closer');
+            setMenuOpen(false); 
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: '#6b7280',
+            fontWeight: '300',
+            fontSize: '14px',
+          outline: 'none'
+          }}
+        >
+          Closer Notes
+        </button>
+      )}
+      
+      <button 
+        onClick={(e) => { 
+          e.stopPropagation(); 
+          onDelete(); 
+          setMenuOpen(false); 
+        }}
+        style={{
+          width: '100%',
+          padding: '8px 16px',
+          border: 'none',
+          background: 'none',
+          textAlign: 'left',
+          cursor: 'pointer',
+          color: '#ef4444',
+          fontWeight: '300',
+          fontSize: '14px',
+          outline: 'none'
+        }}
+      >
+        Report
+      </button>
+    </div>
+    
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        setMenuOpen(false);
+      }}
+      style={{
+        position: 'fixed',
+        top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 999
+      }}
+    />
+  </>
+)}
+
     </button>
   );
 };

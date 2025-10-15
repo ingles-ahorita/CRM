@@ -180,6 +180,7 @@ if (noteId) {
       
       `}</style>
 
+
     {(mode === 'setter' )&&(
           <Modal isOpen={isOpen} onClose={onClose}>
       {isLoading ? (
@@ -281,7 +282,7 @@ if (noteId) {
     </Modal>)}
 
 
-    {(mode === 'closer' )&&(
+    {(mode === 'closer')&&(
       <Modal isOpen={isOpen} onClose={onClose}>
   {isLoading ? (
     <div style={{ 

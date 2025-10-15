@@ -41,7 +41,7 @@ const [searchTerm, setSearchTerm] = useState('');
         <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
       </div>}
         
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
           {leads.map((lead) => (
             <LeadItem
               key={lead.id}

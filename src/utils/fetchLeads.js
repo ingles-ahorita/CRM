@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 
 
 
-export async function fetchAll(leadEmail, activeTab = 'all' , sortField = 'book_date', order = 'asc', setLeads, setSetterMap, setCloserMap, setLoading, closerId, setterId)  {
+export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'asc', setLeads, setSetterMap, setCloserMap, setLoading, closerId, setterId)  {
   setLoading(true);
 
 
@@ -56,10 +56,21 @@ export async function fetchAll(leadEmail, activeTab = 'all' , sortField = 'book_
   }
 
     // Filter by email if provided
-  if (leadEmail) {
-    query = query.eq('email', leadEmail);
-    console.log("Filtering by email:", leadEmail);
-  } else if(closerId){
+if (searchTerm) {
+  const term = searchTerm.trim();
+  query = query.or(`email.ilike.%${term}%,name.ilike.%${term}%`);
+  console.log("Searching by term:", term);
+  
+  if (closerId) {
+    query = query.eq('closer_id', closerId);
+    console.log("Also filtering by closer_id:", closerId);
+  }
+  
+  if (setterId) {
+    query = query.eq('setter_id', setterId);
+    console.log("Also filtering by setter_id:", setterId);
+  }
+} else if(closerId){
       query = query.eq('closer_id', closerId);
       console.log("Filtering by closer ID:", closerId);
     } else if(setterId){
@@ -68,7 +79,7 @@ export async function fetchAll(leadEmail, activeTab = 'all' , sortField = 'book_
     }
 
   // Only apply limit if no email filter and showing 'all'
-  if (!leadEmail && activeTab === 'all') {
+  if (!searchTerm && activeTab === 'all') {
     query = query.limit(50);
   }
 

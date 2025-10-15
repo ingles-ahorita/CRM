@@ -73,7 +73,8 @@ useEffect(() => {
             key={call.id}
             lead={call}
             setterMap={setterMap}
-            closerMap={closerMap}/>
+            closerMap={closerMap}
+            mode={"view"}/>
           ))}
         </div>
       </div>
