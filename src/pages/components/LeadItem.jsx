@@ -48,7 +48,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
       style={{
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'left',
+        justifyContent: 'space-between',
         marginBottom: '12px',
         minHeight: '80px',
         backgroundColor: 'white',
@@ -56,6 +56,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
         padding: '16px',
         paddingRight: '0px',
         transition: 'box-shadow 0.2s',
+        width: '100%'
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
@@ -64,9 +65,9 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
         e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '35px', flex: 1, justifyContent: 'left', flexWrap: 'nowrap' }}>
-        <div style={{ width: '25%', alignItems: 'top', justifyContent: 'left' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '35px', justifyContent: 'left', flexWrap: 'nowrap', overflow: 'hidden', flex: '1 1' }}>
+        <div style={{ flex: '1 1', overflow: 'hidden', alignItems: 'top', justifyContent: 'left' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
             <a
               onClick={() => navigate(`/lead/${lead.lead_id}`)}
               style={{ cursor: 'pointer', color: '#323232ff', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -81,9 +82,9 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     textOverflow: 'ellipsis'}}> Reschedule</div>}
             </a>
           </h2>
-          <div style={{ display: 'flex', alignItems: 'center', fontSize: '12px', color: '#6b7280', gap: '4px' }}>
-            <Mail size={12} />
-            <span>{lead.email || 'No email'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', fontSize: '12px', color: '#6b7280', gap: '4px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Mail size={12} style={{ }} />
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.email || 'No email'}</span>
           </div>
             <div style={{ display: 'flex', alignItems: 'center', fontSize: '12px', color: '#6b7280', gap: '4px' }}>
               <Phone size={12} />
@@ -100,39 +101,39 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'left' }}>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'left', flex: '1 1' }}>
           <StatusDropdown
             value={pickUp}
             onChange={(value) => updateStatus(lead.id, 'picked_up', value, setPickUp, lead.manychat_user_id)}
             label="Pick Up"
-            disabled={mode === 'closer'}
+            disabled={mode === 'setter' || mode === 'view'}
           />
           <StatusDropdown
             value={confirmed}
             onChange={(value) => updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id)}
             label="Confirmed"
-            disabled={mode === 'closer'}
+            disabled={mode === 'setter' || mode === 'view'}
           />
           <StatusDropdown
             value={showUp}
             onChange={(value) => updateStatus(lead.id, 'showed_up', value, setShowUp)}
             label="Show Up"
-            disabled={mode === 'setter'}
+            disabled={mode === 'setter' || mode === 'view'}
           />
           <StatusDropdown
             value={purchase}
             onChange={(value) => updateStatus(lead.id, 'purchased', value, setPurchase)}
             label="Purchased"
-            disabled={mode === 'setter'}
+            disabled={mode === 'setter' || mode === 'view'}
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6b7280', paddingLeft: '20px', borderLeft: '1px solid #e5e7eb', minWidth: '150px', maxWidth: '200px', fontWeight: '400', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6b7280', paddingLeft: '20px', borderLeft: '1px solid #e5e7eb', maxWidth: '200px', fontWeight: '400', flexDirection: 'column', flex: '1 1', marginLeft: 'auto'}}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
 
 {(mode !== 'setter') && (
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
               <User size={12} />
               <span
                 onClick={mode === "full" ? () => navigate(`/setter/${lead.setter_id}`) : undefined}
@@ -140,6 +141,8 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
                   cursor: mode ==="full" ? 'pointer': 'default',
                   color: '#001749ff',
                   textDecoration: 'none',
+                  flex: '1 1 auto',
+                  minWidth: 0
                 }}
                 onMouseEnter={(e) => {
                   if (mode !== "full") return;
@@ -159,7 +162,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             </div>
   )}
       {(mode !== 'closer') && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap'}}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0}}>
               <User size={12} />
               <span
                 onClick={mode ==="full" ? () => navigate(`/closer/${lead.closer_id}`) : undefined}
@@ -167,6 +170,9 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
                   cursor: mode === "full" ? 'pointer': 'default',
                   color: '#001749ff',
                   textDecoration: 'none',
+                  flex: '1 1 auto',
+                  minWidth: 0,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
                 }}
                 onMouseEnter={(e) => {
                   if (mode !== "full") return;
@@ -204,7 +210,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
           
         </div> 
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', color: '#6b7280',fontSize: '12px', marginLeft: 'auto'  }}>
+        <div style={{ display: 'flex', flex: '1 1', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', color: '#6b7280',fontSize: '12px', marginLeft: '0 auto'  }}>
 
            {(mode === 'closer' || mode === 'full' || mode === 'view') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
@@ -320,12 +326,13 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   flexDirection: 'column',
   gap: '4px',
   alignItems: 'center',
-  justifyContent: 'center'
+  justifyContent: 'center',
+  flex: '1 1 80px'
 }}
 >
   <label style={{
     whiteSpace: 'nowrap',
-    fontSize: '11px',
+    fontSize: 'clamp(7px, 1.5vw, 10px)',
     fontWeight: '500',
     color: '#6b7280',
     textTransform: 'uppercase',

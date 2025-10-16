@@ -34,7 +34,7 @@ import LeadItem from './components/LeadItem';
 
   return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb',boxSizing: 'border-box', padding: '24px', display: 'flex', width: '100%'}}>
-        <div style={{ width: '70%', margin: '0 auto' }}>
+        <div style={{ width: '90%', maxWidth: '1280px', margin: '0 auto' }}>
           <div style={{ marginBottom: '24px' }}>
             <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
               Setter: {setterMap[setter] || ""}
