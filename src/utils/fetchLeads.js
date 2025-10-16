@@ -80,7 +80,7 @@ if (searchTerm) {
 
   // Only apply limit if no email filter and showing 'all'
   if (!searchTerm && activeTab === 'all') {
-    query = query.limit(50);
+    query = query.limit(500);
   }
 
   const { data: leadsData, error: leadsError } = await query;

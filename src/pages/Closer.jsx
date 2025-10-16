@@ -37,7 +37,7 @@ const [setterMap, setSetterMap] = useState({});
 
   return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb',boxSizing: 'border-box', padding: '24px', display: 'flex', width: '100%'}}>
-        <div style={{ width: '80%', maxWidth: 1000, margin: '0 auto' }}>
+        <div style={{ width: '80%', maxWidth: 1280, margin: '0 auto' }}>
             <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
               Closer: {closerMap[closer] || ""}
             </h1>
