@@ -61,6 +61,8 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
 
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 
+    {(mode === 'full') && (<>
+
     <div
       onClick={() =>{
         setOn(!on)
@@ -88,14 +90,14 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
           transition: 'left 0.2s'
         }}
       />
-    </div>
+    </div> 
 
   {/* Date type toggle */}
-  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#111827' }}
-  >
+  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#111827' }}>
     <Calendar size={16} />
     {sortBy === 'book_date' ? 'Book Date' : 'Call Date'}
-  </span>
+  </span> </>
+)}
 
   {/* Sort order toggle */}
   <button
