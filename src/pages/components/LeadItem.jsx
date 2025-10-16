@@ -34,8 +34,11 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     setShowUp(formatStatusValue(lead.showed_up));
     setPurchase(formatStatusValue(lead.purchased));
     setSetter(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+  }, [lead]);
+
+  useEffect(() => {
     setNoteButtonText((mode === 'closer' ? lead.closer_note_id : lead.setter_note_id) ? "📝 Edit note" : "✚ Add note");
-  }, [lead, showNoteModal]);
+  }, [showNoteModal]);
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
     id,
