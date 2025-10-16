@@ -106,13 +106,13 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             value={pickUp}
             onChange={(value) => updateStatus(lead.id, 'picked_up', value, setPickUp, lead.manychat_user_id)}
             label="Pick Up"
-            disabled={mode === 'setter' || mode === 'view'}
+            disabled={mode === 'closer' || mode === 'view'}
           />
           <StatusDropdown
             value={confirmed}
             onChange={(value) => updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id)}
             label="Confirmed"
-            disabled={mode === 'setter' || mode === 'view'}
+            disabled={mode === 'closer' || mode === 'view'}
           />
           <StatusDropdown
             value={showUp}

@@ -46,7 +46,7 @@ const [setterMap, setSetterMap] = useState({});
           setShowSearch={setShowSearch} setSortBy={setSortBy}
           setSortOrder={setSortOrder} activeTab={activeTab}
           showSearch={showSearch} searchTerm={searchTerm} sortBy={sortBy}
-          sortOrder={sortOrder}  />
+          sortOrder={sortOrder} mode="closer"  />
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
             {leads.map((lead) => (

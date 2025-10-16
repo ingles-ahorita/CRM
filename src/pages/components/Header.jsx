@@ -128,7 +128,7 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
   <h3 style={{
     fontSize: '13px',
     color: '#6b7280'
-  }}>{sortOrder === 'desc' ? 'Oldest first' : 'Newest first'}
+  }}>{sortOrder === 'desc'  ? ((mode === "closer") ? 'Soonest first' : 'Oldest first' ): (mode === "closer") ?'Latest first' :  'Newest first'}
     </h3>
 </div>
 
