@@ -66,7 +66,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '35px', justifyContent: 'left', flexWrap: 'nowrap', overflow: 'hidden', flex: '1 1' }}>
-        <div style={{ flex: '1 1', overflow: 'hidden', alignItems: 'top', justifyContent: 'left' }}>
+        <div style={{ flex: '1 1 200px', overflow: 'hidden', alignItems: 'top', justifyContent: 'left' }}>
           <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
             <a
               onClick={() => navigate(`/lead/${lead.lead_id}`)}
