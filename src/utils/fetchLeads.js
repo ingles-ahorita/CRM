@@ -99,7 +99,7 @@ if (searchTerm) {
     const counts = {
       booked: leadsData?.length || 0,
     confirmed: leadsData?.filter(lead => lead.confirmed).length || 0,
-    cancelled: leadsData?.filter(lead => lead.cancelled).length || 0,
+    cancelled: leadsData?.filter(lead => lead.confirmed === false).length || 0,
         noPickup: leadsData?.filter(lead => lead.picked_up === false).length || 0,
     noShow: leadsData?.filter(lead => lead.showed_up).length || 0
 

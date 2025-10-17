@@ -156,7 +156,7 @@ const updateHeaderState = (updates) => {
   <h3 style={{
     fontSize: '13px',
     color: '#6b7280'
-  }}>{sortOrder === 'asc'  ? ((mode === "closer") ? 'Earliest first' : 'Oldest first' ): (mode === "closer") ?'Latest first' :  'Newest first'}
+  }}>{sortOrder === 'asc'  ? ((sortBy === "call_date") ? 'Earliest first' : 'Oldest first' ): (sortBy === "call_date") ?'Latest first' :  'Newest first'}
     </h3>
 </div>
 
