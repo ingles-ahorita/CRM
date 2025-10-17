@@ -138,7 +138,7 @@ function applyStatusFilters(query, filters) {
   }
   
   if (filters.cancelled) {
-    query = query.eq('cancelled', true);
+    query = query.eq('confirmed', false);
   }
   
   if (filters.noShow) {
