@@ -45,6 +45,10 @@ const updateHeaderState = (updates) => {
                       searchTerm: '', 
                       showSearch: false 
                     });
+
+                    if(tab === 'tomorrow'){
+                      updateHeaderState({ sortBy: 'call_date'})
+                    }
                   }}
                 style={{
                   outline: 'none',
@@ -85,6 +89,8 @@ const updateHeaderState = (updates) => {
 
     {(mode === 'full') && (<>
 
+{(activeTab !== "tomorrow") && (
+      
     <div
       onClick={() =>{
         setOn(!on)
@@ -112,7 +118,7 @@ const updateHeaderState = (updates) => {
           transition: 'left 0.2s'
         }}
       />
-    </div> 
+    </div> )}
 
   {/* Date type toggle */}
   <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#111827' }}>
@@ -150,9 +156,11 @@ const updateHeaderState = (updates) => {
   <h3 style={{
     fontSize: '13px',
     color: '#6b7280'
-  }}>{sortOrder === 'desc'  ? ((mode === "closer") ? 'Soonest first' : 'Oldest first' ): (mode === "closer") ?'Latest first' :  'Newest first'}
+  }}>{sortOrder === 'asc'  ? ((mode === "closer") ? 'Earliest first' : 'Oldest first' ): (mode === "closer") ?'Latest first' :  'Newest first'}
     </h3>
 </div>
+
+{(mode === 'full') && (
 
 <div style={{
   display: 'flex',
@@ -177,7 +185,13 @@ const updateHeaderState = (updates) => {
     active={filters.noShow}
     onClick={() => toggleFilter('noShow')}
   />
-</div>
+
+    <FilterButton
+    label="No Pick up"
+    active={filters.noPickUp}
+    onClick={() => toggleFilter('noPickUp')}
+  />
+</div>)}
 
 
   {/* Search Icon + Input */}

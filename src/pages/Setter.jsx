@@ -14,7 +14,7 @@ import LeadItem from './components/LeadItem';
       searchTerm: '',
       activeTab: 'today',
       sortBy: 'book_date',
-      sortOrder: 'asc',
+      sortOrder: 'desc',
       filters: {
         confirmed: false,
         cancelled: false,

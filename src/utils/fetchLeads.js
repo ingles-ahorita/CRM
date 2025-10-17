@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabaseClient';
 
 
 
-export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'asc', setDataState, closerId, setterId, filters)  {
+export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order, setDataState, closerId, setterId, filters)  {
 
   const updateDataState = (updates) => {
   setDataState(prev => ({ ...prev, ...updates }));
@@ -87,7 +87,7 @@ if (searchTerm) {
 
   // Only apply limit if no email filter and showing 'all'
   if (!searchTerm && activeTab === 'all') {
-    query = query.limit(500);
+    query = query.limit(100);
   }
 
   const { data: leadsData, error: leadsError } = await query;
@@ -143,6 +143,10 @@ function applyStatusFilters(query, filters) {
   
   if (filters.noShow) {
     query = query.eq('showed_up', false); // Adjust column name to match your DB
+  }
+
+  if (filters.noPickUp) {
+    query = query.eq('picked_up', false); // Adjust column name to match your DB
   }
 
   return query;

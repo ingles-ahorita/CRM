@@ -28,7 +28,8 @@ export default function LeadsPage() {
   filters: {
     confirmed: false,
     cancelled: false,
-    noShow: false
+    noShow: false,
+    noPickUp: false
   }
 });
 
