@@ -3,8 +3,11 @@ import LeadItem from './components/LeadItem';
   import { useParams, useNavigate } from 'react-router-dom';
   import { fetchAll } from '../utils/fetchLeads';
   import Header from './components/Header';
+  
+  import { useSimpleAuth } from '../useSimpleAuth';
 
   export default function Setter() {
+      const { email, userName, logout } = useSimpleAuth();
 
         const { setter } = useParams()
         const navigate = useNavigate();   // 👈 this is the “best way” to get it

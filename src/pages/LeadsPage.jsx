@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Navigate } from 'react';
 import LeadItem from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
 import Header from './components/Header';
+import { useSimpleAuth } from '../useSimpleAuth'; 
 
 export default function LeadsPage() {
+
 
 
       const [dataState, setDataState] = useState({
@@ -50,7 +52,11 @@ useEffect(() => {
 
 
   return (
+
+    
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb',boxSizing: 'border-box', padding: '24px', display: 'flex', width: '100%'}}>
+
+
      <div style={{ width: '90%', maxWidth: 1280, margin: '0 auto' }}>
 
                       <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>

@@ -1,5 +1,6 @@
-import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar } from 'lucide-react';
+import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut } from 'lucide-react';
 import { act, useRef, useState } from 'react';
+
 
 
 
@@ -7,6 +8,11 @@ import { act, useRef, useState } from 'react';
 export default function Header({ state, setState, mode = 'full' }) {
     const searchInputRef = useRef(null);
     const [on, setOn] = useState(false);
+
+      const logout = () => {
+    localStorage.clear();
+    window.location.href = '/login';
+  };
 
     const toggleFilter = (filterName) => {
   setState(prev => ({
@@ -27,6 +33,41 @@ const updateHeaderState = (updates) => {
     const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters } = state;
     return (
         <div style={{ marginBottom: '24px' }}>
+
+          <button 
+        onClick={logout}
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 20px',
+          backgroundColor: '#ef4444',
+          color: 'white',
+          border: 'none',
+          borderRadius: '50px',
+          cursor: 'pointer',
+          fontSize: '14px',
+          fontWeight: '600',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 1000,
+          transition: 'all 0.2s'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'scale(1.05)';
+          e.currentTarget.style.boxShadow = '0 6px 16px rgba(0, 0, 0, 0.2)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+        }}
+      >
+        <LogOut size={18} />
+        Logout
+      </button> 
+
 
           {/* Tabs */}
           <div style={{ 
