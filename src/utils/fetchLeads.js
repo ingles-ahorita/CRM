@@ -7,6 +7,8 @@ import { supabase } from '../lib/supabaseClient';
 
 export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order, setDataState, closerId, setterId, filters)  {
 
+
+
   const updateDataState = (updates) => {
   setDataState(prev => ({ ...prev, ...updates }));
 };
@@ -89,7 +91,7 @@ if (searchTerm) {
   if (!searchTerm && activeTab === 'all') {
     query = query.limit(100);
   }
-
+console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc');
   const { data: leadsData, error: leadsError } = await query;
 
   if (leadsError) {

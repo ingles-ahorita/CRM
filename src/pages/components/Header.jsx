@@ -130,8 +130,9 @@ const updateHeaderState = (updates) => {
   {/* Sort order toggle */}
   <button
     onClick={() => {
+        console.log('1 Sorting order:', state.sortOrder);
         updateHeaderState({ sortOrder: sortOrder === 'desc' ? 'asc' : 'desc' });
-        console.log('Sorting order:', sortOrder);}}
+        console.log('2 Sorting order:', state.sortOrder);}}
     style={{
       display: 'flex',
       alignItems: 'center',
@@ -150,7 +151,7 @@ const updateHeaderState = (updates) => {
     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f3f4f6')}
   >
-    {sortOrder === 'desc' ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
+    {sortOrder === 'desc' ? <ArrowDown size={16} /> : <ArrowUp size={16} /> }
   </button>
 
   <h3 style={{
