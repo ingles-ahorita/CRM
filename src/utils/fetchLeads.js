@@ -5,9 +5,13 @@ import { supabase } from '../lib/supabaseClient';
 
 
 
-export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'asc', setLeads, setSetterMap, setCloserMap, setLoading, closerId, setterId)  {
-  setLoading(true);
+export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'asc', setDataState, closerId, setterId, filters)  {
 
+  const updateDataState = (updates) => {
+  setDataState(prev => ({ ...prev, ...updates }));
+};
+
+updateDataState({ loading: true });
 
   
   // Fetch leads
@@ -78,6 +82,11 @@ if (searchTerm) {
       console.log("Filtering by setter ID:", setterId);
     }
 
+    if(filters){
+      applyStatusFilters(query, filters)
+  
+}
+
   // Only apply limit if no email filter and showing 'all'
   if (!searchTerm && activeTab === 'all') {
     query = query.limit(500);
@@ -87,12 +96,20 @@ if (searchTerm) {
 
   if (leadsError) {
     console.error('Error fetching leads:', leadsError);
-    setLeads([]);
+    updateDataState({ leads: []})
   } else {
-    setLeads(leadsData || []);
+    const counts = {
+      booked: leadsData?.length || 0,
+    confirmed: leadsData?.filter(lead => lead.confirmed).length || 0,
+    cancelled: leadsData?.filter(lead => lead.cancelled).length || 0,
+        noPickup: leadsData?.filter(lead => lead.picked_up === false).length || 0,
+    noShow: leadsData?.filter(lead => lead.showed_up).length || 0
+
+  };
+    updateDataState({ leads: leadsData || [], counts: counts});
   }
   
-  if(setSetterMap){
+  if(closerId || (!closerId && !setterId)){
     console.log("Fetching setters");
   // Fetch setters
   const { data: settersData, error: settersError } = await supabase
@@ -101,11 +118,11 @@ if (searchTerm) {
   if (!settersError && settersData) {
     const map = {};
     settersData.forEach(s => { map[s.id] = s.name; });
-    setSetterMap(map);
+    updateDataState({ setterMap: map });
   }
 }
 
-if(setCloserMap){
+if(setterId || (!closerId && !setterId)){
     console.log("Fetching closers");
   // Fetch closers
   const { data: closersData, error: closersError } = await supabase
@@ -114,9 +131,32 @@ if(setCloserMap){
   if (!closersError && closersData) {
     const map = {};
     closersData.forEach(c => { map[c.id] = c.name; });
-    setCloserMap(map);
+    updateDataState({ closerMap: map });
   }
-  setLoading(false);
 }
 
+
+
+
+
+  updateDataState({ loading: false });
+
+}
+
+// Helper function to apply status filters
+function applyStatusFilters(query, filters) {
+  // Apply each filter if it's active (true)
+  if (filters.confirmed) {
+    query = query.eq('confirmed', true);
+  }
+  
+  if (filters.cancelled) {
+    query = query.eq('cancelled', true);
+  }
+  
+  if (filters.noShow) {
+    query = query.eq('showed_up', false); // Adjust column name to match your DB
+  }
+
+  return query;
 }

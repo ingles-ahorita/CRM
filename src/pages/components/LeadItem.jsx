@@ -54,7 +54,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
         justifyContent: 'space-between',
         marginBottom: '12px',
         minHeight: '80px',
-        backgroundColor: 'white',
+        backgroundColor: lead.cancelled ? '#ff8b8bff': 'white',
         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
         padding: '16px',
         paddingRight: '0px',
@@ -136,7 +136,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
 
 {(mode !== 'setter') && (
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0}}>
               <User size={12} />
               <span
                 onClick={mode === "full" ? () => navigate(`/setter/${lead.setter_id}`) : undefined}
@@ -207,7 +207,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     fontWeight: '500',
     cursor: 'pointer',
     whiteSpace: 'nowrap', // Prevents text wrapping
-    width: '60%'
+    width: '80%'
   }}> {(mode === "full") ? "📝 Notes" : (noteButtonText) }</button>
 
           

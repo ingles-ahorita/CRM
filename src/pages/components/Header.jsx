@@ -1,12 +1,30 @@
 import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { act, useRef, useState } from 'react';
 
 
 
 
-export default function Header({setActiveTab, setSearchTerm, setShowSearch, setSortBy, setSortOrder, activeTab, showSearch, searchTerm, sortBy, sortOrder, mode}) {
-     const searchInputRef = useRef(null);
-       const [on, setOn] = useState(false);
+export default function Header({ state, setState, mode = 'full' }) {
+    const searchInputRef = useRef(null);
+    const [on, setOn] = useState(false);
+
+    const toggleFilter = (filterName) => {
+  setState(prev => ({
+    ...prev,
+    filters: {
+      ...prev.filters,
+      [filterName]: !prev.filters[filterName]
+    }
+  }));
+};
+
+const updateHeaderState = (updates) => {
+  setState(prev => ({ ...prev, ...updates }));
+};
+
+
+
+    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters } = state;
     return (
         <div style={{ marginBottom: '24px' }}>
 
@@ -22,10 +40,12 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
               <button
                 key={tab}
                 onClick={() => {
-                  setActiveTab(tab);
-                  setSearchTerm('');
-                setShowSearch(false);}
-                }
+                    updateHeaderState({ 
+                      activeTab: tab, 
+                      searchTerm: '', 
+                      showSearch: false 
+                    });
+                  }}
                 style={{
                   outline: 'none',
                   padding: '8px 16px',
@@ -56,6 +76,8 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
             ))}
           </div>
 
+
+
           {/* BUTTONS */}
 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', width: '100%', justifyContent: 'flex-start' }}>
 
@@ -66,7 +88,7 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
     <div
       onClick={() =>{
         setOn(!on)
-        setSortBy(sortBy === 'book_date' ? 'call_date' : 'book_date');
+        updateHeaderState({ sortBy: sortBy === 'book_date' ? 'call_date' : 'book_date'});
       }}
       style={{
         width: '50px',
@@ -102,7 +124,7 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
   {/* Sort order toggle */}
   <button
     onClick={() => {
-        setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+        updateHeaderState({ sortOrder: sortOrder === 'desc' ? 'asc' : 'desc' });
         console.log('Sorting order:', sortOrder);}}
     style={{
       display: 'flex',
@@ -132,6 +154,31 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
     </h3>
 </div>
 
+<div style={{
+  display: 'flex',
+  gap: '8px',
+  marginTop: '12px',
+  flexWrap: 'wrap'
+}}>
+  <FilterButton
+    label="Confirmed"
+    active={filters.confirmed}
+    onClick={() => toggleFilter('confirmed')}
+  />
+  
+  <FilterButton
+    label="Cancelled"
+    active={filters.cancelled}
+    onClick={() => toggleFilter('cancelled')}
+  />
+  
+  <FilterButton
+    label="No Show"
+    active={filters.noShow}
+    onClick={() => toggleFilter('noShow')}
+  />
+</div>
+
 
   {/* Search Icon + Input */}
   <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
@@ -143,8 +190,10 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
         defaultValue={searchTerm}
         onKeyDown={(e) => {
     if (e.key === 'Enter') {
-            setSearchTerm(e.target.value);
-            setActiveTab('all');
+            updateHeaderState({
+              searchTerm: e.target.value,
+              activeTab: 'all'
+            });
     }
   }}
         style={{
@@ -168,7 +217,7 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
       
     <button
       onClick={() => {
-        setShowSearch(!showSearch);
+        updateHeaderState({ showSearch: !showSearch });
       setTimeout(() => {
             if (!showSearch) {
               searchInputRef.current?.focus();
@@ -239,3 +288,34 @@ export default function Header({setActiveTab, setSearchTerm, setShowSearch, setS
     )
 }
 
+const FilterButton = ({ label, active, onClick }) => {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '6px 12px',
+        backgroundColor: active ? '#4f46e5' : '#f3f4f6',
+        color: active ? 'white' : '#6b7280',
+        border: active ? '2px solid #4338ca' : '2px solid #e5e7eb',
+        borderRadius: '6px',
+        fontSize: '13px',
+        fontWeight: '500',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        outline: 'none'
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = '#e5e7eb';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = '#f3f4f6';
+        }
+      }}
+    >
+      {active ? '✓ ' : ''}{label}
+    </button>
+  );
+};
