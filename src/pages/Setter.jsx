@@ -55,7 +55,7 @@ import LeadItem from './components/LeadItem';
 
 <Header
   state={headerState}
-  onStateChange={setHeaderState}
+  setState={setHeaderState}
   mode='setter'
 />
 

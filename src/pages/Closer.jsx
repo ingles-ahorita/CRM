@@ -56,9 +56,13 @@ import LeadItem from './components/LeadItem';
 
                 <Header
                   state={headerState}
-                  onStateChange={setHeaderState}
+                  setState={setHeaderState}
                   mode='closer'
                 />
+
+                          {dataState.loading && <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
+      </div>}
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
             {dataState.leads.map((lead) => (

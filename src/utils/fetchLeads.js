@@ -15,16 +15,14 @@ updateDataState({ loading: true });
 
   
   // Fetch leads
-  let query = supabase
-    .from('calls')
-    .select(
-    closerId
-      ? `*, closers (id, name)`
-      : setterId
-      ? `*, setters (id, name)`
-      : '*'
-  )
-    .order(sortField, { ascending: order === 'desc', nullsFirst: false});
+let query = supabase
+  .from('calls')
+  .select(`
+    *,
+    closers (id, name),
+    setters (id, name)
+  `)
+  .order(sortField, { ascending: order === 'asc', nullsFirst: false });
 
 
 
@@ -109,9 +107,6 @@ if (searchTerm) {
     updateDataState({ leads: leadsData || [], counts: counts});
   }
   
-  if(closerId || (!closerId && !setterId)){
-    console.log("Fetching setters");
-  // Fetch setters
   const { data: settersData, error: settersError } = await supabase
     .from('setters')
     .select('id, name');
@@ -120,9 +115,6 @@ if (searchTerm) {
     settersData.forEach(s => { map[s.id] = s.name; });
     updateDataState({ setterMap: map });
   }
-}
-
-if(setterId || (!closerId && !setterId)){
     console.log("Fetching closers");
   // Fetch closers
   const { data: closersData, error: closersError } = await supabase
@@ -133,11 +125,6 @@ if(setterId || (!closerId && !setterId)){
     closersData.forEach(c => { map[c.id] = c.name; });
     updateDataState({ closerMap: map });
   }
-}
-
-
-
-
 
   updateDataState({ loading: false });
 
