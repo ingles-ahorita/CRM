@@ -221,7 +221,7 @@ if (noteId) {
   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
     <label style={labelStyle}>🔥 Commitment level (1–10):</label>
     <input name="commitment_level" type="number" min="1" max="10" 
-           defaultValue={noteData?.commitment_level || ''} style={{...inputStyle, width: '10%', textAlign: 'center'}} />
+           defaultValue={noteData?.commitment_level || ''} style={{...inputStyle, width: '15%', textAlign: 'left'}} />
   </div>
 
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
