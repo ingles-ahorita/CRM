@@ -1,11 +1,13 @@
 import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut } from 'lucide-react';
 import { act, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 
 
 
 
 export default function Header({ state, setState, mode = 'full' }) {
+   const navigate = useNavigate();
     const searchInputRef = useRef(null);
     const [on, setOn] = useState(false);
 
@@ -233,6 +235,13 @@ const updateHeaderState = (updates) => {
     active={filters.noPickUp}
     onClick={() => toggleFilter('noPickUp')}
   />
+
+  <FilterButton
+    label="Reschedule"
+    active={filters.rescheduled}
+    onClick={() => toggleFilter('rescheduled')}
+  />
+
 </div>)}
 
 
@@ -302,7 +311,7 @@ const updateHeaderState = (updates) => {
   {/* Analytics Button */}
   <button
     style={{
-        display: mode === 'full' ? 'flex' : 'none',
+        display: (mode === 'full' || mode === 'setter') ? 'flex' : 'none',
       backgroundColor: '#e5e7eb',
       color: '#111827',
       border: '1px solid #d1d5db',
@@ -314,7 +323,7 @@ const updateHeaderState = (updates) => {
     }}
     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#d1d5db')}
     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
-    onClick={() => window.open('/analytics', '_blank')}
+    onClick={() => navigate(mode === 'full' ? '/metrics' : `/stats/${state.currentSetter}`)}
   >
     <ChartSpline size={18} />
   </button>

@@ -1,4 +1,4 @@
-import LeadItem from './components/LeadItem';
+import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
 
   import { useState, useEffect } from 'react';
   import { useParams, useNavigate } from 'react-router-dom';

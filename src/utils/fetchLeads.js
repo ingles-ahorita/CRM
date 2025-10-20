@@ -1,11 +1,12 @@
 import { supabase } from '../lib/supabaseClient';
+import { runAnalysis } from '../pages/reactionTime'; 
 
 
 
 
 
 
-export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order, setDataState, closerId, setterId, filters)  {
+export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'desc', setDataState, closerId, setterId, filters, leadId)  {
 
 
 
@@ -59,6 +60,12 @@ let query = supabase
    
   }
 
+  if(leadId){
+    query = query.eq('lead_id', leadId);
+    console.log("Filtering by lead: ", leadId);
+
+  }
+
     // Filter by email if provided
 if (searchTerm) {
   const term = searchTerm.trim();
@@ -101,12 +108,17 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
     const counts = {
       booked: leadsData?.length || 0,
     confirmed: leadsData?.filter(lead => lead.confirmed).length || 0,
-    cancelled: leadsData?.filter(lead => lead.confirmed === false).length || 0,
+    cancelled: leadsData?.filter(lead => lead.confirmed === false || lead.cancelled === true ).length || 0,
         noPickup: leadsData?.filter(lead => lead.picked_up === false).length || 0,
     noShow: leadsData?.filter(lead => lead.showed_up).length || 0
 
   };
-    updateDataState({ leads: leadsData || [], counts: counts});
+
+  const callMap = await runAnalysis(leadsData);
+
+  const leadsWithCallTime = leadsData.map(lead => ({...lead, ...callMap[lead.id]}));
+
+    updateDataState({ leads: leadsWithCallTime || [], counts: counts});
   }
   
   const { data: settersData, error: settersError } = await supabase
@@ -149,6 +161,10 @@ function applyStatusFilters(query, filters) {
 
   if (filters.noPickUp) {
     query = query.eq('picked_up', false); // Adjust column name to match your DB
+  }
+
+  if (filters.rescheduled) {
+    query = query.eq('is_reschedule', true); // Adjust column name to match your DB
   }
 
   return query;

@@ -1,5 +1,5 @@
 import { supabase } from '../../lib/supabaseClient';
-import {Modal, NotesModal} from './Modal';
+import {Modal, NotesModal, ViewNotesModal} from './Modal';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Mail, Phone, User, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -14,7 +14,14 @@ const formatStatusValue = (value) => {
   return value;
 };
 
-export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }) {
+ function callTimeColor(time, isRescheduled, called){
+  if(isRescheduled && !called) return '#dd86ddff';
+  if(time < 6) return '#88ff2dff';
+  if(time < 15) return '#fdd329ff';
+  if(time > 15) return '#ff8b8bff';
+}
+
+export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }) {
   const [pickUp, setPickUp] = useState(() => formatStatusValue(lead.picked_up));
   const [confirmed, setConfirmed] = useState(() => formatStatusValue(lead.confirmed));
   const [showUp, setShowUp] = useState(() => formatStatusValue(lead.showed_up));
@@ -22,6 +29,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
   const [setter, setSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
   const [modeState, setModeState] = useState(mode);
   const [noteButtonText, setNoteButtonText] = useState();
   const [tempSetter, setTempSetter] = useState(setter);
@@ -54,7 +62,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
         justifyContent: 'space-between',
         marginBottom: '12px',
         minHeight: '80px',
-        backgroundColor: lead.cancelled ? '#ff8b8bff': 'white',
+        backgroundColor: 'white',
         boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
         padding: '16px',
         paddingRight: '0px',
@@ -70,7 +78,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '35px', justifyContent: 'left', flexWrap: 'nowrap', overflow: 'hidden', flex: '1 1' }}>
         <div style={{ flex: '1 1 200px', overflow: 'hidden', alignItems: 'top', justifyContent: 'left' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px', textAlign: 'left' }}>
             <a
               onClick={() => navigate(`/lead/${lead.lead_id}`)}
               style={{ cursor: 'pointer', color: '#323232ff', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -82,7 +90,14 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
                                                                           fontWeight: '600',
                                                                           marginLeft: '5%', 
                                                                           overflow: 'hidden',
-    textOverflow: 'ellipsis'}}> Reschedule</div>}
+    textOverflow: 'ellipsis'}}> Reschedule</div>} {(lead.cancelled) && <div style={{
+                                                                          display: 'inline',
+                                                                          fontSize: '11px',
+                                                                          color: '#f7371aff',
+                                                                          fontWeight: '600',
+                                                                          marginLeft: '5%', 
+                                                                          overflow: 'hidden',
+    textOverflow: 'ellipsis'}}>Cancelled</div>}
             </a>
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', fontSize: '12px', color: '#6b7280', gap: '4px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -196,7 +211,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
           </div>
           
           <button
-  onClick={() => setShowNoteModal(true)}
+  onClick={() => (mode=== 'full' || mode === "view") ? setViewModalOpen(true) : setShowNoteModal(true)}
   style={{
     padding: '5px 0px',
     backgroundColor: (lead.setter_note_id && mode !== 'closer') || (lead.closer_note_id && mode === 'closer') ? '#7053d0ff' : '#3f2f76ff',
@@ -208,7 +223,7 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
     cursor: 'pointer',
     whiteSpace: 'nowrap', // Prevents text wrapping
     width: '80%'
-  }}> {(mode === "full") ? "📝 Notes" : (noteButtonText) }</button>
+  }}> {(mode === "full" || mode === "view") ? "📝 Notes" : (noteButtonText) }</button>
 
           
         </div> 
@@ -239,6 +254,12 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
             <div style={{ display: 'flex', alignSelf: 'flex-end', gap: '4px' }}>
               <span>{DateHelpers.formatTimeAgo(lead.book_date) || 'N/A'}</span>
             </div>)}
+
+              <span style={{backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called), color: '#343434ff', fontWeight: "600", borderRadius: '5px', padding: '1px 4px' }}> {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span>
+              {(new Date() - new Date(lead.book_date)) < (2 * 60 * 60 * 1000) && (
+              <span style={{backgroundColor: "#24c5ffff", color: '#ffffffff', fontWeight: "600", borderRadius: '5px', padding: '1px 4px', overflow: 'hidden', whiteSpace: 'nowrap' }}> GRACE PERIOD (2H)</span>
+              )}
+            
           </div>
 
 
@@ -269,6 +290,13 @@ export default function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 
 
 
       <NotesModal isOpen={showNoteModal} onClose={() => setShowNoteModal(false)} lead={lead} callId={lead.id} mode={modeState} />
+      
+      <ViewNotesModal 
+  isOpen={viewModalOpen} 
+  onClose={() => setViewModalOpen(false)} 
+  lead={lead}
+  callId={lead.id}
+/>
         
         <ThreeDotsMenu
     onEdit={() => setIsModalOpen(true)}
@@ -567,3 +595,211 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
     </button>
   );
 };
+
+
+
+
+// compact version
+
+export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
+  const navigate = useNavigate();
+const [viewModalOpen, setViewModalOpen] = useState(false);
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '200px 150px 120px 120px 120px 100px 100px 80px',
+        gap: '16px',
+        alignItems: 'center',
+        padding: '12px 16px',
+        backgroundColor: 'white',
+        borderBottom: '1px solid #e5e7eb',
+        fontSize: '14px',
+        transition: 'background-color 0.2s'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+    >
+      {/* Name & Contact */}
+      <div style={{ overflow: 'hidden' }}>
+        <div
+          onClick={() => navigate(`/lead/${lead.lead_id}`)}
+          style={{
+            fontWeight: '600',
+            color: '#111827',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            marginBottom: '2px'
+          }}
+        >
+          {lead.name || 'No name'}
+          {lead.is_reschedule && (
+            <span style={{ 
+              fontSize: '10px', 
+              color: '#8c0bf5ff', 
+              fontWeight: '600', 
+              marginLeft: '8px' 
+            }}>
+              Rescheduled
+            </span>
+          )}
+        </div>
+        <div style={{
+          fontSize: '12px',
+          color: '#6b7280',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}>
+          {lead.email || 'No email'}
+        </div>
+      </div>
+
+      {/* Setter */}
+      <div
+        onClick={() => navigate(`/setter/${lead.setter_id}`)}
+        style={{
+          color: '#001749ff',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}
+      >
+        {setterMap[lead.setter_id] || 'N/A'}
+      </div>
+
+      {/* Closer */}
+      <div
+        onClick={() => navigate(`/closer/${lead.closer_id}`)}
+        style={{
+          color: '#001749ff',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}
+      >
+        {closerMap[lead.closer_id] || 'N/A'}
+      </div>
+
+      {/* Call Date */}
+      <div style={{ fontSize: '13px', color: '#6b7280' }}>
+        {DateHelpers.formatTimeWithRelative(lead.call_date) || 'N/A'}
+      </div>
+      {/* Call Date */}
+      <div style={{ fontSize: '13px', color: '#6b7280' }}>
+        {DateHelpers.formatTimeWithRelative(lead.book_date) || 'N/A'}
+      </div>
+
+      {/* Status Indicators */}
+      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+        <StatusBadge value={lead.picked_up} label="P" title="Picked Up" />
+        <StatusBadge value={lead.confirmed} label="C" title="Confirmed" />
+        <StatusBadge value={lead.showed_up} label="S" title="Showed Up" />
+        <StatusBadge value={lead.purchased} label="$" title="Purchased" />
+      </div>
+
+      {/* Response Time */}
+      <div style={{ textAlign: 'center' }}>
+        <span style={{
+          backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called),
+          color: '#343434ff',
+          fontWeight: '600',
+          borderRadius: '4px',
+          padding: '2px 8px',
+          fontSize: '12px'
+        }}>
+          {lead.called ? `${lead.responseTimeMinutes}m` : 'Not called'}
+        </span>
+      </div>
+
+      {/*  Notes */}
+      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+      <button
+  onClick={() => setViewModalOpen(true)}
+  style={{
+    padding: '5px 0px',
+    backgroundColor: (lead.setter_note_id) || (lead.closer_note_id) ? '#7053d0ff' : '#3f2f76ff',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap', // Prevents text wrapping
+    width: '80%'
+  }}>  📝 Notes </button>
+    </div>
+          <ViewNotesModal 
+  isOpen={viewModalOpen} 
+  onClose={() => setViewModalOpen(false)} 
+  lead={lead}
+  callId={lead.id}
+/>
+    </div>
+  );
+}
+
+// Helper component for status badges
+function StatusBadge({ value, label, title }) {
+  const getColor = () => {
+    if (value === true) return '#10b981'; // green
+    if (value === false) return '#ef4444'; // red
+    return '#f59e0b'; // yellow for null/TBD
+  };
+
+  return (
+    <div
+      title={title}
+      style={{
+        width: '24px',
+        height: '24px',
+        borderRadius: '4px',
+        backgroundColor: getColor(),
+        color: 'white',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '11px',
+        fontWeight: '600'
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
+// Add header component to use with the list
+export function LeadListHeader() {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '200px 150px 120px 120px 120px 100px 100px 80px',
+        gap: '16px',
+        padding: '12px 16px',
+        backgroundColor: '#f3f4f6',
+        borderBottom: '2px solid #e5e7eb',
+        fontSize: '12px',
+        fontWeight: '600',
+        color: '#6b7280',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px'
+      }}
+    >
+      <div>Name / Email</div>
+      <div>Setter</div>
+      <div>Closer</div>
+      <div>Call Date</div>
+      <div style={{ textAlign: 'left' }}>Book Date</div>
+      <div style={{ textAlign: 'left' }}>Status</div>
+      <div style={{ textAlign: 'center' }}>Response</div>
+      <div style={{ textAlign: 'center' }}>Notes</div>
+
+    </div>
+  );
+}

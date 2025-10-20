@@ -28,12 +28,14 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
   
   // Fetch note data when modal opens
   useEffect(() => {
-    const fetchNote = async () => {
-      if (!isOpen || !noteId) {
+
+          if (!isOpen || !noteId) {
         setNoteData(null);
         setIsLoading(false);
         return;
       }
+
+    const fetchNote = async () => {
       setIsLoading(true);
       const { data, error } = await supabase
         .from(table)
@@ -372,6 +374,253 @@ if (noteId) {
     )}
      </>
   ); 
+};
+
+export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [setterNote, setSetterNote] = useState(null);
+  const [closerNote, setCloserNote] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSetterNote(null);
+      setCloserNote(null);
+      setIsLoading(false);
+      return;
+    }
+
+    const fetchNotes = async () => {
+      setIsLoading(true);
+
+      // Fetch setter note if exists
+      if (lead.setter_note_id) {
+        const { data, error } = await supabase
+          .from('setter_notes')
+          .select('*')
+          .eq('id', lead.setter_note_id)
+          .single();
+        
+        if (!error) setSetterNote(data);
+      }
+
+      // Fetch closer note if exists
+      if (lead.closer_note_id) {
+        const { data, error } = await supabase
+          .from('closer_notes')
+          .select('*')
+          .eq('id', lead.closer_note_id)
+          .single();
+        
+        if (!error) setCloserNote(data);
+      }
+
+      setIsLoading(false);
+    };
+
+    fetchNotes();
+  }, [isOpen, lead.setter_note_id, lead.closer_note_id]);
+
+  if (!isOpen) return null;
+
+  const sectionStyle = {
+    backgroundColor: '#f9fafb',
+    padding: '20px',
+    borderRadius: '8px',
+    marginBottom: '20px'
+  };
+
+  const labelStyle = {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#6b7280',
+    marginBottom: '4px'
+  };
+
+  const valueStyle = {
+    fontSize: '15px',
+    color: '#111827',
+    marginBottom: '12px'
+  };
+
+  const checkmarkStyle = (value) => ({
+    display: 'inline-block',
+    width: '20px',
+    height: '20px',
+    borderRadius: '3px',
+    backgroundColor: value ? '#10b981' : '#e5e7eb',
+    color: 'white',
+    textAlign: 'center',
+    lineHeight: '20px',
+    marginRight: '8px'
+  });
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose}>
+      {isLoading ? (
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          alignItems: 'center', 
+          justifyContent: 'center',
+          padding: '60px',
+          gap: '16px',
+          height: '500px'
+        }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #f3f4f6',
+            borderTop: '4px solid #001749ff',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <style>{`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}</style>
+          <span style={{ color: '#6b7280', fontSize: '14px' }}>Loading notes...</span>
+        </div>
+      ) : (
+        <>
+          <h2 style={{ fontSize: '30px', marginBottom: '26px' }}>
+            Notes for <b>{lead.name}</b>
+          </h2>
+
+          <div style={{ paddingLeft: '40px', paddingRight: '40px', paddingBottom: '20px', maxHeight: '600px', overflowY: 'auto' }}>
+            
+            {/* Setter Notes Section */}
+            {setterNote ? (
+              <div style={sectionStyle}>
+                <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#001749ff' }}>
+                  📞 Setter Notes
+                </h3>
+
+                <div>
+                  <div style={labelStyle}>🔥 Commitment Level</div>
+                  <div style={valueStyle}>
+                    <span style={{ 
+                      backgroundColor: '#001749ff', 
+                      color: 'white', 
+                      padding: '4px 12px', 
+                      borderRadius: '20px',
+                      fontWeight: '600'
+                    }}>
+                      {setterNote.commitment_level || 'N/A'}/10
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={checkmarkStyle(setterNote.practice_daily)}>
+                    {setterNote.practice_daily ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: '15px' }}>⏱️ Practice daily (min. 30m)</span>
+                </div>
+
+                {setterNote.motivation && (
+                  <div>
+                    <div style={labelStyle}>🎯 Motivation</div>
+                    <div style={valueStyle}>{setterNote.motivation}</div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={checkmarkStyle(setterNote.decision_maker_present)}>
+                    {setterNote.decision_maker_present ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: '15px' }}>👥 Decision maker present</span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={checkmarkStyle(setterNote.prepared)}>
+                    {setterNote.prepared ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: '15px' }}>✅ Prepared for call</span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={checkmarkStyle(setterNote.show_up_confirmed)}>
+                    {setterNote.show_up_confirmed ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: '15px' }}>📅 Show-up confirmed</span>
+                </div>
+
+                {setterNote.notes && (
+                  <div>
+                    <div style={labelStyle}>⚠️ Extra Notes</div>
+                    <div style={valueStyle}>{setterNote.notes}</div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ ...sectionStyle, textAlign: 'center', color: '#9ca3af' }}>
+                <p>No setter notes available</p>
+              </div>
+            )}
+
+            {/* Closer Notes Section */}
+            {closerNote ? (
+              <div style={sectionStyle}>
+                <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#001749ff' }}>
+                  💼 Closer Notes
+                </h3>
+
+                <div>
+                  <div style={labelStyle}>🟢 Prepared Score</div>
+                  <div style={valueStyle}>
+                    <span style={{ 
+                      backgroundColor: '#10b981', 
+                      color: 'white', 
+                      padding: '4px 12px', 
+                      borderRadius: '20px',
+                      fontWeight: '600'
+                    }}>
+                      {closerNote.prepared_score || 'N/A'}/10
+                    </span>
+                  </div>
+                </div>
+
+                {closerNote.prepared_reason && (
+                  <div>
+                    <div style={labelStyle}>Reason for Score</div>
+                    <div style={valueStyle}>{closerNote.prepared_reason}</div>
+                  </div>
+                )}
+
+                {closerNote.budget_max && (
+                  <div>
+                    <div style={labelStyle}>💲 Budget (Max)</div>
+                    <div style={valueStyle}>{closerNote.budget_max}</div>
+                  </div>
+                )}
+
+                {closerNote.objection && (
+                  <div>
+                    <div style={labelStyle}>⚡ Objection</div>
+                    <div style={valueStyle}>{closerNote.objection}</div>
+                  </div>
+                )}
+
+                {closerNote.notes && (
+                  <div>
+                    <div style={labelStyle}>📝 Notes</div>
+                    <div style={valueStyle}>{closerNote.notes}</div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ ...sectionStyle, textAlign: 'center', color: '#9ca3af' }}>
+                <p>No closer notes available</p>
+              </div>
+            )}
+
+          </div>
+        </>
+      )}
+    </Modal>
+  );
 };
 
 

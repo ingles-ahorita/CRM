@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Navigate } from 'react';
-import LeadItem from './components/LeadItem';
+import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
@@ -31,7 +31,8 @@ export default function LeadsPage() {
     confirmed: false,
     cancelled: false,
     noShow: false,
-    noPickUp: false
+    noPickUp: false,
+    rescheduled: false
   }
 });
 
@@ -99,6 +100,8 @@ useEffect(() => {
        {dataState.loading && <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
       </div>}
+
+      {(headerState.activeTab !== 'all') && (
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
           {dataState.leads.map((lead) => (
@@ -111,13 +114,34 @@ useEffect(() => {
             />
           ))}
 
-
           {(dataState.leads.length === 0 && !dataState.loading) && (
             <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
               No leads found.
             </div>
           )}
-        </div>
+        </div> )}
+
+        {(headerState.activeTab === 'all') && (
+          <div>
+  <LeadListHeader />
+  {dataState.leads.map(lead => (
+    <LeadItemCompact 
+      key={lead.id}
+      lead={lead}
+      setterMap={dataState.setterMap}
+      closerMap={dataState.closerMap}
+    />
+  ))}
+</div>
+
+
+
+
+
+        )}
+
+
+
       </div>
     </div>
   );

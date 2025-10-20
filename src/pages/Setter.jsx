@@ -1,4 +1,4 @@
-import LeadItem from './components/LeadItem';
+import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   import { useState, useEffect } from 'react';
   import { useParams, useNavigate } from 'react-router-dom';
   import { fetchAll } from '../utils/fetchLeads';
@@ -22,7 +22,8 @@ import LeadItem from './components/LeadItem';
         confirmed: false,
         cancelled: false,
         noShow: false
-      }
+      },
+      currentSetter: setter
     });
 
     const [dataState, setDataState] = useState({
