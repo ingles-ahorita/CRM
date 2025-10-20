@@ -40,7 +40,7 @@ const updateHeaderState = (updates) => {
         onClick={logout}
         style={{
           position: 'fixed',
-          bottom: '24px',
+          top: '24px',
           right: '24px',
           display: 'flex',
           alignItems: 'center',
@@ -67,7 +67,6 @@ const updateHeaderState = (updates) => {
         }}
       >
         <LogOut size={18} />
-        Logout
       </button> 
 
 
