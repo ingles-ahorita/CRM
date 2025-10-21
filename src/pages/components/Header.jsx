@@ -123,7 +123,7 @@ const updateHeaderState = (updates) => {
 
               {/* Date range - only when viewing all */}
   {activeTab === 'all' && (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap', marginLeft: 'auto', marginRight: '2vh' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0', flexWrap: 'wrap', marginLeft: 'auto', marginRight: '2vh', transform: 'translateY(-10px)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <label style={{ fontSize: '12px', color: '#6b7280' }}>Start</label>
         <input
