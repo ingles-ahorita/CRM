@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabaseClient';
 import {Modal, NotesModal, ViewNotesModal} from './Modal';
+import { TransferSetterModal } from './TransferSetterModal';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Mail, Phone, User, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -16,6 +17,7 @@ const formatStatusValue = (value) => {
 
  function callTimeColor(time, isRescheduled, called){
   if(isRescheduled && !called) return '#dd86ddff';
+  if(!called) return '#cfcfcfff';
   if(time < 6) return '#88ff2dff';
   if(time < 15) return '#fdd329ff';
   if(time > 15) return '#ff8b8bff';
@@ -32,7 +34,6 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [modeState, setModeState] = useState(mode);
   const [noteButtonText, setNoteButtonText] = useState();
-  const [tempSetter, setTempSetter] = useState(setter);
   const { setter: currentSetter } = useParams();  
   const navigate = useNavigate();
 
@@ -267,26 +268,14 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
 
   
 
-      <Modal isOpen={isModalOpen} onClose={() => {setIsModalOpen(false); setTempSetter(setter);}}>
-        <span style={{ display: 'block', fontSize: '30px', marginBottom: '26px' }}>
-  Transfer <b>{lead.name}</b> to
-</span>
-        <SetterDropdown
-          value={tempSetter}
-          onChange={(value) => setTempSetter(value)}
-          label="Setter"
-          options={setterOptions}
-        />
-
-        <button onClick={() => {
-          console.log('Transferring to setter ID:', tempSetter);
-          updateStatus(lead.id, 'setter_id', tempSetter, setSetter);
-          lead.setter_id = tempSetter; // Update the local lead object
-          setIsModalOpen(false);
-          }} style={{ marginTop: '16px', padding: '8px 16px', backgroundColor: '#001749ff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-          Transfer
-        </button>
-      </Modal>
+      <TransferSetterModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        lead={lead}
+        setterOptions={setterOptions}
+        currentSetter={currentSetter}
+        onTransfer={(newSetterId) => setSetter(newSetterId)}
+      />
 
 
       <NotesModal isOpen={showNoteModal} onClose={() => setShowNoteModal(false)} lead={lead} callId={lead.id} mode={modeState} />
@@ -416,36 +405,6 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
   };
 
 
-  const SetterDropdown = ({ value, onChange, label, options }) => {
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-      <label style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500' }}>
-        {label}
-      </label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-        padding: '4px 8px',
-        borderRadius: '4px',
-        fontSize: '12px',
-        fontWeight: '500',
-        border: '1px solid #d1d5db',
-        backgroundColor: '#e8e8e8ff',
-        cursor: 'pointer',
-        color: '#000000',
-        outline: 'none'
-        }}
-      >
-        <option value="">Select setter</option>
-        {options.map(({ id, name }) => (
-        <option key={id} value={id}>{name}</option>
-        ))}
-      </select>
-      </div>
-    );
-  };
 
 
 const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
@@ -485,7 +444,7 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
     }}>
       <button 
         onClick={(e) => { 
-          e.stopPropagation(); 
+          e.stopPropagation();
           onEdit(); 
           setMenuOpen(false); 
         }}
@@ -500,8 +459,7 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
           fontWeight: '300',
           fontSize: '14px',
           outline: 'none'
-        }}
-      >
+        }}>
         Transfer
       </button>
       
@@ -603,13 +561,21 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
 
 export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
   const navigate = useNavigate();
-const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [setter, setSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+  const { setter: currentSetter } = useParams();
+
+  const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
+    id,
+    name,
+  }));
 
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '200px 150px 120px 120px 120px 100px 100px 80px',
+        gridTemplateColumns: '2fr 1.5fr 1.2fr 1.2fr 1.2fr 1fr 1fr 0.8fr 0.8fr',
         gap: '16px',
         alignItems: 'center',
         padding: '12px 16px',
@@ -734,12 +700,38 @@ const [viewModalOpen, setViewModalOpen] = useState(false);
     width: '80%'
   }}>  📝 Notes </button>
     </div>
+
+    <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+
+          {/*  Three dot menu */}
+
+                  <ThreeDotsMenu
+    onEdit={() => setIsModalOpen(true)}
+    onDelete={() => console.log('Delete')}
+    mode={'full'}
+  />
+
+  </div>
+
+
           <ViewNotesModal 
   isOpen={viewModalOpen} 
   onClose={() => setViewModalOpen(false)} 
   lead={lead}
   callId={lead.id}
 />
+
+<TransferSetterModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        lead={lead}
+        setterOptions={setterOptions}
+        currentSetter={currentSetter}
+        onTransfer={(newSetterId) => setSetter(newSetterId)}
+      />
+
+
+      
     </div>
   );
 }
@@ -779,7 +771,7 @@ export function LeadListHeader() {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '200px 150px 120px 120px 120px 100px 100px 80px',
+        gridTemplateColumns: '2fr 1.5fr 1.2fr 1.2fr 1.2fr 1fr 1fr 0.8fr 0.8fr',
         gap: '16px',
         padding: '12px 16px',
         backgroundColor: '#f3f4f6',
