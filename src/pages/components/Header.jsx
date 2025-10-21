@@ -85,7 +85,9 @@ const updateHeaderState = (updates) => {
                     updateHeaderState({ 
                       activeTab: tab, 
                       searchTerm: '', 
-                      showSearch: false 
+                      showSearch: false,
+                      startDate: '',
+                      endDate: ''
                     });
 
                     if(tab === 'tomorrow'){
