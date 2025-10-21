@@ -20,7 +20,8 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
         confirmed: false,
         cancelled: false,
         noShow: false
-      }
+      },
+      currentCloser: closer
     });
 
         const [dataState, setDataState] = useState({

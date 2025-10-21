@@ -6,7 +6,7 @@ import { runAnalysis } from '../pages/reactionTime';
 
 
 
-export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'desc', setDataState, closerId, setterId, filters, leadId)  {
+export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'desc', setDataState, closerId, setterId, filters, leadId, startDate, endDate)  {
 
 
 
@@ -56,8 +56,19 @@ let query = supabase
         .gte(sortField, tomorrow.toISOString())
         .lt(sortField, dayAfterTomorrow.toISOString());
     }
-
-   
+  } else {
+    // When viewing 'all', optionally filter by provided date range
+    // Use the chosen sortField (book_date or call_date) as the date column
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      query = query.gte(sortField, start.toISOString());
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query = query.lte(sortField, end.toISOString());
+    }
   }
 
   if(leadId){

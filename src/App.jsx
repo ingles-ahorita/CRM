@@ -7,6 +7,7 @@ import EmailLogin from './pages/EmailLogin'; // ← Add this
 import ProtectedRoute from './pages/components/ProtectedRoute';
 import FortnightDashboard from './pages/setterStats';
 import StatsDashboard from './pages/generalStats';
+import CloserStatsDashboard from './pages/closerStats';
 import './App.css';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/closer/:closer" element={<Closer />} />
       <Route path="/setter/:setter" element={<Setter />} />
       <Route path="/stats/:setter" element={<FortnightDashboard/>} />
+      <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
     </Routes>
   );

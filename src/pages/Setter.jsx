@@ -18,6 +18,8 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
       activeTab: 'today',
       sortBy: 'book_date',
       sortOrder: 'desc',
+      startDate: '',
+      endDate: '',
       filters: {
         confirmed: false,
         cancelled: false,
@@ -42,8 +44,9 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
       headerState.sortOrder,
       setDataState,
       null, setter
+      , undefined, headerState.startDate, headerState.endDate
     );
-  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder]);
+  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.startDate, headerState.endDate]);
 
 
 

@@ -3,6 +3,7 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
+import {useSearchParams} from 'react-router-dom';
 
 export default function LeadsPage() {
 
@@ -21,20 +22,46 @@ export default function LeadsPage() {
 
 
 
- const [headerState, setHeaderState] = useState({
+const [searchParams, setSearchParams] = useSearchParams();
+
+const [headerState, setHeaderState] = useState({
   showSearch: false,
-  searchTerm: '',
-  activeTab: 'today',
-  sortBy: 'book_date',
-  sortOrder: 'desc',
+  searchTerm: searchParams.get('search') || '',                    // Read from URL
+  activeTab: searchParams.get('tab') || 'today',                  // Read from URL
+  sortBy: searchParams.get('sortBy') || 'book_date',              // Read from URL
+  sortOrder: searchParams.get('sortOrder') || 'desc',             // Read from URL
+  startDate: searchParams.get('start') || '',
+  endDate: searchParams.get('end') || '',
   filters: {
-    confirmed: false,
-    cancelled: false,
-    noShow: false,
-    noPickUp: false,
-    rescheduled: false
+    confirmed: searchParams.get('confirmed') === 'true',          // Read from URL
+    cancelled: searchParams.get('cancelled') === 'true',          // Read from URL
+    noShow: searchParams.get('noShow') === 'true',                // Read from URL
+    noPickUp: searchParams.get('noPickUp') === 'true',            // Read from URL
+    rescheduled: searchParams.get('rescheduled') === 'true'       // Read from URL
   }
 });
+
+
+useEffect(() => {
+  console.log('Updating URL with headerState:', headerState);
+  const params = new URLSearchParams();
+  
+  if (headerState.searchTerm) params.set('search', headerState.searchTerm);
+  if (headerState.activeTab !== 'today') params.set('tab', headerState.activeTab);
+  if (headerState.sortBy !== 'book_date') params.set('sortBy', headerState.sortBy);
+  if (headerState.sortOrder !== 'desc') params.set('sortOrder', headerState.sortOrder);
+  if (headerState.startDate) params.set('start', headerState.startDate);
+  if (headerState.endDate) params.set('end', headerState.endDate);
+  
+  // Add filters
+  Object.entries(headerState.filters).forEach(([key, value]) => {
+    if (value) params.set(key, 'true');
+  });
+  
+  setSearchParams(params);
+}, [headerState, setSearchParams]); // Only runs when headerState changes
+
+
 
 
 
@@ -46,9 +73,12 @@ useEffect(() => {
     headerState.sortOrder,
     setDataState,
     null, null,
-    headerState.filters
+    headerState.filters,
+    undefined,
+    headerState.startDate,
+    headerState.endDate
   );
-}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters]);
+}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate]);
 
 
 

@@ -80,8 +80,12 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
       <div style={{ display: 'flex', alignItems: 'center', gap: '35px', justifyContent: 'left', flexWrap: 'nowrap', overflow: 'hidden', flex: '1 1' }}>
         <div style={{ flex: '1 1 200px', overflow: 'hidden', alignItems: 'top', justifyContent: 'left' }}>
           <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px', textAlign: 'left' }}>
-            <a
-              onClick={() => navigate(`/lead/${lead.lead_id}`)}
+            <a href={`/lead/${lead.lead_id}`} 
+              onClick={(e) => {
+                if (!e.metaKey && !e.ctrlKey) {  // ← Only prevent default for regular clicks
+                  e.preventDefault();
+                  navigate(`/lead/${lead.lead_id}`);
+                }}}
               style={{ cursor: 'pointer', color: '#323232ff', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             >
               {lead.name || 'No name'} {(lead.is_reschedule) && <div style={{
@@ -589,8 +593,13 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
     >
       {/* Name & Contact */}
       <div style={{ overflow: 'hidden' }}>
-        <div
-          onClick={() => navigate(`/lead/${lead.lead_id}`)}
+      <a
+  href={`/lead/${lead.lead_id}`} target="_blank" 
+  onClick={(e) => {
+    if (!e.metaKey && !e.ctrlKey) {  // ← Only prevent default for regular clicks
+      e.preventDefault();
+      navigate(`/lead/${lead.lead_id}`);
+    }}}
           style={{
             fontWeight: '600',
             color: '#111827',
@@ -612,7 +621,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
               Rescheduled
             </span>
           )}
-        </div>
+        </a>
         <div style={{
           fontSize: '12px',
           color: '#6b7280',

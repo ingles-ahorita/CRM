@@ -32,7 +32,7 @@ const updateHeaderState = (updates) => {
 
 
 
-    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters } = state;
+    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters, startDate, endDate } = state;
     return (
         <div style={{ marginBottom: '24px' }}>
 
@@ -75,7 +75,7 @@ const updateHeaderState = (updates) => {
             display: 'flex', 
             gap: '4px', 
             marginBottom: '16px',
-            borderBottom: '2px solid #e5e7eb'
+            borderBottom: '2px solid #e5e7eb',
           }}>
             {['yesterday', 'today', 'tomorrow', 'all'].filter(tab => !(mode==='setter' && tab === 'tomorrow'))
             .map(tab => (
@@ -120,7 +120,44 @@ const updateHeaderState = (updates) => {
                 {tab}
               </button>
             ))}
+
+              {/* Date range - only when viewing all */}
+  {activeTab === 'all' && (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap', marginLeft: 'auto', marginRight: '2vh' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <label style={{ fontSize: '12px', color: '#6b7280' }}>Start</label>
+        <input
+          type="date"
+          value={startDate || ''}
+          onChange={(e) => updateHeaderState({ startDate: e.target.value })}
+          style={{
+            padding: '6px 8px',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            fontSize: '13px',
+            outline: 'none'
+          }}
+        />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <label style={{ fontSize: '12px', color: '#6b7280' }}>End</label>
+        <input
+          type="date"
+          value={endDate || ''}
+          onChange={(e) => updateHeaderState({ endDate: e.target.value })}
+          style={{
+            padding: '6px 8px',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            fontSize: '13px',
+            outline: 'none'
+          }}
+        />
+      </div>
+    </div>
+  )}
           </div>
+
 
 
 
@@ -310,7 +347,7 @@ const updateHeaderState = (updates) => {
   {/* Analytics Button */}
   <button
     style={{
-        display: (mode === 'full' || mode === 'setter') ? 'flex' : 'none',
+        display: 'flex',
       backgroundColor: '#e5e7eb',
       color: '#111827',
       border: '1px solid #d1d5db',
@@ -322,7 +359,7 @@ const updateHeaderState = (updates) => {
     }}
     onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#d1d5db')}
     onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
-    onClick={() => navigate(mode === 'full' ? '/metrics' : `/stats/${state.currentSetter}`)}
+    onClick={() => navigate(mode === 'full' ? '/metrics' : mode === 'setter' ? `/stats/${state.currentSetter}` : `/closer-stats/${state.currentCloser}`)}
   >
     <ChartSpline size={18} />
   </button>
