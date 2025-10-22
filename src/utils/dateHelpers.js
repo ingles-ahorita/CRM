@@ -22,7 +22,8 @@ export function formatTimeAgo(dateString) {
 
 export function formatTimeWithRelative(dateString, timezone) {
   if (!dateString) return '-';
-  if(!timezone) timezone = 'Europe/Madrid';
+  // If no timezone is given, use user's local timezone
+  if (!timezone) timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const date = new Date(dateString);
   const timeStr = date.toLocaleString('en-US', {
     year: 'numeric',
