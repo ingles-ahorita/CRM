@@ -1,36 +1,75 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { getCountryFromPhone } from '../utils/phoneNumberParser';
 
 // Mock function - replace with your actual Supabase fetch
 async function fetchStatsData(startDate, endDate) {
-  const { data: calls, error } = await supabase
+  // Fetch 1: Get calls booked in the date range for main metrics
+  const { data: bookedCalls, error: bookedError } = await supabase
     .from('calls')
     .select(`
       picked_up,
       showed_up,
       confirmed,
       purchased,
+      purchased_at,
       is_reschedule,
       lead_id,
-      closers (id, name)
+      phone,
+      book_date,
+      closers (id, name),
+      leads (phone)
     `)
     .gte('book_date', startDate)
     .lte('book_date', endDate);
 
-  if (error) {
-    console.error('Error:', error);
+  if (bookedError) {
+    console.error('Error fetching booked calls:', bookedError);
     return null;
   }
 
-   const rescheduledLeadIds = new Set(
-  calls.filter(c => c.is_reschedule === true).map(c => c.lead_id)
-);
+  // Fetch 2: Get all calls with purchases in the date range for country analysis
+  const startDateObj = new Date(startDate);
+  const endDateObj = new Date(endDate);
+  endDateObj.setHours(23, 59, 59, 999);
 
-const filteredCalls = calls.filter(call => {
-  const keep = call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id);
-  return keep;
-});
+  const { data: purchasedCalls, error: purchasedError } = await supabase
+    .from('calls')
+    .select(`
+      picked_up,
+      showed_up,
+      confirmed,
+      purchased,
+      purchased_at,
+      is_reschedule,
+      lead_id,
+      phone,
+      book_date,
+      closers (id, name),
+      leads (phone)
+    `)
+    .eq('purchased', true)
+    .gte('purchased_at', startDateObj.toISOString())
+    .lte('purchased_at', endDateObj.toISOString());
+
+  if (purchasedError) {
+    console.error('Error fetching purchased calls:', purchasedError);
+    return null;
+  }
+
+  // Use booked calls for main analysis
+  const calls = bookedCalls;
+
+  // Filter out rescheduled leads
+  const rescheduledLeadIds = new Set(
+    calls.filter(c => c.is_reschedule === true).map(c => c.lead_id)
+  );
+
+  const filteredCalls = calls.filter(call => {
+    const keep = call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id);
+    return keep;
+  });
 
 
 // Calculate totals
@@ -38,7 +77,9 @@ const totalBooked = filteredCalls.length;
 const totalPickedUp = filteredCalls.filter(c => c.picked_up === true).length;
 const totalShowedUp = filteredCalls.filter(c => c.showed_up === true).length;
 const totalConfirmed = filteredCalls.filter(c => c.confirmed === true).length;
-const totalPurchased = filteredCalls.filter(c => c.purchased === true).length;
+
+// Use purchased calls count for total purchases (already filtered by date)
+const totalPurchased = purchasedCalls.length;
   // Group by closer
   const closerStats = {};
   filteredCalls.forEach(call => {
@@ -53,9 +94,84 @@ const totalPurchased = filteredCalls.filter(c => c.purchased === true).length;
         };
       }
       if (call.showed_up) closerStats[closerId].showedUp++;
-      if (call.purchased) closerStats[closerId].purchased++;
     }
   });
+
+  // Add purchases from purchased calls
+  purchasedCalls.forEach(call => {
+    if (call.closers) {
+      const closerId = call.closers.id;
+      if (closerStats[closerId]) {
+        closerStats[closerId].purchased++;
+      }
+    }
+  });
+
+  // Group by country - use booked calls for activity metrics, purchased calls for sales
+  const countryStats = {};
+  console.log('Booked calls for country analysis:', calls.length);
+  console.log('Purchased calls for country analysis:', purchasedCalls.length);
+  
+  // Process booked calls for activity metrics (booked, picked up, showed up, confirmed)
+  calls.forEach(call => {
+    const phoneNumber = call.phone;
+    const country = getCountryFromPhone(phoneNumber);
+    
+    if (!countryStats[country]) {
+      countryStats[country] = {
+        country: country,
+        totalBooked: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    
+    // Count activity from booked calls
+    countryStats[country].totalBooked++;
+    if (call.picked_up) countryStats[country].totalPickedUp++;
+    if (call.showed_up) countryStats[country].totalShowedUp++;
+    if (call.confirmed) countryStats[country].totalConfirmed++;
+  });
+
+  // Process purchased calls for sales metrics
+  purchasedCalls.forEach(call => {
+    const phoneNumber = call.phone;
+    const country = getCountryFromPhone(phoneNumber);
+    
+    if (!countryStats[country]) {
+      countryStats[country] = {
+        country: country,
+        totalBooked: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    
+    // Count purchases (these are already filtered by date at database level)
+    countryStats[country].totalPurchased++;
+  });
+
+  // Calculate rates for each country
+  Object.values(countryStats).forEach(country => {
+    country.pickUpRate = country.totalBooked > 0 ? (country.totalPickedUp / country.totalBooked) * 100 : 0;
+    country.showUpRate = country.totalBooked > 0 ? (country.totalShowedUp / country.totalBooked) * 100 : 0;
+    country.conversionRate = country.totalShowedUp > 0 ? (country.totalPurchased / country.totalShowedUp) * 100 : 0;
+  });
+
+  // Sort countries by total purchased (sales)
+  const sortedCountries = Object.values(countryStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
+  
+  console.log('Country statistics:', sortedCountries);
 
   return {
     totalBooked,
@@ -64,7 +180,8 @@ const totalPurchased = filteredCalls.filter(c => c.purchased === true).length;
     totalConfirmed,
     totalPurchased,
     totalRescheduled: calls.filter(c => c.is_reschedule).length,
-    closers: Object.values(closerStats)
+    closers: Object.values(closerStats),
+    countries: sortedCountries
   };
 }
 
@@ -368,6 +485,85 @@ const goToCurrentWeek = () => {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Country Sales Table */}
+          <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900">Sales by Country</h3>
+              <p className="mt-1 text-sm text-gray-500">Performance metrics grouped by phone number country</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Country
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total Booked
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Pick Up Rate
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Show Up Rate
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Sales
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Conversion Rate
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {stats.countries.map((country, index) => (
+                    <tr key={country.country} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="text-sm font-medium text-gray-900">
+                            {country.country}
+                          </div>
+                          {index < 3 && (
+                            <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                              index === 1 ? 'bg-gray-100 text-gray-800' :
+                              'bg-orange-100 text-orange-800'
+                            }`}>
+                              #{index + 1}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.totalBooked}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.pickUpRate.toFixed(1)}%</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.showUpRate.toFixed(1)}%</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-semibold text-green-600">{country.totalPurchased}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="inline-flex items-center">
+                          <span className={`text-lg font-bold ${
+                            country.conversionRate >= 70 ? 'text-green-600' :
+                            country.conversionRate >= 50 ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {country.conversionRate.toFixed(1)}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

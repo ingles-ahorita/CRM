@@ -16,6 +16,9 @@ export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book
 
 updateDataState({ loading: true });
 
+if (filters.purchased) {
+  sortField = 'purchased_at';
+}
   
   // Fetch leads
 let query = supabase
@@ -191,6 +194,9 @@ function applyStatusFilters(query, filters) {
 
   if (filters.rescheduled) {
     query = query.eq('is_reschedule', true); // Adjust column name to match your DB
+  }
+  if (filters.purchased) {
+    query = query.eq('purchased', true);
   }
 
   return query;

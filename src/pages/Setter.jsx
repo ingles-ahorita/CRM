@@ -3,15 +3,76 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   import { useParams, useNavigate } from 'react-router-dom';
   import { fetchAll } from '../utils/fetchLeads';
   import Header from './components/Header';
-  import { EndShiftModal } from './components/EndShiftModal';
+import { EndShiftModal } from './components/EndShiftModal';
+import { StartShiftModal } from './components/StartShiftModal';
+import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
+import { supabase } from '../lib/supabaseClient';
   
   import { useSimpleAuth } from '../useSimpleAuth';
 
   export default function Setter() {
-      const { email, userName, logout } = useSimpleAuth();
 
-        const { setter } = useParams()
-        const navigate = useNavigate();   // 👈 this is the “best way” to get it
+    const { email, userName, logout } = useSimpleAuth();
+
+    const { setter } = useParams()
+    const navigate = useNavigate(); 
+
+    const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
+  const [isStartShiftModalOpen, setIsStartShiftModalOpen] = useState(false);
+  const [currentShift, setCurrentShift] = useState(null);
+  const [isShiftActive, setIsShiftActive] = useState(false);
+
+  // Check for active shift on component mount
+  useEffect(() => {
+    checkActiveShift();
+  }, []);
+
+  // Update headerState when isShiftActive changes
+  useEffect(() => {
+    setHeaderState(prevState => ({
+      ...prevState,
+      isShiftActive: isShiftActive
+    }));
+  }, [isShiftActive]);
+
+  const checkActiveShift = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('setter_shifts')
+        .select('*')
+        .eq('setter_id', setter)
+        .eq('status', 'open')
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data && !error) {
+        setCurrentShift(data);
+        setIsShiftActive(true);
+      } else {
+        setCurrentShift(null);
+        setIsShiftActive(false);
+      }
+    } catch (err) {
+      console.error('Error checking active shift:', err);
+    }
+  };
+
+  const handleStartShift = (shiftData) => {
+    setCurrentShift(shiftData);
+    setIsShiftActive(true);
+    setIsStartShiftModalOpen(false);
+  };
+
+  const handleEndShift = () => {
+    setIsEndShiftModalOpen(true);
+  };
+
+  const handleShiftEnded = () => {
+    setCurrentShift(null);
+    setIsShiftActive(false);
+    setIsEndShiftModalOpen(false);
+  };  // 👈 this is the “best way” to get it
 
      const [headerState, setHeaderState] = useState({
       showSearch: false,
@@ -30,7 +91,9 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
         transferred: false
       },
       currentSetter: setter,
-      onEndShift: () => setIsEndShiftModalOpen(true)
+      onEndShift: handleEndShift,
+    onStartShift: () => setIsStartShiftModalOpen(true),
+    isShiftActive: isShiftActive
     });
 
     const [dataState, setDataState] = useState({
@@ -40,7 +103,10 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   closerMap: {}
 });
 
-  const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
+  
+
+  // Enable real-time updates for this setter
+  useRealtimeLeads(dataState, setDataState, headerState.activeTab, setter, null);
     
 
   useEffect(() => {
@@ -79,7 +145,7 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
             {dataState.leads.map((lead) => (
-              <LeadItem key={lead.id} lead={lead} closerMap = {dataState.closerMap} setterMap={dataState.setterMap} mode="setter"/>
+              <LeadItem key={lead.id} lead={lead} closerMap = {dataState.closerMap} setterMap={dataState.setterMap} mode="setter" currentUserId={setter}/>
             ))}
 
             {(dataState.leads.length === 0 && !dataState.loading) && (
@@ -90,6 +156,16 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
           </div>
         </div>
 
+        {/* Start Shift Modal */}
+        <StartShiftModal
+          isOpen={isStartShiftModalOpen}
+          onClose={() => setIsStartShiftModalOpen(false)}
+          userId={setter}
+          userName={userName}
+          onShiftStarted={handleStartShift}
+          mode="setter"
+        />
+
         {/* End Shift Modal */}
         <EndShiftModal
           isOpen={isEndShiftModalOpen}
@@ -98,6 +174,8 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
           userId={setter}
           setterMap={dataState.setterMap}
           closerMap={dataState.closerMap}
+          currentShiftId={currentShift?.id}
+          onShiftEnded={handleShiftEnded}
         />
       </div>
     );

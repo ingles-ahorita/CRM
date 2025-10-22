@@ -4,10 +4,16 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   import { useParams, useNavigate } from 'react-router-dom';
   import Header from './components/Header';
   import { fetchAll } from '../utils/fetchLeads';
+import { EndShiftModal } from './components/EndShiftModal';
+import { StartShiftModal } from './components/StartShiftModal';
+import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
+import { supabase } from '../lib/supabaseClient';
+import { useSimpleAuth } from '../useSimpleAuth';
 
   export default function Closer() {
+    const { email, userName, logout } = useSimpleAuth();
 
-    const { closer } = useParams();   // 👈 this is the “best way” to get it
+    const { closer } = useParams();   // 👈 this is the "best way" to get it
     const navigate = useNavigate();
 
      const [headerState, setHeaderState] = useState({
@@ -22,7 +28,10 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
         noShow: false,
         transferred: false
       },
-      currentCloser: closer
+      currentCloser: closer,
+      onEndShift: handleEndShift,
+      onStartShift: () => setIsStartShiftModalOpen(true),
+      isShiftActive: isShiftActive
     });
 
         const [dataState, setDataState] = useState({
@@ -31,6 +40,58 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   setterMap: {},
   closerMap: {}
 });
+
+  const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
+  const [isStartShiftModalOpen, setIsStartShiftModalOpen] = useState(false);
+  const [currentShift, setCurrentShift] = useState(null);
+  const [isShiftActive, setIsShiftActive] = useState(false);
+
+  // Check for active shift on component mount
+  useEffect(() => {
+    checkActiveShift();
+  }, []);
+
+  const checkActiveShift = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('setter_shifts')
+        .select('*')
+        .eq('closer_id', closer)
+        .eq('status', 'open')
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data && !error) {
+        setCurrentShift(data);
+        setIsShiftActive(true);
+      } else {
+        setCurrentShift(null);
+        setIsShiftActive(false);
+      }
+    } catch (err) {
+      console.error('Error checking active shift:', err);
+    }
+  };
+
+  const handleStartShift = (shiftData) => {
+    setCurrentShift(shiftData);
+    setIsShiftActive(true);
+    setIsStartShiftModalOpen(false);
+  };
+
+  const handleEndShift = () => {
+    setIsEndShiftModalOpen(true);
+  };
+
+  const handleShiftEnded = () => {
+    setCurrentShift(null);
+    setIsShiftActive(false);
+    setIsEndShiftModalOpen(false);
+  };
+
+  // Enable real-time updates for this closer
+  useRealtimeLeads(dataState, setDataState, headerState.activeTab, null, closer);
 
     
 
@@ -67,18 +128,64 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
         <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
       </div>}
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
-            {dataState.leads.map((lead) => (
-              <LeadItem key={lead.id} lead={lead} setterMap={dataState.setterMap} mode='closer'/>
-            ))}
+      {(headerState.activeTab !== 'all') && (
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
+          {dataState.leads.map((lead) => (
+            <LeadItem
+              key={lead.id}
+              lead={lead}
+              setterMap={dataState.setterMap}
+              closerMap={dataState.closerMap}
+              mode='full'
+              currentUserId={userId}
+            />
+          ))}
 
-            {(dataState.leads.length === 0 && !dataState.loading) && (
+          {(dataState.leads.length === 0 && !dataState.loading) && (
             <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
               No leads found.
             </div>
           )}
-          </div>
+        </div> )}
+
+        {(headerState.activeTab === 'all') && (
+          <div>
+  <LeadListHeader />
+  {dataState.leads.map(lead => (
+    <LeadItemCompact 
+      key={lead.id}
+      lead={lead}
+      setterMap={dataState.setterMap}
+      closerMap={dataState.closerMap}
+    />
+  ))}
+</div>
+
+          )}
         </div>
+
+        {/* Start Shift Modal */}
+        <StartShiftModal
+          isOpen={isStartShiftModalOpen}
+          onClose={() => setIsStartShiftModalOpen(false)}
+          userId={closer}
+          userName={userName}
+          onShiftStarted={handleStartShift}
+          mode="closer"
+        />
+
+        {/* End Shift Modal */}
+        <EndShiftModal
+          isOpen={isEndShiftModalOpen}
+          onClose={() => setIsEndShiftModalOpen(false)}
+          mode="closer"
+          userId={closer}
+          setterMap={dataState.setterMap}
+          closerMap={dataState.closerMap}
+          currentShiftId={currentShift?.id}
+          onShiftEnded={handleShiftEnded}
+        />
       </div>
     );
 }

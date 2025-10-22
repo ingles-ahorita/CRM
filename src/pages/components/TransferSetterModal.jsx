@@ -36,58 +36,90 @@ const SetterDropdown = ({ value, onChange, label, options }) => {
   );
 };
 
-const updateStatus = async (id, field, value, setterF, mcID) => {
-  console.log('Updating', field, 'to', value, 'for lead ID:', id);
-  setterF(value); // Update local state immediately for responsiveness
+const transferLead = async (callId, newSetterId, currentSetterId, transferNote, transferredBy, mcID) => {
+  console.log('Transferring lead', callId, 'to setter', newSetterId);
 
-  let formattedValue = value;
+  // Create transfer log entry first
+  const { error: logError } = await supabase
+    .from('transfer_log')
+    .insert({
+      call_id: callId,
+      from_setter_id: currentSetterId,
+      to_setter_id: newSetterId,
+      transferred_by: transferredBy,
+      note: transferNote,
+      created_at: new Date().toISOString()
+    });
 
-  if (['picked_up', 'confirmed', 'showed_up', 'purchased'].includes(field)) {
-    if (value === 'true' || value === true) {
-      formattedValue = true;
-    } else if (value === 'false' || value === false) {
-      formattedValue = false;
-    } else if (value === 'null' || value === null || value === '') {
-      formattedValue = null;
-    }
-  } else if (field === 'setter_id') {
-    formattedValue = value ? value : null;
+  if (logError) {
+    console.error('Error creating transfer log:', logError);
+    return false;
   }
 
-  const { error } = await supabase.from('calls').update({ [field]: formattedValue }).eq('id', id);
-if(mcID) {
-  const { error: mcError } = await ManychatService.updateManychatField(mcID, field, formattedValue);
-  if (mcError) {
-    console.error('Error updating manychat field:', mcError);
-    return;
+  // Update the call's setter_id
+  const { error: callError } = await supabase
+    .from('calls')
+    .update({ setter_id: newSetterId })
+    .eq('id', callId);
+
+  if (callError) {
+    console.error('Error updating call setter:', callError);
+    return false;
   }
-}
-  if (error) {
-    console.error('Error updating lead:', error);
-    return;
-  }
+
+  // Update Manychat if available
+//   if (mcID) {
+//     const { error: mcError } = await ManychatService.updateManychatField(mcID, 'setter_id', newSetterId);
+//     if (mcError) {
+//       console.error('Error updating manychat field:', mcError);
+//       // Don't return false here, the main transfer still succeeded
+//     }
+//   }
+
+  return true;
 };
 
 export function TransferSetterModal({ 
   isOpen, 
   onClose, 
   lead, 
-  setterOptions, 
-  currentSetter, 
-  onTransfer 
+  setterOptions,  
+  onTransfer,
+  currentUserId = null
 }) {
   const [tempSetter, setTempSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+  const [transferNote, setTransferNote] = useState('');
 
-  const handleTransfer = () => {
+  const handleTransfer = async () => {
+    // Validate that transfer note is provided
+    if (!transferNote.trim()) {
+      alert('Transfer note is required. Please provide a reason for the transfer.');
+      return;
+    }
+
     console.log('Transferring to setter ID:', tempSetter);
-    updateStatus(lead.id, 'setter_id', tempSetter, () => {}, lead.manychat_user_id);
-    lead.setter_id = tempSetter; // Update the local lead object
-    onTransfer(tempSetter); // Call the parent's transfer handler
-    onClose();
+    
+    const success = await transferLead(
+      lead.id,
+      tempSetter,
+      lead.setter_id,
+      transferNote,
+      currentUserId,
+      lead.manychat_user_id
+    );
+
+    if (success) {
+      lead.setter_id = tempSetter; // Update the local lead object
+      onTransfer(tempSetter); // Call the parent's transfer handler
+      onClose();
+    } else {
+      alert('Failed to transfer lead. Please try again.');
+    }
   };
 
   const handleClose = () => {
     setTempSetter(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+    setTransferNote('');
     onClose();
   };
 
@@ -103,16 +135,73 @@ export function TransferSetterModal({
         options={setterOptions}
       />
 
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '16px' }}>
+        <label style={{ fontSize: '10px', color: '#6b7280', fontWeight: '500' }}>
+          Transfer Note (required)
+        </label>
+        <textarea
+          value={transferNote}
+          onChange={(e) => setTransferNote(e.target.value)}
+          placeholder="Add a note about why you're transferring this lead..."
+          required
+          style={{
+            width: '100%',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            border: transferNote.trim() ? '1.5px solid rgb(133, 133, 133)' : '1.5px solid #ef4444',
+            backgroundColor: transferNote.trim() ? '#fafaff' : '#fef2f2',
+            color: '#343353',
+            outline: 'none',
+            boxShadow: transferNote.trim() ? '0 2px 8px rgba(168,139,250,0.08)' : '0 2px 8px rgba(239,68,68,0.15)',
+            transition: 'border-color 0.2s, box-shadow 0.2s, background-color 0.2s',
+            resize: 'vertical',
+            minHeight: '60px',
+            fontFamily: 'inherit'
+          }}
+          onFocus={(e) => {
+            e.target.style.borderColor = '#a855f7';
+            e.target.style.boxShadow = '0 2px 8px rgba(168,139,250,0.15)';
+            e.target.style.backgroundColor = '#fafaff';
+          }}
+          onBlur={(e) => {
+            if (transferNote.trim()) {
+              e.target.style.borderColor = 'rgb(133, 133, 133)';
+              e.target.style.boxShadow = '0 2px 8px rgba(168,139,250,0.08)';
+              e.target.style.backgroundColor = '#fafaff';
+            } else {
+              e.target.style.borderColor = '#ef4444';
+              e.target.style.boxShadow = '0 2px 8px rgba(239,68,68,0.15)';
+              e.target.style.backgroundColor = '#fef2f2';
+            }
+          }}
+        />
+        {!transferNote.trim() && (
+          <div style={{ 
+            fontSize: '12px', 
+            color: '#ef4444', 
+            marginTop: '4px',
+            fontWeight: '500'
+          }}>
+            * Transfer note is required
+          </div>
+        )}
+      </div>
+
       <button 
         onClick={handleTransfer} 
+        disabled={!transferNote.trim()}
         style={{ 
           marginTop: '16px', 
           padding: '8px 16px', 
-          backgroundColor: '#001749ff', 
+          backgroundColor: transferNote.trim() ? '#001749ff' : '#9ca3af', 
           color: 'white', 
           border: 'none', 
           borderRadius: '4px', 
-          cursor: 'pointer' 
+          cursor: transferNote.trim() ? 'pointer' : 'not-allowed',
+          opacity: transferNote.trim() ? 1 : 0.6,
+          transition: 'all 0.2s'
         }}
       >
         Transfer

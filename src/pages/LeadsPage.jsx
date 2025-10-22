@@ -5,10 +5,10 @@ import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
 import {useSearchParams} from 'react-router-dom';
 import { EndShiftModal } from './components/EndShiftModal';
+import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
 
 export default function LeadsPage() {
-
-
+  const { userId } = useSimpleAuth();
 
       const [dataState, setDataState] = useState({
   leads: [],
@@ -19,7 +19,6 @@ export default function LeadsPage() {
 });
 
   const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
-
 
 
 
@@ -43,10 +42,14 @@ const [headerState, setHeaderState] = useState({
     noShow: searchParams.get('noShow') === 'true',                // Read from URL
     noPickUp: searchParams.get('noPickUp') === 'true',            // Read from URL
     rescheduled: searchParams.get('rescheduled') === 'true',      // Read from URL
-    transferred: searchParams.get('transferred') === 'true'        // Read from URL
+    transferred: searchParams.get('transferred') === 'true',      // Read from URL
+    purchased: searchParams.get('purchased') === 'true'            // Read from URL
   },
   onEndShift: () => setIsEndShiftModalOpen(true)
 });
+
+  // Enable real-time updates for admin view
+  useRealtimeLeads(dataState, setDataState, headerState.activeTab);
 
 
 useEffect(() => {
@@ -62,6 +65,7 @@ useEffect(() => {
   if (headerState.firstSetterFilter) params.set('firstSetter', headerState.firstSetterFilter);
   if (headerState.setterFilter) params.set('setter', headerState.setterFilter);
   if (headerState.transferred) params.set('transferred', headerState.transferred);
+  if (headerState.purchased) params.set('purchased', headerState.purchased);
   // Add filters
   Object.entries(headerState.filters).forEach(([key, value]) => {
     if (value) params.set(key, 'true');
@@ -89,7 +93,7 @@ useEffect(() => {
     headerState.firstSetterFilter,
     headerState.setterFilter
   );
-}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate, headerState.firstSetterFilter, headerState.setterFilter, headerState.transferred]);
+}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate, headerState.firstSetterFilter, headerState.setterFilter]);
 
 
 
@@ -152,6 +156,7 @@ useEffect(() => {
               setterMap={dataState.setterMap}
               closerMap={dataState.closerMap}
               mode='full'
+              currentUserId={userId}
             />
           ))}
 

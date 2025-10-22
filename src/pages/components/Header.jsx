@@ -1,4 +1,4 @@
-import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut, Clock } from 'lucide-react';
+import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut, Clock, Play } from 'lucide-react';
 import { act, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -338,6 +338,12 @@ const updateHeaderState = (updates) => {
     onClick={() => toggleFilter('transferred')}
   />
 
+<FilterButton
+    label="Purchased"
+    active={filters.purchased}
+    onClick={() => toggleFilter('purchased')}
+  />
+
 </div>)}
 
 {(mode === 'setter') && (
@@ -463,9 +469,9 @@ const updateHeaderState = (updates) => {
       display: 'flex',
       alignItems: 'center',
       gap: '6px',
-      backgroundColor: '#fef3c7',
-      color: '#92400e',
-      border: '1px solid #f59e0b',
+      backgroundColor: state.isShiftActive ? '#fef3c7' : '#dcfce7',
+      color: state.isShiftActive ? '#92400e' : '#166534',
+      border: state.isShiftActive ? '1px solid #f59e0b' : '1px solid #22c55e',
       borderRadius: '6px',
       padding: '8px 14px',
       cursor: 'pointer',
@@ -473,16 +479,22 @@ const updateHeaderState = (updates) => {
       transition: 'all 0.2s',
       fontSize: '13px'
     }}
-    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fde68a')}
-    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#fef3c7')}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.backgroundColor = state.isShiftActive ? '#fde68a' : '#bbf7d0';
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.backgroundColor = state.isShiftActive ? '#fef3c7' : '#dcfce7';
+    }}
     onClick={() => {
-      if (state.onEndShift) {
+      if (state.isShiftActive && state.onEndShift) {
         state.onEndShift();
+      } else if (!state.isShiftActive && state.onStartShift) {
+        state.onStartShift();
       }
     }}
   >
-    <Clock size={18} />
-    End Shift
+    {state.isShiftActive ? <Clock size={18} /> : <Play size={18} />}
+    {state.isShiftActive ? 'End Shift' : 'Start Shift'}
   </button>)}
 </div>
         </div>

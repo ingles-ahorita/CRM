@@ -261,7 +261,7 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
             </div>)}
 
               <span style={{backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called), color: '#343434ff', fontWeight: "600", borderRadius: '5px', padding: '1px 4px' }}> {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span>
-              {(new Date() - new Date(lead.book_date)) < (2 * 60 * 60 * 1000) && (
+              {(new Date() - new Date(lead.book_date)) < (2 * 60 * 60 * 1000) && (lead.confirmed === null) &&(
               <span style={{backgroundColor: "#24c5ffff", color: '#ffffffff', fontWeight: "600", borderRadius: '5px', padding: '1px 4px', overflow: 'hidden', whiteSpace: 'nowrap' }}> GRACE PERIOD (2H)</span>
               )}
             

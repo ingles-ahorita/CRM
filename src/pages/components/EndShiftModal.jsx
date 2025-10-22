@@ -3,15 +3,57 @@ import { Modal } from './Modal';
 import { supabase } from '../../lib/supabaseClient';
 import { Mail, Phone, User, Calendar, AlertTriangle } from 'lucide-react';
 
-export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, closerMap = {} }) {
+export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, closerMap = {}, currentShiftId = null, onShiftEnded }) {
   const [incompleteLeads, setIncompleteLeads] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [closingNote, setClosingNote] = useState('');
+  const [closingShift, setClosingShift] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       fetchIncompleteLeads();
     }
   }, [isOpen, mode, userId]);
+
+  const handleEndShift = async () => {
+    if (!closingNote.trim()) {
+      alert('Please provide a closing note before ending your shift.');
+      return;
+    }
+
+    if (!currentShiftId) {
+      alert('No active shift found. Please contact support.');
+      return;
+    }
+
+    setClosingShift(true);
+    try {
+      // Update the shift to closed status with closing note
+      const { error: updateError } = await supabase
+        .from('setter_shifts')
+        .update({
+          status: 'closed',
+          end_time: new Date().toISOString(),
+          closing_note: closingNote.trim()
+        })
+        .eq('id', currentShiftId);
+
+      if (updateError) {
+        console.error('Error closing shift:', updateError);
+        alert('Failed to close shift. Please try again.');
+        return;
+      }
+
+      console.log('Shift closed successfully');
+      onShiftEnded();
+      onClose();
+    } catch (err) {
+      console.error('Error closing shift:', err);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setClosingShift(false);
+    }
+  };
 
   const fetchIncompleteLeads = async () => {
     setLoading(true);
@@ -84,8 +126,8 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
-      <div style={{ minWidth: '600px', maxWidth: '800px' }}>
+    <Modal isOpen={isOpen} onClose={onClose} className="end-shift-modal">
+      <div>
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -130,7 +172,11 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
               </div>
             </div>
 
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+            <div style={{ 
+              flex: 1,
+              overflowY: 'auto',
+              minHeight: 0
+            }}>
               {incompleteLeads.map((lead, index) => {
                 const missingFields = getMissingFields(lead);
                 return (
@@ -138,12 +184,13 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
                     key={lead.id}
                     style={{
                       display: 'flex',
-                      alignItems: 'center',
+                      alignItems: 'flex-start',
                       justifyContent: 'space-between',
                       padding: '16px',
                       backgroundColor: index % 2 === 0 ? '#f9fafb' : 'white',
                       borderBottom: '1px solid #e5e7eb',
-                      transition: 'background-color 0.2s'
+                      transition: 'background-color 0.2s',
+                      gap: '12px'
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = index % 2 === 0 ? '#f9fafb' : 'white'}
@@ -158,38 +205,116 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
                         {lead.name || 'No name'}
                       </div>
                       
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#6b7280' }}>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '16px', 
+                        marginBottom: '8px',
+                        flexWrap: 'wrap'
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '4px', 
+                          fontSize: '12px', 
+                          color: '#6b7280',
+                          minWidth: 0,
+                          flex: '1 1 auto'
+                        }}>
                           <Mail size={12} />
-                          <span>{lead.email || 'No email'}</span>
+                          <span style={{ 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis', 
+                            whiteSpace: 'nowrap' 
+                          }}>
+                            {lead.email || 'No email'}
+                          </span>
                         </div>
                         
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#6b7280' }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '4px', 
+                          fontSize: '12px', 
+                          color: '#6b7280',
+                          minWidth: 0,
+                          flex: '1 1 auto'
+                        }}>
                           <Phone size={12} />
-                          <span>{lead.phone || 'No phone'}</span>
+                          <span style={{ 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis', 
+                            whiteSpace: 'nowrap' 
+                          }}>
+                            {lead.phone || 'No phone'}
+                          </span>
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '12px', color: '#6b7280' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '16px', 
+                        fontSize: '12px', 
+                        color: '#6b7280',
+                        flexWrap: 'wrap'
+                      }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          gap: '4px',
+                          minWidth: 0,
+                          flex: '1 1 auto'
+                        }}>
                           <Calendar size={12} />
-                          <span>Booked: {new Date(lead.book_date).toLocaleDateString()}</span>
+                          <span style={{ 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis', 
+                            whiteSpace: 'nowrap' 
+                          }}>
+                            Booked: {new Date(lead.book_date).toLocaleDateString()}
+                          </span>
                         </div>
                         
                         {lead.call_date && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '4px',
+                            minWidth: 0,
+                            flex: '1 1 auto'
+                          }}>
                             <Calendar size={12} />
-                            <span>Call: {new Date(lead.call_date).toLocaleDateString()}</span>
+                            <span style={{ 
+                              overflow: 'hidden', 
+                              textOverflow: 'ellipsis', 
+                              whiteSpace: 'nowrap' 
+                            }}>
+                              Call: {new Date(lead.call_date).toLocaleDateString()}
+                            </span>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                    <div style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'flex-end', 
+                      gap: '8px',
+                      minWidth: 0,
+                      flexShrink: 0
+                    }}>
                       <div style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>
                         Missing:
                       </div>
-                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: '6px', 
+                        flexWrap: 'wrap', 
+                        justifyContent: 'flex-end',
+                        maxWidth: '200px'
+                      }}>
                         {missingFields.map((field, idx) => (
                           <span
                             key={idx}
@@ -214,31 +339,97 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
           </>
         )}
 
+        {/* Closing Note Section */}
         <div style={{ 
-          display: 'flex', 
-          justifyContent: 'flex-end', 
-          gap: '12px', 
           marginTop: '24px',
           paddingTop: '16px',
           borderTop: '1px solid #e5e7eb'
         }}>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '8px', 
+            marginBottom: '16px' 
+          }}>
+            <label style={{ fontSize: '14px', color: '#374151', fontWeight: '500' }}>
+              Closing Note (Required)
+            </label>
+            <textarea
+              value={closingNote}
+              onChange={(e) => setClosingNote(e.target.value)}
+              placeholder="Please provide a summary of your shift, any issues encountered, or notes for the next shift..."
+              required
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '8px',
+                fontSize: '14px',
+                fontWeight: '500',
+                border: closingNote.trim() ? '1.5px solid #d1d5db' : '1.5px solid #ef4444',
+                backgroundColor: closingNote.trim() ? '#ffffff' : '#fef2f2',
+                color: '#374151',
+                outline: 'none',
+                boxShadow: closingNote.trim() ? '0 1px 3px rgba(0, 0, 0, 0.1)' : '0 1px 3px rgba(239, 68, 68, 0.2)',
+                transition: 'border-color 0.2s, box-shadow 0.2s, background-color 0.2s',
+                resize: 'vertical',
+                minHeight: '80px',
+                fontFamily: 'inherit'
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#3b82f6';
+                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                e.target.style.backgroundColor = '#ffffff';
+              }}
+              onBlur={(e) => {
+                if (closingNote.trim()) {
+                  e.target.style.borderColor = '#d1d5db';
+                  e.target.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+                  e.target.style.backgroundColor = '#ffffff';
+                } else {
+                  e.target.style.borderColor = '#ef4444';
+                  e.target.style.boxShadow = '0 1px 3px rgba(239, 68, 68, 0.2)';
+                  e.target.style.backgroundColor = '#fef2f2';
+                }
+              }}
+            />
+            {!closingNote.trim() && (
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#ef4444', 
+                fontWeight: '500'
+              }}>
+                * Closing note is required to end your shift
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'flex-end', 
+          gap: '12px', 
+          marginTop: '16px',
+          flexWrap: 'wrap'
+        }}>
           <button
             onClick={onClose}
+            disabled={closingShift}
             style={{
               padding: '10px 20px',
               backgroundColor: '#6b7280',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
-              cursor: 'pointer',
+              cursor: closingShift ? 'not-allowed' : 'pointer',
               fontSize: '14px',
-              fontWeight: '500'
+              fontWeight: '500',
+              opacity: closingShift ? 0.6 : 1
             }}
           >
-            Close
+            Cancel
           </button>
           
-          {incompleteLeads.length > 0 && (
+          {incompleteLeads.length > 0 ? (
             <button
               onClick={() => {
                 alert('Please complete all missing fields before ending your shift.');
@@ -255,6 +446,40 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
               }}
             >
               End Shift (Incomplete)
+            </button>
+          ) : (
+            <button
+              onClick={handleEndShift}
+              disabled={!closingNote.trim() || closingShift}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: (!closingNote.trim() || closingShift) ? '#9ca3af' : '#10b981',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: (!closingNote.trim() || closingShift) ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                fontWeight: '500',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              {closingShift ? (
+                <>
+                  <div style={{
+                    width: '16px',
+                    height: '16px',
+                    border: '2px solid #ffffff',
+                    borderTop: '2px solid transparent',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }} />
+                  Ending Shift...
+                </>
+              ) : (
+                'End Shift'
+              )}
             </button>
           )}
         </div>
