@@ -6,7 +6,11 @@ import { runAnalysis } from '../pages/reactionTime';
 
 
 
-export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'desc', setDataState, closerId, setterId, filters, leadId, startDate, endDate, firstSetterFilter, setterFilter)  {
+export async function fetchAll(searchTerm, activeTab = 'all' ,
+   sortField = 'book_date', order = 'desc', 
+   setDataState,
+    closerId, setterId, 
+    filters, leadId, startDate, endDate, firstSetterFilter, setterFilter)  {
 
 
 
@@ -16,7 +20,7 @@ export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book
 
 updateDataState({ loading: true });
 
-if (filters.purchased) {
+if (filters?.purchased) {
   sortField = 'purchased_at';
 }
   
