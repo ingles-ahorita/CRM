@@ -3,6 +3,7 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   import { useParams, useNavigate } from 'react-router-dom';
   import { fetchAll } from '../utils/fetchLeads';
   import Header from './components/Header';
+  import { EndShiftModal } from './components/EndShiftModal';
   
   import { useSimpleAuth } from '../useSimpleAuth';
 
@@ -20,12 +21,16 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
       sortOrder: 'desc',
       startDate: '',
       endDate: '',
+      firstSetterFilter: '',
+      setterFilter: '',
       filters: {
         confirmed: false,
         cancelled: false,
-        noShow: false
+        noShow: false,
+        transferred: false
       },
-      currentSetter: setter
+      currentSetter: setter,
+      onEndShift: () => setIsEndShiftModalOpen(true)
     });
 
     const [dataState, setDataState] = useState({
@@ -34,6 +39,8 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   setterMap: {},
   closerMap: {}
 });
+
+  const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
     
 
   useEffect(() => {
@@ -43,10 +50,10 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
       headerState.sortBy,
       headerState.sortOrder,
       setDataState,
-      null, setter
-      , undefined, headerState.startDate, headerState.endDate
+      null, setter,
+      headerState.filters
     );
-  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.startDate, headerState.endDate]);
+  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters]);
 
 
 
@@ -61,7 +68,7 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
           </div>
 
 <Header
-  state={headerState}
+  state={{...headerState, setterMap: dataState.setterMap}}
   setState={setHeaderState}
   mode='setter'
 />
@@ -82,6 +89,16 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
           )}
           </div>
         </div>
+
+        {/* End Shift Modal */}
+        <EndShiftModal
+          isOpen={isEndShiftModalOpen}
+          onClose={() => setIsEndShiftModalOpen(false)}
+          mode="setter"
+          userId={setter}
+          setterMap={dataState.setterMap}
+          closerMap={dataState.closerMap}
+        />
       </div>
     );
 }

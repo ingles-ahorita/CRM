@@ -6,7 +6,7 @@ import { runAnalysis } from '../pages/reactionTime';
 
 
 
-export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'desc', setDataState, closerId, setterId, filters, leadId, startDate, endDate)  {
+export async function fetchAll(searchTerm, activeTab = 'all' , sortField = 'book_date', order = 'desc', setDataState, closerId, setterId, filters, leadId, startDate, endDate, firstSetterFilter, setterFilter)  {
 
 
 
@@ -102,8 +102,19 @@ if (searchTerm) {
 
     if(filters){
       applyStatusFilters(query, filters)
-  
-}
+    }
+
+    // Apply setter filters when viewing 'all'
+    if (activeTab === 'all') {
+      if (firstSetterFilter) {
+        query = query.eq('first_setter_id', firstSetterFilter);
+        console.log("Filtering by first_setter_id:", firstSetterFilter);
+      }
+      if (setterFilter) {
+        query = query.eq('setter_id', setterFilter);
+        console.log("Filtering by setter_id:", setterFilter);
+      }
+    }
 
   // Only apply limit if no email filter and showing 'all'
   if (!searchTerm && activeTab === 'all') {
@@ -127,7 +138,11 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
 
   const callMap = await runAnalysis(leadsData);
 
-  const leadsWithCallTime = leadsData.map(lead => ({...lead, ...callMap[lead.id]}));
+  let leadsWithCallTime = leadsData.map(lead => ({...lead, ...callMap[lead.id]}));
+
+  if (filters?.transferred) {
+    leadsWithCallTime = leadsWithCallTime.filter(lead => lead.first_setter_id !== lead.setter_id);
+  }
 
     updateDataState({ leads: leadsWithCallTime || [], counts: counts});
   }

@@ -1,4 +1,4 @@
-import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut } from 'lucide-react';
+import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut, Clock } from 'lucide-react';
 import { act, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -32,7 +32,7 @@ const updateHeaderState = (updates) => {
 
 
 
-    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters, startDate, endDate } = state;
+    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters, startDate, endDate, firstSetterFilter, setterFilter } = state;
     return (
         <div style={{ marginBottom: '24px' }}>
 
@@ -87,7 +87,9 @@ const updateHeaderState = (updates) => {
                       searchTerm: '', 
                       showSearch: false,
                       startDate: '',
-                      endDate: ''
+                      endDate: '',
+                      firstSetterFilter: '',
+                      setterFilter: ''
                     });
 
                     if(tab === 'tomorrow'){
@@ -155,6 +157,55 @@ const updateHeaderState = (updates) => {
             outline: 'none'
           }}
         />
+      </div>
+    </div>
+  )}
+
+  {/* Setter Filters - only when viewing all */}
+  {(activeTab === 'all' && mode === 'full') && (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>First Setter:</label>
+        <select
+          value={firstSetterFilter || ''}
+          onChange={(e) => updateHeaderState({ firstSetterFilter: e.target.value || null })}
+          style={{
+            padding: '6px 8px',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            fontSize: '13px',
+            outline: 'none',
+            backgroundColor: 'white',
+            minWidth: '120px'
+          }}
+        >
+          <option value="">All First Setters</option>
+          {state.setterMap && Object.entries(state.setterMap).map(([id, name]) => (
+            <option key={`first-${id}`} value={id}>{name}</option>
+          ))}
+        </select>
+      </div>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>Current Setter:</label>
+        <select
+          value={setterFilter || ''}
+          onChange={(e) => updateHeaderState({ setterFilter: e.target.value || null })}
+          style={{
+            padding: '6px 8px',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            fontSize: '13px',
+            outline: 'none',
+            backgroundColor: 'white',
+            minWidth: '120px'
+          }}
+        >
+          <option value="">All Current Setters</option>
+          {state.setterMap && Object.entries(state.setterMap).map(([id, name]) => (
+            <option key={`current-${id}`} value={id}>{name}</option>
+          ))}
+        </select>
       </div>
     </div>
   )}
@@ -242,7 +293,7 @@ const updateHeaderState = (updates) => {
     </h3>
 </div>
 
-{(mode === 'full') && (
+{(mode === 'full' ) && (
 
 <div style={{
   display: 'flex',
@@ -280,7 +331,25 @@ const updateHeaderState = (updates) => {
     onClick={() => toggleFilter('rescheduled')}
   />
 
+
+  <FilterButton
+    label="Transfered"
+    active={filters.transferred}
+    onClick={() => toggleFilter('transferred')}
+  />
+
 </div>)}
+
+{(mode === 'setter') && (
+  <FilterButton
+    label="Transfered"
+    active={filters.transferred}
+    onClick={() => toggleFilter('transferred')
+    }
+  />
+)}
+
+
 
 
   {/* Search Icon + Input */}
@@ -386,6 +455,35 @@ const updateHeaderState = (updates) => {
   >
    <AlarmClock size={18} />
   </button>
+
+  {/* End of Shift Button */}
+  {mode === 'setter' && (
+  <button
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      backgroundColor: '#fef3c7',
+      color: '#92400e',
+      border: '1px solid #f59e0b',
+      borderRadius: '6px',
+      padding: '8px 14px',
+      cursor: 'pointer',
+      fontWeight: '500',
+      transition: 'all 0.2s',
+      fontSize: '13px'
+    }}
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fde68a')}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#fef3c7')}
+    onClick={() => {
+      if (state.onEndShift) {
+        state.onEndShift();
+      }
+    }}
+  >
+    <Clock size={18} />
+    End Shift
+  </button>)}
 </div>
         </div>
     )

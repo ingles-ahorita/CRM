@@ -13,15 +13,18 @@ const SetterDropdown = ({ value, onChange, label, options }) => {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         style={{
-          padding: '4px 8px',
-          borderRadius: '4px',
-          fontSize: '12px',
+            width: '50%',
+          padding: '8px 12px',
+          borderRadius: '8px',
+          fontSize: '14px',
           fontWeight: '500',
-          border: '1px solid #d1d5db',
-          backgroundColor: '#e8e8e8ff',
+          border: '1.5px solid rgb(133, 133, 133)',      // subtle purple border
+          backgroundColor: '#fafaff',          // soft modern background
           cursor: 'pointer',
-          color: '#000000',
-          outline: 'none'
+          color: '#343353',
+          outline: 'none',
+          boxShadow: '0 2px 8px rgba(168,139,250,0.08)', // gentle shadow
+          transition: 'border-color 0.2s, box-shadow 0.2s',
         }}
       >
         <option value="">Select setter</option>

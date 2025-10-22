@@ -14,12 +14,13 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
       showSearch: false,
       searchTerm: '',
       activeTab: 'today',
-      sortBy: 'book_date',
+      sortBy: 'call_date',
       sortOrder: 'asc',
       filters: {
         confirmed: false,
         cancelled: false,
-        noShow: false
+        noShow: false,
+        transferred: false
       },
       currentCloser: closer
     });
@@ -40,9 +41,10 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
       headerState.sortBy,
       headerState.sortOrder,
       setDataState,
-      closer, null
+      closer, null,
+      headerState.filters
     );
-  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder]);
+  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters]);
 
 
 

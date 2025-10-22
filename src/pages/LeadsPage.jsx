@@ -4,6 +4,7 @@ import { fetchAll } from '../utils/fetchLeads';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
 import {useSearchParams} from 'react-router-dom';
+import { EndShiftModal } from './components/EndShiftModal';
 
 export default function LeadsPage() {
 
@@ -16,6 +17,8 @@ export default function LeadsPage() {
   closerMap: {},
   counts: { booked:0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0 }
 });
+
+  const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
 
 
 
@@ -32,13 +35,17 @@ const [headerState, setHeaderState] = useState({
   sortOrder: searchParams.get('sortOrder') || 'desc',             // Read from URL
   startDate: searchParams.get('start') || '',
   endDate: searchParams.get('end') || '',
+  firstSetterFilter: searchParams.get('firstSetter') || '',
+  setterFilter: searchParams.get('setter') || '',
   filters: {
     confirmed: searchParams.get('confirmed') === 'true',          // Read from URL
     cancelled: searchParams.get('cancelled') === 'true',          // Read from URL
     noShow: searchParams.get('noShow') === 'true',                // Read from URL
     noPickUp: searchParams.get('noPickUp') === 'true',            // Read from URL
-    rescheduled: searchParams.get('rescheduled') === 'true'       // Read from URL
-  }
+    rescheduled: searchParams.get('rescheduled') === 'true',      // Read from URL
+    transferred: searchParams.get('transferred') === 'true'        // Read from URL
+  },
+  onEndShift: () => setIsEndShiftModalOpen(true)
 });
 
 
@@ -52,7 +59,9 @@ useEffect(() => {
   if (headerState.sortOrder !== 'desc') params.set('sortOrder', headerState.sortOrder);
   if (headerState.startDate) params.set('start', headerState.startDate);
   if (headerState.endDate) params.set('end', headerState.endDate);
-  
+  if (headerState.firstSetterFilter) params.set('firstSetter', headerState.firstSetterFilter);
+  if (headerState.setterFilter) params.set('setter', headerState.setterFilter);
+  if (headerState.transferred) params.set('transferred', headerState.transferred);
   // Add filters
   Object.entries(headerState.filters).forEach(([key, value]) => {
     if (value) params.set(key, 'true');
@@ -76,9 +85,11 @@ useEffect(() => {
     headerState.filters,
     undefined,
     headerState.startDate,
-    headerState.endDate
+    headerState.endDate,
+    headerState.firstSetterFilter,
+    headerState.setterFilter
   );
-}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate]);
+}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate, headerState.firstSetterFilter, headerState.setterFilter, headerState.transferred]);
 
 
 
@@ -95,7 +106,7 @@ useEffect(() => {
           </h1>
         
 <Header
-  state={headerState}
+  state={{...headerState, setterMap: dataState.setterMap}}
   setState={setHeaderState}
   mode='full'
 />
@@ -170,7 +181,15 @@ useEffect(() => {
 
         )}
 
-
+        {/* End Shift Modal */}
+        <EndShiftModal
+          isOpen={isEndShiftModalOpen}
+          onClose={() => setIsEndShiftModalOpen(false)}
+          mode="admin"
+          userId={null}
+          setterMap={dataState.setterMap}
+          closerMap={dataState.closerMap}
+        />
 
       </div>
     </div>
