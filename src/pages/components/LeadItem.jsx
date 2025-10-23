@@ -24,6 +24,18 @@ const formatStatusValue = (value) => {
 }
 
 export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }) {
+  // Add CSS for loading spinner animation
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
   const [pickUp, setPickUp] = useState(() => formatStatusValue(lead.picked_up));
   const [confirmed, setConfirmed] = useState(() => formatStatusValue(lead.confirmed));
   const [showUp, setShowUp] = useState(() => formatStatusValue(lead.showed_up));
@@ -34,8 +46,41 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [modeState, setModeState] = useState(mode);
   const [noteButtonText, setNoteButtonText] = useState();
+  const [transferNote, setTransferNote] = useState(null);
+  const [loadingNote, setLoadingNote] = useState(false);
+  const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
   const { setter: currentSetter } = useParams();  
   const navigate = useNavigate();
+
+  const fetchTransferNote = async (callId) => {
+    setLoadingNote(true);
+    setShowTransferNoteModal(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('transfer_log')
+        .select('note, transferred_by, created_at')
+        .eq('call_id', callId)
+        .order('created_at', { ascending: false })
+      
+      if (!error && data) {
+        setTransferNote(data[0]?.note || 'No note provided');
+      } else {
+        setTransferNote('No note found');
+      }
+    } catch (err) {
+      console.error('Error fetching transfer note:', err);
+      setTransferNote('Error loading note');
+    } finally {
+      setLoadingNote(false);
+    }
+  };
+
+  const handleCloseTransferNoteModal = () => {
+    setShowTransferNoteModal(false);
+    setTransferNote(null);
+    setLoadingNote(false);
+  };
 
   useEffect(() => {
     setPickUp(formatStatusValue(lead.picked_up));
@@ -247,12 +292,36 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
               <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.call_date, lead.timezone) + " " + DateHelpers.getUTCOffset(lead.timezone) || 'N/A'}</span>
             </div>)}
 
-            {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id !== currentSetter) && (
-              <span style={{ fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '-4px' }}> From {setterMap[lead.first_setter_id] || 'N/A'} </span>
+            {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id !== currentSetter)  && (mode === 'setter') && (
+              <span
+                style={{
+                  fontSize: '10px',
+                  color: '#9ca3af',
+                  fontStyle: 'italic',
+                  marginTop: '-4px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+                onClick={() => fetchTransferNote(lead.id)}
+              >
+                From {setterMap[lead.first_setter_id] || 'N/A'}
+              </span>
             )}
 
             {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id === currentSetter) && (
-              <span style={{ fontSize: '10px', color: '#9ca3af', fontStyle: 'italic', marginTop: '-4px' }}> Transferred to {setterMap[lead.setter_id] || 'N/A'} </span>
+              <span 
+                style={{ 
+                  fontSize: '10px', 
+                  color: '#9ca3af', 
+                  fontStyle: 'italic', 
+                  marginTop: '-4px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+                onClick={() => fetchTransferNote(lead.id)}
+              >
+                Transferred to {setterMap[lead.setter_id] || 'N/A'}
+              </span>
             )}
 
             {(mode !== 'closer') && (
@@ -290,6 +359,57 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
   lead={lead}
   callId={lead.id}
 />
+
+      <Modal isOpen={showTransferNoteModal} onClose={handleCloseTransferNoteModal}>
+        <div style={{ padding: '20px', maxWidth: '500px' }}>
+          <h2 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600' }}>
+            Transfer Note
+          </h2>
+          {loadingNote ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '20px' }}>
+              <div style={{ 
+                width: '20px', 
+                height: '20px', 
+                border: '2px solid #e5e7eb', 
+                borderTop: '2px solid #3b82f6', 
+                borderRadius: '50%', 
+                animation: 'spin 1s linear infinite' 
+              }}></div>
+              <span>Loading transfer note...</span>
+            </div>
+          ) : (
+            <div>
+              <p style={{ 
+                marginBottom: '16px', 
+                padding: '12px', 
+                backgroundColor: '#f9fafb', 
+                borderRadius: '6px',
+                border: '1px solid #e5e7eb',
+                whiteSpace: 'pre-wrap',
+                minHeight: '60px'
+              }}>
+                {transferNote}
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={handleCloseTransferNoteModal}
+                  style={{
+                    backgroundColor: '#6b7280',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 16px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
         
         <ThreeDotsMenu
     onEdit={() => setIsModalOpen(true)}
@@ -803,4 +923,22 @@ export function LeadListHeader() {
 
     </div>
   );
+}
+
+const fetchTransferNote = async (leadId, setTransferNote, setLoadingNote) => {
+  setLoadingNote(true);
+  const { data, error } = await supabase
+    .from('transfer_log')
+    .select('*')
+    .eq('call_id', leadId)
+    .single();
+  if (error) {
+    console.error('Error fetching transfer note:', error);
+    setTransferNote("No note found");
+    setLoadingNote(false);
+    return;
+  }
+  setTransferNote(data.note);
+  setLoadingNote(false);
+  return data;
 }

@@ -11,10 +11,32 @@ import { supabase } from '../lib/supabaseClient';
 import { useSimpleAuth } from '../useSimpleAuth';
 
   export default function Closer() {
+
+    const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
+    const [isStartShiftModalOpen, setIsStartShiftModalOpen] = useState(false);
+    const [currentShift, setCurrentShift] = useState(null);
+    const [isShiftActive, setIsShiftActive] = useState(false);
+
     const { email, userName, logout } = useSimpleAuth();
 
     const { closer } = useParams();   // 👈 this is the "best way" to get it
     const navigate = useNavigate();
+
+    const handleStartShift = (shiftData) => {
+      setCurrentShift(shiftData);
+      setIsShiftActive(true);
+      setIsStartShiftModalOpen(false);
+    };
+  
+    const handleEndShift = () => {
+      setIsEndShiftModalOpen(true);
+    };
+  
+    const handleShiftEnded = () => {
+      setCurrentShift(null);
+      setIsShiftActive(false);
+      setIsEndShiftModalOpen(false);
+    };
 
      const [headerState, setHeaderState] = useState({
       showSearch: false,
@@ -41,54 +63,33 @@ import { useSimpleAuth } from '../useSimpleAuth';
   closerMap: {}
 });
 
-  const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
-  const [isStartShiftModalOpen, setIsStartShiftModalOpen] = useState(false);
-  const [currentShift, setCurrentShift] = useState(null);
-  const [isShiftActive, setIsShiftActive] = useState(false);
-
   // Check for active shift on component mount
-  useEffect(() => {
-    checkActiveShift();
-  }, []);
+  // useEffect(() => {
+  //   checkActiveShift();
+  // }, []);
 
-  const checkActiveShift = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('setter_shifts')
-        .select('*')
-        .eq('closer_id', closer)
-        .eq('status', 'open')
-        .order('start_time', { ascending: false })
-        .limit(1)
-        .single();
+  // const checkActiveShift = async () => {
+  //   try {
+  //     const { data, error } = await supabase
+  //       .from('setter_shifts')
+  //       .select('*')
+  //       .eq('closer_id', closer)
+  //       .eq('status', 'open')
+  //       .order('start_time', { ascending: false })
+  //       .limit(1)
+  //       .single();
 
-      if (data && !error) {
-        setCurrentShift(data);
-        setIsShiftActive(true);
-      } else {
-        setCurrentShift(null);
-        setIsShiftActive(false);
-      }
-    } catch (err) {
-      console.error('Error checking active shift:', err);
-    }
-  };
-
-  const handleStartShift = (shiftData) => {
-    setCurrentShift(shiftData);
-    setIsShiftActive(true);
-    setIsStartShiftModalOpen(false);
-  };
-
-  const handleEndShift = () => {
-    setIsEndShiftModalOpen(true);
-  };
-
-  const handleShiftEnded = () => {
-    setCurrentShift(null);
-    setIsShiftActive(false);
-    setIsEndShiftModalOpen(false);
-  };
+  //     if (data && !error) {
+  //       setCurrentShift(data);
+  //       setIsShiftActive(true);
+  //     } else {
+  //       setCurrentShift(null);
+  //       setIsShiftActive(false);
+  //     }
+  //   } catch (err) {
+  //     console.error('Error checking active shift:', err);
+  //   }
+  // };
 
   // Enable real-time updates for this closer
   useRealtimeLeads(dataState, setDataState, headerState.activeTab, null, closer);
@@ -138,7 +139,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
               setterMap={dataState.setterMap}
               closerMap={dataState.closerMap}
               mode='full'
-              currentUserId={userId}
+              currentUserId={closer}
             />
           ))}
 
