@@ -1,4 +1,4 @@
-import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut, Clock, Play } from 'lucide-react';
+import { Search, ChartSpline, AlarmClock, ArrowUp, ArrowDown, Calendar, LogOut, Clock, Play, Users } from 'lucide-react';
 import { act, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -439,6 +439,29 @@ const updateHeaderState = (updates) => {
     onClick={() => navigate(mode === 'full' ? '/metrics' : mode === 'setter' ? `/stats/${state.currentSetter}` : `/closer-stats/${state.currentCloser}`)}
   >
     <ChartSpline size={18} />
+  </button>
+
+  {/* Shifts Button */}
+  <button
+    style={{
+      display: mode === 'full' ? 'flex' : 'none',
+      alignItems: 'center',
+      gap: '6px',
+      backgroundColor: '#e0e7ff',
+      color: '#3730a3',
+      border: '1px solid #c7d2fe',
+      borderRadius: '6px',
+      padding: '8px 14px',
+      cursor: 'pointer',
+      fontWeight: '500',
+      transition: 'all 0.2s',
+    }}
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#c7d2fe')}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e0e7ff')}
+    onClick={() => navigate('/shifts')}
+  >
+    <Users size={18} />
+    Shifts
   </button>
 
   {/* Reaction Time Button */}

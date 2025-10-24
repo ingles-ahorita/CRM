@@ -43,7 +43,7 @@ useEffect(() => {
             lead={call}
             setterMap={dataState.setterMap}
             closerMap={dataState.closerMap}
-            mode={"view"}/>
+            mode={localStorage.getItem('userRole')}/>
           ))}
         </div>
       </div>

@@ -138,7 +138,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
               lead={lead}
               setterMap={dataState.setterMap}
               closerMap={dataState.closerMap}
-              mode='full'
+              mode='closer'
               currentUserId={closer}
             />
           ))}

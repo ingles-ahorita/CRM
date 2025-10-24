@@ -323,7 +323,7 @@ if (noteId) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} >
           <label style={labelStyle}>🟢 Prepared score:</label>
             <input name="prepared_score" type="number" min="1" max="10" 
-           defaultValue={noteData?.prepared_score || ''} style={{...inputStyle, width: '10%', textAlign: 'center'}} />
+           defaultValue={noteData?.prepared_score || ''} style={{...inputStyle, width: '14%', textAlign: 'center'}} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

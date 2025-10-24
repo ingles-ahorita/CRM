@@ -8,6 +8,7 @@ import ProtectedRoute from './pages/components/ProtectedRoute';
 import FortnightDashboard from './pages/setterStats';
 import StatsDashboard from './pages/generalStats';
 import CloserStatsDashboard from './pages/closerStats';
+import ShiftsPage from './pages/ShiftsPage';
 import './App.css';
 
 export default function App() {
@@ -26,6 +27,11 @@ export default function App() {
       <Route path="/stats/:setter" element={<FortnightDashboard/>} />
       <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
+      <Route path="/shifts" element={
+        <ProtectedRoute>
+          <ShiftsPage />
+        </ProtectedRoute>
+      } />
     </Routes>
   );
 }
