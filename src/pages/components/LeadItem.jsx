@@ -4,6 +4,7 @@ import { TransferSetterModal } from './TransferSetterModal';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Mail, Phone, User, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
 import * as ManychatService from '../../utils/manychatService';
@@ -102,29 +103,11 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
   return (
     <div
       key={lead.id}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '12px',
-        minHeight: '80px',
-        backgroundColor: 'white',
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-        padding: '16px',
-        paddingRight: '0px',
-        transition: 'box-shadow 0.2s',
-        width: '100%'
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
-      }}
+      className="lead-item-container"
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '35px', justifyContent: 'left', flexWrap: 'nowrap', overflow: 'hidden', flex: '1 1' }}>
-        <div style={{ flex: '1 1 200px', overflow: 'hidden', alignItems: 'top', justifyContent: 'left' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#111827', marginBottom: '4px', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px', textAlign: 'left' }}>
+      <div className="lead-main-content">
+        <div className="lead-info-section">
+          <h2 className="lead-name">
             <a href={`/lead/${lead.lead_id}`} 
               onClick={(e) => {
                 if (!e.metaKey && !e.ctrlKey) {  // ← Only prevent default for regular clicks
@@ -150,11 +133,11 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
     textOverflow: 'ellipsis'}}>Cancelled</div>}
             </a>
           </h2>
-          <div style={{ display: 'flex', alignItems: 'center', fontSize: '12px', color: '#6b7280', gap: '4px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div className="lead-contact-info">
             <Mail size={12} style={{ }} />
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.email || 'No email'}</span>
           </div>
-            <div style={{ display: 'flex', alignItems: 'center', fontSize: '12px', color: '#6b7280', gap: '4px' }}>
+            <div className="lead-contact-info">
               <Phone size={12} />
               <span>
                 <a
@@ -169,7 +152,7 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
             </div>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'left', flex: '1 1' }}>
+        <div className="status-dropdowns">
           <StatusDropdown
             value={pickUp}
             onChange={(value) => updateStatus(lead.id, 'picked_up', value, setPickUp, lead.manychat_user_id)}
@@ -196,12 +179,12 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#6b7280', paddingLeft: '20px', borderLeft: '1px solid #e5e7eb', maxWidth: '200px', fontWeight: '400', flexDirection: 'column', flex: '1 1', marginLeft: 'auto'}}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <div className="lead-meta-info">
+          <div className="lead-meta-row">
 
 {(mode !== 'setter') && (
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0}}>
+            <div className="lead-user-info">
               <User size={12} />
               <span
                 onClick={mode === "full" ? () => navigate(`/setter/${lead.setter_id}`) : undefined}
@@ -230,7 +213,7 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
             </div>
   )}
       {(mode !== 'closer') && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0}}>
+            <div className="lead-user-info">
               <User size={12} />
               <span
                 onClick={mode ==="full" ? () => navigate(`/closer/${lead.closer_id}`) : undefined}
@@ -261,47 +244,32 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
           </div>
           
           <button
-  onClick={() => (mode=== 'full' || mode === "view") ? setViewModalOpen(true) : setShowNoteModal(true)}
-  style={{
-    padding: '5px 0px',
-    backgroundColor: (lead.setter_note_id && mode !== 'closer') || (lead.closer_note_id && mode === 'closer') ? '#7053d0ff' : '#3f2f76ff',
-    color: 'white',
-    border: 'none',
-    borderRadius: '6px',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap', // Prevents text wrapping
-    width: '80%'
-  }}> {(mode === "full" || mode === "view") ? "📝 Notes" : (noteButtonText) }</button>
+            onClick={() => (mode=== 'full' || mode === "view") ? setViewModalOpen(true) : setShowNoteModal(true)}
+            className={`lead-notes-button ${(lead.setter_note_id && mode !== 'closer') || (lead.closer_note_id && mode === 'closer') ? 'has-note' : ''}`}
+          > 
+            {(mode === "full" || mode === "view") ? "📝 Notes" : (noteButtonText) }
+          </button>
 
           
         </div> 
 
-        <div style={{ display: 'flex', flex: '1 1', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', color: '#6b7280',fontSize: '12px', marginLeft: '0 auto'  }}>
+        <div className="lead-timeline-info">
 
            {(mode === 'closer' || mode === 'full' || mode === 'view') && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+            <div className="lead-timeline-item">
               <Calendar size={12} />
               <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.call_date)|| 'N/A'}</span>
             </div> )}
 
             {(mode === 'setter' ) && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'nowrap' }}>
+              <div className="lead-timeline-item">
               <Calendar size={12} />
               <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.call_date, lead.timezone) + " " + DateHelpers.getUTCOffset(lead.timezone) || 'N/A'}</span>
             </div>)}
 
             {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id !== currentSetter)  && (mode === 'setter') && (
               <span
-                style={{
-                  fontSize: '10px',
-                  color: '#9ca3af',
-                  fontStyle: 'italic',
-                  marginTop: '-4px',
-                  cursor: 'pointer',
-                  textDecoration: 'underline'
-                }}
+                className="lead-transfer-info"
                 onClick={() => fetchTransferNote(lead.id)}
               >
                 From {setterMap[lead.first_setter_id] || 'N/A'}
@@ -310,14 +278,7 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
 
             {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id === currentSetter) && (
               <span 
-                style={{ 
-                  fontSize: '10px', 
-                  color: '#9ca3af', 
-                  fontStyle: 'italic', 
-                  marginTop: '-4px',
-                  cursor: 'pointer',
-                  textDecoration: 'underline'
-                }}
+                className="lead-transfer-info"
                 onClick={() => fetchTransferNote(lead.id)}
               >
                 Transferred to {setterMap[lead.setter_id] || 'N/A'}
@@ -325,13 +286,16 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
             )}
 
             {(mode !== 'closer') && (
-            <div style={{ display: 'flex', alignSelf: 'flex-end', gap: '4px' }}>
+            <div className="lead-timeline-item">
               <span>{DateHelpers.formatTimeAgo(lead.book_date) || 'N/A'}</span>
             </div>)}
-
-              <span style={{backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called), color: '#343434ff', fontWeight: "600", borderRadius: '5px', padding: '1px 4px' }}> {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span>
+             {( mode !== 'closer' && mode !== 'setter' ) && (
+             <span className="lead-status-badge" style={{backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called)}}>
+              {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span>
+              )}
+              
               {(new Date() - new Date(lead.book_date)) < (2 * 60 * 60 * 1000) && (lead.confirmed === null) &&(
-              <span style={{backgroundColor: "#24c5ffff", color: '#ffffffff', fontWeight: "600", borderRadius: '5px', padding: '1px 4px', overflow: 'hidden', whiteSpace: 'nowrap' }}> GRACE PERIOD (2H)</span>
+              <span className="lead-grace-period"> GRACE PERIOD (2H)</span>
               )}
             
           </div>
@@ -411,13 +375,15 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
         </div>
       </Modal>
         
-        <ThreeDotsMenu
-    onEdit={() => setIsModalOpen(true)}
-    onDelete={() => console.log('Delete')}
-    mode={mode}
-    modalSetter={setShowNoteModal}
-    setMode={setModeState}
-  />
+        <div className="lead-menu-button">
+          <ThreeDotsMenu
+            onEdit={() => setIsModalOpen(true)}
+            onDelete={() => console.log('Delete')}
+            mode={mode}
+            modalSetter={setShowNoteModal}
+            setMode={setModeState}
+          />
+        </div>
 
     </div>
   );
