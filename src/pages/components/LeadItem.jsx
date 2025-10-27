@@ -291,7 +291,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             <div className="lead-timeline-item">
               <span>{DateHelpers.formatTimeAgo(lead.book_date) || 'N/A'}</span>
             </div>)}
-             {( mode !== 'closer' && mode !== 'setter' ) && (
+             {( mode !== 'closer' && mode === 'setter' ) && (
              <span className="lead-status-badge" style={{backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called)}}>
               {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span>
               )}
