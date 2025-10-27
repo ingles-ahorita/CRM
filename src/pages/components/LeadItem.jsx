@@ -1,7 +1,7 @@
 import { supabase } from '../../lib/supabaseClient';
 import {Modal, NotesModal, ViewNotesModal} from './Modal';
 import { TransferSetterModal } from './TransferSetterModal';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Mail, Phone, User, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import './LeadItem.css';
@@ -25,6 +25,8 @@ const formatStatusValue = (value) => {
 }
 
 export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }) {
+  const location = useLocation();
+const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith('/lead/');
   // Add CSS for loading spinner animation
   useEffect(() => {
     const style = document.createElement('style');
@@ -182,7 +184,7 @@ export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }
         <div className="lead-meta-info">
           <div className="lead-meta-row">
 
-{(mode !== 'setter') && (
+{(mode !== 'setter' || isLeadPage) && (
 
             <div className="lead-user-info">
               <User size={12} />

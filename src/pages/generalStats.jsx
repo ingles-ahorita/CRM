@@ -185,38 +185,120 @@ const totalPurchased = purchasedCalls.length;
   };
 }
 
+// New function to fetch weekly stats for comparison - optimized with parallel requests
+async function fetchWeeklyStats() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  
+  // Build all week date ranges first
+  const weekRanges = [];
+  for (let weekOffset = 0; weekOffset < 12; weekOffset++) {
+    const weekEnd = new Date(now);
+    weekEnd.setDate(now.getDate() - (weekOffset * 7));
+    
+    const weekStart = new Date(weekEnd);
+    const weekDayOfWeek = weekEnd.getDay();
+    const weekDiff = weekDayOfWeek === 0 ? -6 : 1 - weekDayOfWeek;
+    weekStart.setDate(weekEnd.getDate() + weekDiff);
+    weekStart.setHours(0, 0, 0, 0);
+    
+    const weekEndAdjusted = new Date(weekStart);
+    weekEndAdjusted.setDate(weekStart.getDate() + 6);
+    weekEndAdjusted.setHours(23, 59, 59, 999);
+    
+    const startDateStr = weekStart.toLocaleDateString('en-CA');
+    const endDateStr = weekEndAdjusted.toLocaleDateString('en-CA');
+    
+    weekRanges.push({ startDateStr, endDateStr });
+  }
+  
+  // Fetch all weeks in parallel
+  const weekPromises = weekRanges.map(({ startDateStr, endDateStr }) => 
+    fetchStatsData(startDateStr, endDateStr)
+  );
+  
+  const weekResults = await Promise.all(weekPromises);
+  
+  // Process results
+  const weeksData = [];
+  for (let i = 0; i < weekResults.length; i++) {
+    const weekStats = weekResults[i];
+    const { startDateStr, endDateStr } = weekRanges[i];
+    
+    if (weekStats) {
+      const pickUpRate = weekStats.totalBooked > 0 ? (weekStats.totalPickedUp / weekStats.totalBooked) * 100 : 0;
+      const showUpRateConfirmed = weekStats.totalConfirmed > 0 ? (weekStats.totalShowedUp / weekStats.totalConfirmed) * 100 : 0;
+      const showUpRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalShowedUp / weekStats.totalBooked) * 100 : 0;
+      const conversionRateShowedUp = weekStats.totalShowedUp > 0 ? (weekStats.totalPurchased / weekStats.totalShowedUp) * 100 : 0;
+      const conversionRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalPurchased / weekStats.totalBooked) * 100 : 0;
+      
+      weeksData.unshift({
+        weekStart: startDateStr,
+        weekEnd: endDateStr,
+        weekLabel: `${startDateStr} to ${endDateStr}`,
+        ...weekStats,
+        pickUpRate,
+        showUpRateConfirmed,
+        showUpRateBooked,
+        conversionRateShowedUp,
+        conversionRateBooked
+      });
+    }
+  }
+  
+  return weeksData.reverse();
+}
+
 export default function StatsDashboard() {
-    const getStartOfWeek = () => {
-  const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 (Sunday) to 6 (Saturday)
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as start of week
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + diff);
-  return monday.toISOString().split('T')[0];
-};
+  const getStartOfWeek = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 (Sunday) to 6 (Saturday)
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as start of week
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diff);
+    return monday.toISOString().split('T')[0];
+  };
 
-
-    const navigate = useNavigate();
+  const navigate = useNavigate();
   const [startDate, setStartDate] = useState(getStartOfWeek);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showWeeklyView, setShowWeeklyView] = useState(false);
+  const [weeklyStats, setWeeklyStats] = useState([]);
+  const [loadingWeekly, setLoadingWeekly] = useState(false);
 
     const goToPreviousWeek = () => {
-  const newStart = new Date(startDate);
-  newStart.setDate(newStart.getDate() - 7);
-  const newEnd = new Date(endDate);
-  newEnd.setDate(newStart.getDate() + 7);
+  // Get Monday of current week
+  const currentStart = new Date(startDate);
+  const dayOfWeek = currentStart.getDay();
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  currentStart.setDate(currentStart.getDate() + diff);
   
-  setStartDate(newStart.toISOString().split('T')[0]);
+  // Go back 7 days to previous Monday
+  currentStart.setDate(currentStart.getDate() - 7);
+  
+  // End date is 6 days after start (Sunday)
+  const newEnd = new Date(currentStart);
+  newEnd.setDate(currentStart.getDate() + 6);
+  
+  setStartDate(currentStart.toISOString().split('T')[0]);
   setEndDate(newEnd.toISOString().split('T')[0]);
 };
 
 const goToNextWeek = () => {
-  const newStart = new Date(startDate);
-  newStart.setDate(newStart.getDate() + 7);
-  const newEnd = new Date(endDate);
-  newEnd.setDate(newStart.getDate() + 7);
+  // Get Monday of current week
+  const currentStart = new Date(startDate);
+  const dayOfWeek = currentStart.getDay();
+  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  currentStart.setDate(currentStart.getDate() + diff);
   
-  setStartDate(newStart.toISOString().split('T')[0]);
+  // Go forward 7 days to next Monday
+  currentStart.setDate(currentStart.getDate() + 7);
+  
+  // End date is 6 days after start (Sunday)
+  const newEnd = new Date(currentStart);
+  newEnd.setDate(currentStart.getDate() + 6);
+  
+  setStartDate(currentStart.toISOString().split('T')[0]);
   setEndDate(newEnd.toISOString().split('T')[0]);
 };
 
@@ -242,7 +324,20 @@ const goToCurrentWeek = () => {
     setLoading(false);
   };
 
-  if (loading) {
+  const loadWeeklyStats = async () => {
+    setLoadingWeekly(true);
+    const data = await fetchWeeklyStats();
+    setWeeklyStats(data);
+    setLoadingWeekly(false);
+  };
+
+  useEffect(() => {
+    if (showWeeklyView) {
+      loadWeeklyStats();
+    }
+  }, [showWeeklyView]);
+
+  if (loading && !showWeeklyView) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-xl text-gray-600">Loading stats...</div>
@@ -250,14 +345,16 @@ const goToCurrentWeek = () => {
     );
   }
 
-  if (!stats) return null;
-
-  // Calculate metrics
-  const pickUpRate = stats.totalBooked > 0 ? (stats.totalPickedUp / stats.totalBooked) * 100 : 0;
-  const showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
-  const showUpRateBooked = stats.totalBooked > 0 ? (stats.totalShowedUp / stats.totalBooked) * 100 : 0;
-  const conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
-  const conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
+  // Calculate metrics only if we have stats and not in weekly view
+  let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, conversionRateShowedUp = 0, conversionRateBooked = 0;
+  
+  if (stats && !showWeeklyView) {
+    pickUpRate = stats.totalBooked > 0 ? (stats.totalPickedUp / stats.totalBooked) * 100 : 0;
+    showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
+    showUpRateBooked = stats.totalBooked > 0 ? (stats.totalShowedUp / stats.totalBooked) * 100 : 0;
+    conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
+    conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
+  }
 
 
 
@@ -269,9 +366,22 @@ const goToCurrentWeek = () => {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Sales Performance Dashboard</h1>
+          <div className="flex justify-between items-center mb-4">
+            <h1 className="text-3xl font-bold text-gray-900">Sales Performance Dashboard</h1>
+            <button
+              onClick={() => setShowWeeklyView(!showWeeklyView)}
+              className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                showWeeklyView 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {showWeeklyView ? '← Back to Current View' : '📊 Weekly Comparison View'}
+            </button>
+          </div>
 
-           {/* Navigation Buttons */}
+           {/* Navigation Buttons - Only show if not in weekly view */}
+           {!showWeeklyView && (
     <div className="flex gap-2" style={{marginBottom: '2vh'}}>
       <button
         onClick={goToPreviousWeek}
@@ -292,8 +402,10 @@ const goToCurrentWeek = () => {
         Next Week →
       </button>
     </div>
+           )}
           
-          {/* Date Range Filters */}
+          {/* Date Range Filters - Only show if not in weekly view */}
+          {!showWeeklyView && (
           <div className="bg-white p-6 rounded-lg shadow mb-6">
             <div className="flex gap-6 items-end">
               <div className="flex-1">
@@ -326,9 +438,115 @@ const goToCurrentWeek = () => {
               </button>
             </div>
           </div>
+          )}
         </div>
 
-        {/* Overall Metrics Grid */}
+        {/* Weekly Comparison View */}
+        {showWeeklyView && (
+          <>
+            {loadingWeekly ? (
+              <div className="bg-white rounded-lg shadow p-8 text-center">
+                <div className="text-lg text-gray-600">Loading weekly stats...</div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow overflow-hidden mb-8">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h2 className="text-2xl font-bold text-gray-900">Weekly Comparison (Last 12 Weeks)</h2>
+                  <p className="text-sm text-gray-500 mt-1">Track performance trends over time</p>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Week
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Pick Up Rate
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Show Up Rate
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Conversion Rate
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Total Booked
+                        </th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Purchased
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {weeklyStats.map((week, index) => {
+                        // Previous week in time is next in the array (more recent)
+                        const prevWeek = index < weeklyStats.length - 1 ? weeklyStats[index + 1] : null;
+                        
+                        const getChangeIndicator = (current, previous) => {
+                          if (!previous || previous === 0) return null;
+                          const change = ((current - previous) / previous) * 100;
+                          return (
+                            <span className={`text-xs ml-2 ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                              ({change > 0 ? '+' : ''}{change.toFixed(1)}%)
+                            </span>
+                          );
+                        };
+                        
+                        return (
+                          <tr key={index} className={index === 0 ? 'bg-blue-50 font-semibold' : 'hover:bg-gray-50'}>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                {index === 0 ? '🟢 Current Week' : `Week -${index}`}
+                                <br />
+                                <span className="text-xs text-gray-500">{week.weekLabel}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">
+                                {week.pickUpRate.toFixed(1)}%
+                                {getChangeIndicator(week.pickUpRate, prevWeek?.pickUpRate)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">
+                                {week.showUpRateConfirmed.toFixed(1)}%
+                                {getChangeIndicator(week.showUpRateConfirmed, prevWeek?.showUpRateConfirmed)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">
+                                {week.conversionRateShowedUp.toFixed(1)}%
+                                {getChangeIndicator(week.conversionRateShowedUp, prevWeek?.conversionRateShowedUp)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">
+                                {week.totalBooked}
+                                {getChangeIndicator(week.totalBooked, prevWeek?.totalBooked)}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm font-semibold text-green-600">
+                                {week.totalPurchased}
+                                {getChangeIndicator(week.totalPurchased, prevWeek?.totalPurchased)}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Overall Metrics Grid - Only show if not in weekly view */}
+        {!showWeeklyView && (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Pick Up Rate */}
           <div className="bg-white p-6 rounded-lg shadow">
@@ -566,6 +784,8 @@ const goToCurrentWeek = () => {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div> 
     </div>);
