@@ -2,9 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { getCountryFromPhone } from '../utils/phoneNumberParser';
+import ComparisonTable from './components/ComparisonTable';
+import PeriodSelector from './components/PeriodSelector';
 
 // Mock function - replace with your actual Supabase fetch
 async function fetchStatsData(startDate, endDate) {
+  console.log('startDate', startDate);
+  console.log('endDate', endDate);
   // Fetch 1: Get calls booked in the date range for main metrics
   const { data: bookedCalls, error: bookedError } = await supabase
     .from('calls')
@@ -18,11 +22,12 @@ async function fetchStatsData(startDate, endDate) {
       lead_id,
       phone,
       book_date,
+      call_date,
       closers (id, name),
-      leads (phone)
+      leads (phone, source)
     `)
-    .gte('book_date', startDate)
-    .lte('book_date', endDate);
+    .gte('call_date', startDate)
+    .lte('call_date', endDate);
 
   if (bookedError) {
     console.error('Error fetching booked calls:', bookedError);
@@ -47,7 +52,7 @@ async function fetchStatsData(startDate, endDate) {
       phone,
       book_date,
       closers (id, name),
-      leads (phone)
+      leads (phone, source)
     `)
     .eq('purchased', true)
     .gte('purchased_at', startDateObj.toISOString())
@@ -173,6 +178,55 @@ const totalPurchased = purchasedCalls.length;
   
   console.log('Country statistics:', sortedCountries);
 
+  // Group by source (Ads vs Organic)
+  const sourceStats = {
+    ads: {
+      totalBooked: 0,
+      totalPickedUp: 0,
+      totalShowedUp: 0,
+      totalConfirmed: 0,
+      totalPurchased: 0,
+      totalRescheduled: 0
+    },
+    organic: {
+      totalBooked: 0,
+      totalPickedUp: 0,
+      totalShowedUp: 0,
+      totalConfirmed: 0,
+      totalPurchased: 0,
+      totalRescheduled: 0
+    }
+  };
+
+  // Process booked calls for source metrics
+  filteredCalls.forEach(call => {
+    const source = call.leads?.source || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    const sourceKey = isAds ? 'ads' : 'organic';
+    
+    sourceStats[sourceKey].totalBooked++;
+    if (call.picked_up) sourceStats[sourceKey].totalPickedUp++;
+    if (call.showed_up) sourceStats[sourceKey].totalShowedUp++;
+    if (call.confirmed) sourceStats[sourceKey].totalConfirmed++;
+    if (call.is_reschedule) sourceStats[sourceKey].totalRescheduled++;
+  });
+
+  // Process purchased calls for source metrics
+  purchasedCalls.forEach(call => {
+    const source = call.leads?.source || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    const sourceKey = isAds ? 'ads' : 'organic';
+    
+    sourceStats[sourceKey].totalPurchased++;
+  });
+
+  // Calculate rates for each source
+  Object.values(sourceStats).forEach(source => {
+    source.pickUpRate = source.totalBooked > 0 ? (source.totalPickedUp / source.totalBooked) * 100 : 0;
+    source.showUpRate = source.totalBooked > 0 ? (source.totalShowedUp / source.totalConfirmed) * 100 : 0;
+    source.conversionRate = source.totalShowedUp > 0 ? (source.totalPurchased / source.totalShowedUp) * 100 : 0;
+  });
+
   return {
     totalBooked,
     totalPickedUp,
@@ -181,7 +235,8 @@ const totalPurchased = purchasedCalls.length;
     totalPurchased,
     totalRescheduled: calls.filter(c => c.is_reschedule).length,
     closers: Object.values(closerStats),
-    countries: sortedCountries
+    countries: sortedCountries,
+    sourceStats
   };
 }
 
@@ -206,8 +261,8 @@ async function fetchWeeklyStats() {
     weekEndAdjusted.setDate(weekStart.getDate() + 6);
     weekEndAdjusted.setHours(23, 59, 59, 999);
     
-    const startDateStr = weekStart.toLocaleDateString('en-CA');
-    const endDateStr = weekEndAdjusted.toLocaleDateString('en-CA');
+    const startDateStr = weekStart.toISOString();
+    const endDateStr = weekEndAdjusted.toISOString();
     
     weekRanges.push({ startDateStr, endDateStr });
   }
@@ -249,63 +304,227 @@ async function fetchWeeklyStats() {
   return weeksData.reverse();
 }
 
+// Fetch monthly stats for comparison
+async function fetchMonthlyStats() {
+  const now = new Date();
+  
+  // Build all month date ranges
+  const monthRanges = [];
+  for (let monthOffset = 0; monthOffset < 4; monthOffset++) {
+    // Start of the month (monthOffset months ago)
+    const monthStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1, 0, 0, 0, 0);
+    
+    // End of the month (last millisecond of last day)
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 0, 23, 59, 59, 999);
+    
+    const startDateStr = monthStart.toISOString();
+    const endDateStr = monthEnd.toISOString();
+    const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    
+    monthRanges.push({ startDateStr, endDateStr, monthLabel });
+  }
+  
+  // Fetch all months in parallel
+  const monthPromises = monthRanges.map(({ startDateStr, endDateStr }) => 
+    fetchStatsData(startDateStr, endDateStr)
+  );
+  
+  const monthResults = await Promise.all(monthPromises);
+  
+  // Process results
+  const monthsData = monthResults.map((monthStats, i) => {
+    const { startDateStr, endDateStr, monthLabel } = monthRanges[i];
+    
+    if (!monthStats) return null;
+    
+    const pickUpRate = monthStats.totalBooked > 0 
+      ? (monthStats.totalPickedUp / monthStats.totalBooked) * 100 
+      : 0;
+    const showUpRateConfirmed = monthStats.totalConfirmed > 0 
+      ? (monthStats.totalShowedUp / monthStats.totalConfirmed) * 100 
+      : 0;
+    const showUpRateBooked = monthStats.totalBooked > 0 
+      ? (monthStats.totalShowedUp / monthStats.totalBooked) * 100 
+      : 0;
+    const conversionRateShowedUp = monthStats.totalShowedUp > 0 
+      ? (monthStats.totalPurchased / monthStats.totalShowedUp) * 100 
+      : 0;
+    const conversionRateBooked = monthStats.totalBooked > 0 
+      ? (monthStats.totalPurchased / monthStats.totalBooked) * 100 
+      : 0;
+    
+    return {
+      monthStart: startDateStr,
+      monthEnd: endDateStr,
+      periodLabel: monthLabel,
+      ...monthStats,
+      pickUpRate,
+      showUpRateConfirmed,
+      showUpRateBooked,
+      conversionRateShowedUp,
+      conversionRateBooked
+    };
+  }).filter(Boolean).reverse();
+  
+  return monthsData.reverse();
+}
+
+// Fetch daily stats for comparison
+async function fetchDailyStats(numDays = 30) {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  
+  // Build all day date ranges first
+  const dayRanges = [];
+  for (let dayOffset = 0; dayOffset < numDays; dayOffset++) {
+    const dayEnd = new Date(now);
+    dayEnd.setDate(now.getDate() - dayOffset);
+    dayEnd.setHours(23, 59, 59, 999);
+    
+    const dayStart = new Date(dayEnd);
+    dayStart.setHours(0, 0, 0, 0);
+    
+    const startDateStr = dayStart.toISOString();
+    const endDateStr = dayEnd.toISOString();
+    const dayLabel = dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    
+    dayRanges.push({ startDateStr, endDateStr, dayLabel });
+  }
+  
+  // Fetch all days in parallel
+  const dayPromises = dayRanges.map(({ startDateStr, endDateStr }) => 
+    fetchStatsData(startDateStr, endDateStr)
+  );
+  
+  const dayResults = await Promise.all(dayPromises);
+  
+  // Process results
+  const daysData = [];
+  for (let i = 0; i < dayResults.length; i++) {
+    const dayStats = dayResults[i];
+    const { startDateStr, endDateStr, dayLabel } = dayRanges[i];
+    
+    if (dayStats) {
+      const pickUpRate = dayStats.totalBooked > 0 ? (dayStats.totalPickedUp / dayStats.totalBooked) * 100 : 0;
+      const showUpRateConfirmed = dayStats.totalConfirmed > 0 ? (dayStats.totalShowedUp / dayStats.totalConfirmed) * 100 : 0;
+      const showUpRateBooked = dayStats.totalBooked > 0 ? (dayStats.totalShowedUp / dayStats.totalBooked) * 100 : 0;
+      const conversionRateShowedUp = dayStats.totalShowedUp > 0 ? (dayStats.totalPurchased / dayStats.totalShowedUp) * 100 : 0;
+      const conversionRateBooked = dayStats.totalBooked > 0 ? (dayStats.totalPurchased / dayStats.totalBooked) * 100 : 0;
+      
+      daysData.unshift({
+        dayStart: startDateStr,
+        dayEnd: endDateStr,
+        periodLabel: dayLabel,
+        ...dayStats,
+        pickUpRate,
+        showUpRateConfirmed,
+        showUpRateBooked,
+        conversionRateShowedUp,
+        conversionRateBooked
+      });
+    }
+  }
+  
+  return daysData.reverse();
+}
+
 export default function StatsDashboard() {
+  const formatDateLocal = (date) => {
+    // Format as YYYY-MM-DDTHH:mm:ss (local time, without timezone specifier)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  };
+
   const getStartOfWeek = () => {
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0 (Sunday) to 6 (Saturday)
     const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as start of week
     const monday = new Date(today);
     monday.setDate(today.getDate() + diff);
-    return monday.toISOString().split('T')[0];
+    monday.setHours(0, 0, 0, 0);
+
+    // Format as YYYY-MM-DD in local timezone
+    return formatDateLocal(monday);
   };
 
   const navigate = useNavigate();
   const [startDate, setStartDate] = useState(getStartOfWeek);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [showWeeklyView, setShowWeeklyView] = useState(false);
+  
+  const getTodayLocal = () => {
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // Set to end of the day
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const hours = String(today.getHours()).padStart(2, '0');
+    const minutes = String(today.getMinutes()).padStart(2, '0');
+    const seconds = String(today.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  };
+  
+  const [endDate, setEndDate] = useState(getTodayLocal());
+  const [comparisonView, setComparisonView] = useState('none'); // 'none', 'weekly', 'monthly', 'daily'
+  const [selectedDays, setSelectedDays] = useState(30); // For daily comparison
   const [weeklyStats, setWeeklyStats] = useState([]);
+  const [monthlyStats, setMonthlyStats] = useState([]);
+  const [dailyStats, setDailyStats] = useState([]);
   const [loadingWeekly, setLoadingWeekly] = useState(false);
+  const [loadingMonthly, setLoadingMonthly] = useState(false);
+  const [loadingDaily, setLoadingDaily] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'ads', 'organic'
 
-    const goToPreviousWeek = () => {
-  // Get Monday of current week
-  const currentStart = new Date(startDate);
-  const dayOfWeek = currentStart.getDay();
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  currentStart.setDate(currentStart.getDate() + diff);
-  
-  // Go back 7 days to previous Monday
-  currentStart.setDate(currentStart.getDate() - 7);
-  
-  // End date is 6 days after start (Sunday)
-  const newEnd = new Date(currentStart);
-  newEnd.setDate(currentStart.getDate() + 6);
-  
-  setStartDate(currentStart.toISOString().split('T')[0]);
-  setEndDate(newEnd.toISOString().split('T')[0]);
-};
+  const parseDateLocal = (dateString) => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day, 0, 0, 0, 0);
+  };
 
-const goToNextWeek = () => {
-  // Get Monday of current week
-  const currentStart = new Date(startDate);
-  const dayOfWeek = currentStart.getDay();
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  currentStart.setDate(currentStart.getDate() + diff);
-  
-  // Go forward 7 days to next Monday
-  currentStart.setDate(currentStart.getDate() + 7);
-  
-  // End date is 6 days after start (Sunday)
-  const newEnd = new Date(currentStart);
-  newEnd.setDate(currentStart.getDate() + 6);
-  
-  setStartDate(currentStart.toISOString().split('T')[0]);
-  setEndDate(newEnd.toISOString().split('T')[0]);
-};
+  const goToPreviousWeek = () => {
+    // Parse the current start date as a local date
+    const currentStart = new Date(startDate);
+    const dayOfWeek = currentStart.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    currentStart.setDate(currentStart.getDate() + diff);
+    
+    // Go back 7 days to previous Monday
+    currentStart.setDate(currentStart.getDate() - 7);
+    
+    // End date is 6 days after start (Sunday)
+    const newEnd = new Date(currentStart);
+    newEnd.setDate(currentStart.getDate() + 6);
+    newEnd.setHours(23, 59, 59, 999);
+    
+    setStartDate(formatDateLocal(currentStart));
+    setEndDate(formatDateLocal(newEnd));
+  };
 
-const goToCurrentWeek = () => {
-  setStartDate(getStartOfWeek());
-  setEndDate(new Date().toISOString().split('T')[0]);
-};
+  const goToNextWeek = () => {
+    // Parse the current start date as a local date
+    const currentStart = new Date(startDate);
+    const dayOfWeek = currentStart.getDay();
+    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    currentStart.setDate(currentStart.getDate() + diff);
+    
+    // Go forward 7 days to next Monday
+    currentStart.setDate(currentStart.getDate() + 7);
+    
+    // End date is 6 days after start (Sunday)
+    const newEnd = new Date(currentStart);
+    newEnd.setDate(currentStart.getDate() + 6);
+    newEnd.setHours(23, 59, 59, 999);
+    
+    setStartDate(formatDateLocal(currentStart));
+    setEndDate(formatDateLocal(newEnd));
+  };
+
+  const goToCurrentWeek = () => {
+    setStartDate(getStartOfWeek());
+    setEndDate(getTodayLocal());
+  };
 
 
 
@@ -331,13 +550,43 @@ const goToCurrentWeek = () => {
     setLoadingWeekly(false);
   };
 
-  useEffect(() => {
-    if (showWeeklyView) {
-      loadWeeklyStats();
-    }
-  }, [showWeeklyView]);
+  const loadMonthlyStats = async () => {
+    setLoadingMonthly(true);
+    const data = await fetchMonthlyStats();
+    setMonthlyStats(data);
+    setLoadingMonthly(false);
+  };
 
-  if (loading && !showWeeklyView) {
+  const loadDailyStats = async () => {
+    setLoadingDaily(true);
+    const data = await fetchDailyStats(selectedDays);
+    setDailyStats(data);
+    setLoadingDaily(false);
+  };
+
+  const loadComparisonStats = async () => {
+    switch (comparisonView) {
+      case 'weekly':
+        await loadWeeklyStats();
+        break;
+      case 'monthly':
+        await loadMonthlyStats();
+        break;
+      case 'daily':
+        await loadDailyStats();
+        break;
+      default:
+        break;
+    }
+  };
+
+  useEffect(() => {
+    if (comparisonView !== 'none') {
+      loadComparisonStats();
+    }
+  }, [comparisonView, selectedDays]);
+
+  if (loading && comparisonView === 'none') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-xl text-gray-600">Loading stats...</div>
@@ -345,15 +594,38 @@ const goToCurrentWeek = () => {
     );
   }
 
-  // Calculate metrics only if we have stats and not in weekly view
+  // Calculate metrics only if we have stats and not in comparison view
   let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, conversionRateShowedUp = 0, conversionRateBooked = 0;
+  let totalBooked, totalPickedUp, totalShowedUp, totalConfirmed, totalPurchased, totalRescheduled;
   
-  if (stats && !showWeeklyView) {
-    pickUpRate = stats.totalBooked > 0 ? (stats.totalPickedUp / stats.totalBooked) * 100 : 0;
-    showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
-    showUpRateBooked = stats.totalBooked > 0 ? (stats.totalShowedUp / stats.totalBooked) * 100 : 0;
-    conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
-    conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
+  if (stats && comparisonView === 'none') {
+    // Filter by source if not 'all'
+    if (sourceFilter !== 'all' && stats.sourceStats && stats.sourceStats[sourceFilter]) {
+      const filtered = stats.sourceStats[sourceFilter];
+      pickUpRate = filtered.pickUpRate || 0;
+      showUpRateConfirmed = filtered.showUpRate || 0;
+      showUpRateBooked = filtered.showUpRate || 0;
+      conversionRateShowedUp = filtered.conversionRate || 0;
+      conversionRateBooked = filtered.totalBooked > 0 ? (filtered.totalPurchased / filtered.totalBooked) * 100 : 0;
+      totalBooked = filtered.totalBooked;
+      totalPickedUp = filtered.totalPickedUp;
+      totalShowedUp = filtered.totalShowedUp;
+      totalConfirmed = filtered.totalConfirmed;
+      totalPurchased = filtered.totalPurchased;
+      totalRescheduled = 0; // Not tracked by source
+    } else {
+      pickUpRate = stats.totalBooked > 0 ? (stats.totalPickedUp / stats.totalBooked) * 100 : 0;
+      showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
+      showUpRateBooked = stats.totalBooked > 0 ? (stats.totalShowedUp / stats.totalBooked) * 100 : 0;
+      conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
+      conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
+      totalBooked = stats.totalBooked;
+      totalPickedUp = stats.totalPickedUp;
+      totalShowedUp = stats.totalShowedUp;
+      totalConfirmed = stats.totalConfirmed;
+      totalPurchased = stats.totalPurchased;
+      totalRescheduled = stats.totalRescheduled;
+    }
   }
 
 
@@ -368,20 +640,65 @@ const goToCurrentWeek = () => {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
             <h1 className="text-3xl font-bold text-gray-900">Sales Performance Dashboard</h1>
-            <button
-              onClick={() => setShowWeeklyView(!showWeeklyView)}
-              className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-                showWeeklyView 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {showWeeklyView ? '← Back to Current View' : '📊 Weekly Comparison View'}
-            </button>
+            <div className="flex gap-2 items-center">
+              <PeriodSelector 
+                value={comparisonView} 
+                onChange={setComparisonView}
+              />
+              {comparisonView === 'daily' && (
+                <select
+                  value={selectedDays}
+                  onChange={(e) => setSelectedDays(Number(e.target.value))}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-700 font-medium"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={14}>14 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={60}>60 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              )}
+            </div>
           </div>
 
-           {/* Navigation Buttons - Only show if not in weekly view */}
-           {!showWeeklyView && (
+           {/* Source Filter - Only show if not in comparison view */}
+           {comparisonView === 'none' && stats && stats.sourceStats && (
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setSourceFilter('all')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  sourceFilter === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                All Sources
+              </button>
+              <button
+                onClick={() => setSourceFilter('ads')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  sourceFilter === 'ads'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Ads ({stats.sourceStats.ads.totalBooked})
+              </button>
+              <button
+                onClick={() => setSourceFilter('organic')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  sourceFilter === 'organic'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Organic ({stats.sourceStats.organic.totalBooked})
+              </button>
+            </div>
+           )}
+           
+           {/* Navigation Buttons - Only show if not in comparison view */}
+           {comparisonView === 'none' && (
     <div className="flex gap-2" style={{marginBottom: '2vh'}}>
       <button
         onClick={goToPreviousWeek}
@@ -404,28 +721,28 @@ const goToCurrentWeek = () => {
     </div>
            )}
           
-          {/* Date Range Filters - Only show if not in weekly view */}
-          {!showWeeklyView && (
+          {/* Date Range Filters - Only show if not in comparison view */}
+          {comparisonView === 'none' && (
           <div className="bg-white p-6 rounded-lg shadow mb-6">
             <div className="flex gap-6 items-end">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Start Date
-                </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Start Date: 
+                  </label>
                 <input
                   type="date"
-                  value={startDate}
+                  value={startDate.split('T')[0]}
                   onChange={(e) => setStartDate(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  End Date
+                  End Date:
                 </label>
                 <input
                   type="date"
-                  value={endDate}
+                  value={endDate.split('T')[0]}
                   onChange={(e) => setEndDate(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -441,111 +758,39 @@ const goToCurrentWeek = () => {
           )}
         </div>
 
-        {/* Weekly Comparison View */}
-        {showWeeklyView && (
-          <>
-            {loadingWeekly ? (
-              <div className="bg-white rounded-lg shadow p-8 text-center">
-                <div className="text-lg text-gray-600">Loading weekly stats...</div>
-              </div>
-            ) : (
-              <div className="bg-white rounded-lg shadow overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-2xl font-bold text-gray-900">Weekly Comparison (Last 12 Weeks)</h2>
-                  <p className="text-sm text-gray-500 mt-1">Track performance trends over time</p>
-                </div>
-                
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Week
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Pick Up Rate
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Show Up Rate
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Conversion Rate
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Total Booked
-                        </th>
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Purchased
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {weeklyStats.map((week, index) => {
-                        // Previous week in time is next in the array (more recent)
-                        const prevWeek = index < weeklyStats.length - 1 ? weeklyStats[index + 1] : null;
-                        
-                        const getChangeIndicator = (current, previous) => {
-                          if (!previous || previous === 0) return null;
-                          const change = ((current - previous) / previous) * 100;
-                          return (
-                            <span className={`text-xs ml-2 ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                              ({change > 0 ? '+' : ''}{change.toFixed(1)}%)
-                            </span>
-                          );
-                        };
-                        
-                        return (
-                          <tr key={index} className={index === 0 ? 'bg-blue-50 font-semibold' : 'hover:bg-gray-50'}>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900">
-                                {index === 0 ? '🟢 Current Week' : `Week -${index}`}
-                                <br />
-                                <span className="text-xs text-gray-500">{week.weekLabel}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <div className="text-sm text-gray-900">
-                                {week.pickUpRate.toFixed(1)}%
-                                {getChangeIndicator(week.pickUpRate, prevWeek?.pickUpRate)}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <div className="text-sm text-gray-900">
-                                {week.showUpRateConfirmed.toFixed(1)}%
-                                {getChangeIndicator(week.showUpRateConfirmed, prevWeek?.showUpRateConfirmed)}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <div className="text-sm text-gray-900">
-                                {week.conversionRateShowedUp.toFixed(1)}%
-                                {getChangeIndicator(week.conversionRateShowedUp, prevWeek?.conversionRateShowedUp)}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <div className="text-sm text-gray-900">
-                                {week.totalBooked}
-                                {getChangeIndicator(week.totalBooked, prevWeek?.totalBooked)}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <div className="text-sm font-semibold text-green-600">
-                                {week.totalPurchased}
-                                {getChangeIndicator(week.totalPurchased, prevWeek?.totalPurchased)}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </>
+        {/* Comparison Views */}
+        {comparisonView === 'weekly' && (
+          <ComparisonTable
+            data={weeklyStats}
+            title="Weekly Comparison (Last 12 Weeks)"
+            description="Track performance trends over time"
+            periodLabel="Week"
+            loading={loadingWeekly}
+          />
         )}
 
-        {/* Overall Metrics Grid - Only show if not in weekly view */}
-        {!showWeeklyView && (
+        {comparisonView === 'monthly' && (
+          <ComparisonTable
+            data={monthlyStats}
+            title="Monthly Comparison (Last 4 Months)"
+            description="Track monthly performance trends"
+            periodLabel="Month"
+            loading={loadingMonthly}
+          />
+        )}
+
+        {comparisonView === 'daily' && (
+          <ComparisonTable
+            data={dailyStats}
+            title={`Daily Comparison (Last ${selectedDays} Days)`}
+            description="Track daily performance trends"
+            periodLabel="Day"
+            loading={loadingDaily}
+          />
+        )}
+
+        {/* Overall Metrics Grid - Only show if not in comparison view */}
+        {comparisonView === 'none' && (
         <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Pick Up Rate */}
@@ -558,8 +803,24 @@ const goToCurrentWeek = () => {
               {pickUpRate.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {stats.totalPickedUp} / {stats.totalBooked} calls
+              {totalPickedUp} / {totalBooked} calls
             </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.sourceStats.ads.pickUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.sourceStats.organic.pickUpRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.sourceStats.ads.totalPickedUp}/{stats.sourceStats.ads.totalBooked}</div>
+                  <div>{stats.sourceStats.organic.totalPickedUp}/{stats.sourceStats.organic.totalBooked}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Show Up Rate / Confirmed */}
@@ -572,8 +833,24 @@ const goToCurrentWeek = () => {
               {showUpRateConfirmed.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {stats.totalShowedUp} / {stats.totalConfirmed} confirmed
+              {totalShowedUp} / {totalConfirmed} confirmed
             </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.sourceStats.ads.showUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.sourceStats.organic.showUpRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalConfirmed}</div>
+                  <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalConfirmed}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Show Up Rate / Booked */}
@@ -586,22 +863,54 @@ const goToCurrentWeek = () => {
               {showUpRateBooked.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {stats.totalShowedUp} / {stats.totalBooked} calls
+              {totalShowedUp} / {totalBooked} calls
             </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.sourceStats.ads.showUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.sourceStats.organic.showUpRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalBooked}</div>
+                  <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalBooked}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Conversion Rate / Show up */}
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500">Conversion Rate</h3>
-              <span className="text-xs text-gray-400">Purchased / Confirmed</span>
+              <span className="text-xs text-gray-400">Purchased / Show up</span>
             </div>
             <div className="text-3xl font-bold text-purple-600">
               {conversionRateShowedUp.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {stats.totalPurchased} / {stats.totalShowedUp} Showed Up
+              {totalPurchased} / {totalShowedUp} Showed Up
             </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.sourceStats.ads.conversionRate.toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.sourceStats.organic.conversionRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.sourceStats.ads.totalPurchased}/{stats.sourceStats.ads.totalShowedUp}</div>
+                  <div>{stats.sourceStats.organic.totalPurchased}/{stats.sourceStats.organic.totalShowedUp}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Conversion Rate / Booked */}
@@ -614,34 +923,81 @@ const goToCurrentWeek = () => {
               {conversionRateBooked.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {stats.totalPurchased} / {stats.totalBooked} calls
+              {totalPurchased} / {totalBooked} calls
             </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.sourceStats.ads.totalBooked > 0 ? ((stats.sourceStats.ads.totalPurchased / stats.sourceStats.ads.totalBooked) * 100).toFixed(1) : 0}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.sourceStats.organic.totalBooked > 0 ? ((stats.sourceStats.organic.totalPurchased / stats.sourceStats.organic.totalBooked) * 100).toFixed(1) : 0}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.sourceStats.ads.totalPurchased}/{stats.sourceStats.ads.totalBooked}</div>
+                  <div>{stats.sourceStats.organic.totalPurchased}/{stats.sourceStats.organic.totalBooked}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Rescheduleds */}
-
           <div className="bg-white p-6 rounded-lg shadow">
-  <div className="flex items-center justify-between mb-2">
-    <h3 className="text-sm font-medium text-gray-500">Rescheduled Calls</h3>
-    <span className="text-xs text-gray-400">Total Rescheduled</span>
-  </div>
-  <div className="text-3xl font-bold text-orange-600">
-    {stats.totalRescheduled}
-  </div>
-  <div className="text-sm text-gray-500 mt-2">
-    {stats.totalBooked > 0 
-      ? ((stats.totalRescheduled / stats.totalBooked) * 100).toFixed(1) 
-      : 0}% of total calls
-  </div>
-</div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Rescheduled Calls</h3>
+              <span className="text-xs text-gray-400">Total Rescheduled</span>
+            </div>
+            <div className="text-3xl font-bold text-orange-600">
+              {totalRescheduled}
+            </div>
+            <div className="text-sm text-gray-500 mt-2">
+              {totalBooked > 0 
+                ? ((totalRescheduled / totalBooked) * 100).toFixed(1) 
+                : 0}% of total calls
+            </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.sourceStats.ads.totalBooked > 0 ? ((stats.sourceStats.ads.totalRescheduled) / stats.sourceStats.ads.totalBooked * 100).toFixed(1) : 0}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.sourceStats.organic.totalBooked > 0 ? ((stats.sourceStats.organic.totalRescheduled) / stats.sourceStats.organic.totalBooked * 100).toFixed(1) : 0}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.sourceStats.ads.totalRescheduled}/{stats.sourceStats.ads.totalBooked}</div>
+                  <div>{stats.sourceStats.organic.totalRescheduled}/{stats.sourceStats.organic.totalBooked}</div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Total Calls Summary */}
           <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-lg shadow text-white">
             <h3 className="text-sm font-medium mb-2 opacity-90">Total Calls</h3>
-            <div className="text-3xl font-bold">{stats.totalShowedUp}</div>
+            <div className="text-3xl font-bold">{totalShowedUp}</div>
             <div className="text-sm mt-2 opacity-90">
-              {stats.totalPurchased} closed deals
+              {totalPurchased} closed deals
             </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-white/20">
+                <div className="flex justify-between text-xs opacity-90">
+                  <div>
+                    Ads: {stats.sourceStats.ads.totalShowedUp}
+                  </div>
+                  <div>
+                    Organic: {stats.sourceStats.organic.totalShowedUp}
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs opacity-70 mt-1">
+                  <div>{stats.sourceStats.ads.totalPurchased} deals</div>
+                  <div>{stats.sourceStats.organic.totalPurchased} deals</div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

@@ -50,6 +50,9 @@ useEffect(() => {
                     Pick-Ups
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                    Confirmed
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Show-Ups
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
@@ -84,6 +87,9 @@ useEffect(() => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                       {row.pickUps}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
+                      {row.confirmed}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                       {row.showUps}
@@ -181,6 +187,8 @@ async function fetchFortnightStats(setter = null) {
 
 function calculateFortnightData(calls) {
   const grouped = {};
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset time to start of day
 
   calls.forEach(call => {
     if (!call.book_date) return;
@@ -202,6 +210,8 @@ function calculateFortnightData(calls) {
         period: `${year}-${month}`,
         fortnight: fortnight,
         callsBooked: 0,
+        confirmed: 0,
+        confirmedPast: 0, // Only confirmed calls that have already happened
         pickUps: 0,
         showUps: 0,
         purchases: 0,
@@ -215,6 +225,13 @@ function calculateFortnightData(calls) {
     
     if (call.picked_up === true) getFortnight(call.book_date).pickUps++;
     if (call.showed_up === true) getFortnight(call.call_date).showUps++;
+    if (call.confirmed === true) {
+      getFortnight(call.call_date).confirmed++;
+      // Only count confirmed calls that have already happened for show-up rate calculation
+      if (call.call_date && new Date(call.call_date) < today) {
+        getFortnight(call.call_date).confirmedPast++;
+      }
+    }
     const fortnightP = getFortnight(call.purchased_at);
     if (fortnightP) fortnightP.purchases++; // ✅ Works
     
@@ -223,7 +240,7 @@ function calculateFortnightData(calls) {
   return Object.values(grouped).map(item => ({
     ...item,
     pickUpRate: item.callsBooked > 0 ? (item.pickUps / item.callsBooked) * 100 : 0,
-    showUpRate: item.pickUps > 0 ? (item.showUps / item.pickUps) * 100 : 0,
+    showUpRate: item.confirmedPast > 0 ? (item.showUps / item.confirmedPast) * 100 : 0,
     total: (item.showUps * 4) + (item.purchases * 25),
     setterName: calls[0].setters.name
   }));
