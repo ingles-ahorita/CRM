@@ -53,11 +53,15 @@ const ComparisonTable = ({
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Show Up Rate
               </th>
+              {(periodLabel !== 'Day') && (
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Conversion Rate
+              </th> )}
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Total Bookings
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Booked
+                Total Calls
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Purchased
@@ -90,31 +94,38 @@ const ComparisonTable = ({
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.pickUpRate.toFixed(1)}%
-                      {getChangeIndicator(item.pickUpRate, prevItem?.pickUpRate)}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.pickUpRate, prevItem?.pickUpRate) : null}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.showUpRateConfirmed.toFixed(1)}%
-                      {getChangeIndicator(item.showUpRateConfirmed, prevItem?.showUpRateConfirmed)}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.showUpRateConfirmed, prevItem?.showUpRateConfirmed) : null}
                     </div>
                   </td>
+                  {(periodLabel !== 'Day') && (
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.conversionRateShowedUp.toFixed(1)}%
-                      {getChangeIndicator(item.conversionRateShowedUp, prevItem?.conversionRateShowedUp)}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.conversionRateShowedUp, prevItem?.conversionRateShowedUp) : null}
                     </div>
-                  </td>
+                  </td>)}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
+                      {item.bookinsMadeinPeriod}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
+                    </div>
+                  </td>
+                   <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="text-sm text-gray-900">
                       {item.totalBooked}
-                      {getChangeIndicator(item.totalBooked, prevItem?.totalBooked)}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm font-semibold text-green-600">
                       {item.totalPurchased}
-                      {getChangeIndicator(item.totalPurchased, prevItem?.totalPurchased)}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalPurchased, prevItem?.totalPurchased) : null}
                     </div>
                   </td>
                 </tr>

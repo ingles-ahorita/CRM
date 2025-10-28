@@ -2,10 +2,10 @@ import React from 'react';
 
 const PeriodSelector = ({ value, onChange, disabled = false }) => {
   const options = [
+    { value: 'daily', label: 'Daily Comparison' },
     { value: 'none', label: 'Current View' },
     { value: 'weekly', label: 'Weekly Comparison' },
-    { value: 'monthly', label: 'Monthly Comparison' },
-    { value: 'daily', label: 'Daily Comparison' }
+    { value: 'monthly', label: 'Monthly Comparison' }
   ];
 
   return (

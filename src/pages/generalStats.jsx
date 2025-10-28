@@ -63,6 +63,19 @@ async function fetchStatsData(startDate, endDate) {
     return null;
   }
 
+  const { count: bookinsMadeinPeriod, error: bookingsError } = await supabase
+  .from('calls')
+  .select('*', { count: 'exact', head: true })
+  .gte('book_date', startDate)
+  .lte('book_date', endDate);
+
+  console.log('bookinsMadeinPeriod', bookinsMadeinPeriod);
+
+  if (bookingsError) {
+    console.error('Error fetching bookings made in period:', bookingsError);
+    return null;
+  }
+
   // Use booked calls for main analysis
   const calls = bookedCalls;
 
@@ -228,6 +241,7 @@ const totalPurchased = purchasedCalls.length;
   });
 
   return {
+    bookinsMadeinPeriod,
     totalBooked,
     totalPickedUp,
     totalShowedUp,
@@ -384,9 +398,9 @@ async function fetchDailyStats(numDays = 30) {
     const dayStart = new Date(dayEnd);
     dayStart.setHours(0, 0, 0, 0);
     
-    const startDateStr = dayStart.toISOString();
-    const endDateStr = dayEnd.toISOString();
-    const dayLabel = dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const startDateStr = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, '0')}-${String(dayStart.getDate()).padStart(2, '0')}T00:00:00`;
+    const endDateStr = `${dayEnd.getFullYear()}-${String(dayEnd.getMonth() + 1).padStart(2, '0')}-${String(dayEnd.getDate()).padStart(2, '0')}T23:59:59.999`;
+    const dayLabel = dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' });
     
     dayRanges.push({ startDateStr, endDateStr, dayLabel });
   }
