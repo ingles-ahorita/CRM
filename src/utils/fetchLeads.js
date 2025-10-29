@@ -50,12 +50,16 @@ let query = supabase
     const dayAfterTomorrow = new Date(tomorrow);
     dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
+    const dayAfterTomorrowPlusOne = new Date(dayAfterTomorrow);
+    dayAfterTomorrowPlusOne.setDate(dayAfterTomorrowPlusOne.getDate() + 1);
+
     if (activeTab === 'today') {
       query = query
         .gte(sortField, today.toISOString())
         .lt(sortField, tomorrow.toISOString());
         updateDataState({ currentDate: today.toLocaleDateString('en-CA')});
     } else if (activeTab === 'yesterday') {
+      console.log('this is yesterday', yesterday);
       query = query
         .gte(sortField, yesterday.toISOString())
         .lt(sortField, today.toISOString());
@@ -65,6 +69,11 @@ let query = supabase
         .gte(sortField, tomorrow.toISOString())
         .lt(sortField, dayAfterTomorrow.toISOString());
         updateDataState({ currentDate: tomorrow.toLocaleDateString('en-CA')});
+    } else if (activeTab === 'tomorrow + 1') {
+      query = query
+        .gte(sortField, dayAfterTomorrow.toISOString())
+        .lt(sortField, dayAfterTomorrowPlusOne.toISOString());
+        updateDataState({ currentDate: dayAfterTomorrow.toLocaleDateString('en-CA')});
     }
   } else {
     // When viewing 'all', optionally filter by provided date range

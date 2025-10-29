@@ -77,7 +77,7 @@ const updateHeaderState = (updates) => {
             marginBottom: '16px',
             borderBottom: '2px solid #e5e7eb',
           }}>
-            {['yesterday', 'today', 'tomorrow', 'all'].filter(tab => !(mode==='setter' && tab === 'tomorrow'))
+            {['yesterday', 'today', 'tomorrow', 'tomorrow + 1', 'all'].filter(tab => !(mode==='setter' && tab === 'tomorrow'))
             .map(tab => (
               <button
                 key={tab}
