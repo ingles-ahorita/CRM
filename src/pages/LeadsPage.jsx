@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Navigate } from 'react';
 import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
+import {getDailySlotsTotal} from '../utils/ocuppancy';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
 import {useSearchParams} from 'react-router-dom';
@@ -10,12 +11,15 @@ import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
 export default function LeadsPage() {
   const { userId } = useSimpleAuth();
 
+  const [slots, setSlots] = useState({});
+
       const [dataState, setDataState] = useState({
   leads: [],
   loading: true,
   setterMap: {},
   closerMap: {},
-  counts: { booked:0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0 }
+  counts: { booked:0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0, slots: 0 },
+  currentDate: new Date().toISOString().split('T')[0]
 });
 
   const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
@@ -29,7 +33,7 @@ const [searchParams, setSearchParams] = useSearchParams();
 const [headerState, setHeaderState] = useState({
   showSearch: false,
   searchTerm: searchParams.get('search') || '',                    // Read from URL
-  activeTab: searchParams.get('tab') || 'today',                  // Read from URL
+  activeTab: searchParams.get('tab') || 'today',                 // Read from URL
   sortBy: searchParams.get('sortBy') || 'book_date',              // Read from URL
   sortOrder: searchParams.get('sortOrder') || 'desc',             // Read from URL
   startDate: searchParams.get('start') || '',
@@ -93,6 +97,12 @@ useEffect(() => {
     headerState.firstSetterFilter,
     headerState.setterFilter
   );
+  const loadSlots = async () => {
+    const slotsData = await getDailySlotsTotal();
+    setSlots(slotsData);
+  };
+  
+  loadSlots();
 }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate, headerState.firstSetterFilter, headerState.setterFilter]);
 
 
@@ -115,7 +125,16 @@ useEffect(() => {
   mode='full'
 />
 
-<div style={{ 
+        
+
+
+       {dataState.loading && <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
+      </div>}
+
+      {(headerState.activeTab !== 'all') && (<>
+
+        <div style={{ 
   display: 'flex', 
   gap: '16px', 
   marginBottom: '16px',
@@ -123,6 +142,18 @@ useEffect(() => {
   backgroundColor: '#f3f4f6',
   borderRadius: '8px'
 }}>
+ { (headerState.sortBy === 'call_date') && (
+  <>
+  <span style={{ fontSize: '14px', color: '#374151' }}>
+    <strong>Slots:</strong> {slots[dataState.currentDate]}
+  </span>
+
+<span style={{ fontSize: '14px', color: '#374151' }}>
+<strong>Occupancy:</strong> {((dataState.counts.confirmed / slots[dataState.currentDate]) * 100).toFixed(2)}%
+</span>
+</>
+)}
+
   <span style={{ fontSize: '14px', color: '#374151' }}>
     <strong>Booked:</strong> {dataState.counts.booked}
   </span>
@@ -139,14 +170,10 @@ useEffect(() => {
     <strong>No Shows:</strong> {dataState.counts.noShow}
   </span>
 </div>
+
+
+
         
-
-
-       {dataState.loading && <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
-      </div>}
-
-      {(headerState.activeTab !== 'all') && (
         
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
           {dataState.leads.map((lead) => (
@@ -165,7 +192,7 @@ useEffect(() => {
               No leads found.
             </div>
           )}
-        </div> )}
+        </div> </>)}
 
         {(headerState.activeTab === 'all') && (
           <div>

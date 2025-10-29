@@ -54,14 +54,17 @@ let query = supabase
       query = query
         .gte(sortField, today.toISOString())
         .lt(sortField, tomorrow.toISOString());
+        updateDataState({ currentDate: today.toLocaleDateString('en-CA')});
     } else if (activeTab === 'yesterday') {
       query = query
         .gte(sortField, yesterday.toISOString())
         .lt(sortField, today.toISOString());
+        updateDataState({ currentDate: yesterday.toLocaleDateString('en-CA')});
     } else if (activeTab === 'tomorrow') {
       query = query
         .gte(sortField, tomorrow.toISOString())
         .lt(sortField, dayAfterTomorrow.toISOString());
+        updateDataState({ currentDate: tomorrow.toLocaleDateString('en-CA')});
     }
   } else {
     // When viewing 'all', optionally filter by provided date range
