@@ -24,7 +24,7 @@ export default function EmailLogin() {
       console.log("testaadsfasdfasd");
       // Redirect to their correct page based on role
       if (role === 'admin') {
-        navigate('/admin');
+        navigate('/management');
       } else if (role === 'closer') {
         navigate(`/closer/${userId}`);
       } else if (role === 'setter') {
@@ -47,7 +47,7 @@ const handleSubmit = async (e) => {
     localStorage.setItem('userRole', 'admin');
     localStorage.setItem('userId', null);
     localStorage.setItem('expiresAt', expiresAt);
-    navigate('/admin');
+    navigate('/management');
     setLoading(false);
     return;
   }

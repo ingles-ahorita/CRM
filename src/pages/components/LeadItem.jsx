@@ -698,17 +698,21 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
             marginBottom: '2px'
           }}
         >
-          {lead.name || 'No name'}
-          {lead.is_reschedule && (
-            <span style={{ 
-              fontSize: '10px', 
-              color: '#8c0bf5ff', 
-              fontWeight: '600', 
-              marginLeft: '8px' 
-            }}>
-              Rescheduled
-            </span>
-          )}
+          {lead.name || 'No name'} {(lead.is_reschedule) && <div style={{
+                                                                          display: 'inline',
+                                                                          fontSize: '11px',
+                                                                          color: '#8c0bf5ff',
+                                                                          fontWeight: '600',
+                                                                          marginLeft: '5%', 
+                                                                          overflow: 'hidden',
+    textOverflow: 'ellipsis'}}> Reschedule</div>} {(lead.cancelled) && <div style={{
+                                                                          display: 'inline',
+                                                                          fontSize: '11px',
+                                                                          color: '#f7371aff',
+                                                                          fontWeight: '600',
+                                                                          marginLeft: '5%', 
+                                                                          overflow: 'hidden',
+    textOverflow: 'ellipsis'}}>Cancelled</div>}
         </a>
         <div style={{
           fontSize: '12px',
