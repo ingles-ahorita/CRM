@@ -3,7 +3,7 @@ import { Modal } from './Modal';
 import { supabase } from '../../lib/supabaseClient';
 import { Mail, Phone, User, Calendar, AlertTriangle } from 'lucide-react';
 
-export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, closerMap = {}, currentShiftId = null, onShiftEnded }) {
+export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, closerMap = {}, currentShiftId = null, onShiftEnded, leads = [] }) {
   const [incompleteLeads, setIncompleteLeads] = useState([]);
   const [loading, setLoading] = useState(false);
   const [closingNote, setClosingNote] = useState('');
@@ -28,14 +28,68 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
 
     setClosingShift(true);
     try {
-      // Update the shift to closed status with closing note
+      // Determine the correct table based on mode
+      const shiftsTable = mode === 'closer' ? 'closer_shifts' : 'setter_shifts';
+      
+      // First, fetch the shift to get start_time
+      const { data: shiftData, error: shiftError } = await supabase
+        .from(shiftsTable)
+        .select('start_time')
+        .eq('id', currentShiftId)
+        .single();
+
+      if (shiftError || !shiftData) {
+        console.error('Error fetching shift:', shiftError);
+        alert('Failed to fetch shift data. Please try again.');
+        return;
+      }
+
+      // Calculate average responseTimeMinutes for calls during this shift
+      let avgCallTime = null;
+      const endTime = new Date();
+      const startTime = new Date(shiftData.start_time);
+      
+      // Filter leads that were booked during this shift period
+      const shiftLeads = leads.filter(lead => {
+        if (!lead.book_date) return false;
+        const bookDate = new Date(lead.book_date);
+        return bookDate >= startTime && bookDate <= endTime;
+      });
+
+      // Further filter by user type if needed
+      let filteredLeads = shiftLeads;
+      if (mode === 'setter' && userId) {
+        filteredLeads = shiftLeads.filter(lead => lead.setter_id === userId);
+      } else if (mode === 'closer' && userId) {
+        filteredLeads = shiftLeads.filter(lead => lead.closer_id === userId);
+      }
+
+      // Calculate average of responseTimeMinutes from the passed leads
+      if (filteredLeads.length > 0) {
+        const responseTimes = filteredLeads
+          .filter(lead => lead.called && lead.responseTimeMinutes !== null && lead.responseTimeMinutes !== undefined)
+          .map(lead => lead.responseTimeMinutes);
+
+        if (responseTimes.length > 0) {
+          const totalResponseTime = responseTimes.reduce((sum, time) => sum + time, 0);
+          avgCallTime = Math.round((totalResponseTime / responseTimes.length) * 100) / 100; // Round to 2 decimal places
+        }
+      }
+
+      // Update the shift to closed status with closing note and avg call time
+      const updateData = {
+        status: 'closed',
+        end_time: endTime.toISOString(),
+        closing_note: closingNote.trim()
+      };
+
+      if (avgCallTime !== null) {
+        updateData.avg_call_time = avgCallTime;
+      }
+
       const { error: updateError } = await supabase
-        .from('setter_shifts')
-        .update({
-          status: 'closed',
-          end_time: new Date().toISOString(),
-          closing_note: closingNote.trim()
-        })
+        .from(shiftsTable)
+        .update(updateData)
         .eq('id', currentShiftId);
 
       if (updateError) {
@@ -85,13 +139,20 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
         return;
       }
 
-      // Filter for incomplete leads
+      // Filter for incomplete leads based on mode
       const incomplete = leads.filter(lead => {
-        const isMissingPickUp = lead.picked_up === null || lead.picked_up === undefined;
-        const isMissingConfirmed = lead.confirmed === null || lead.confirmed === undefined;
-        const isMissingNote = mode === 'setter' ? !lead.setter_note_id : !lead.closer_note_id;
-        
-        return isMissingPickUp || isMissingConfirmed || isMissingNote;
+        if (mode === 'closer') {
+          // For closers, only check show up and purchase
+          const isMissingShowUp = lead.showed_up === null || lead.showed_up === undefined;
+          const isMissingPurchase = lead.purchased === null || lead.purchased === undefined;
+          return isMissingShowUp || isMissingPurchase;
+        } else {
+          // For setters, check pick up, confirmed, and note
+          const isMissingPickUp = lead.picked_up === null || lead.picked_up === undefined;
+          const isMissingConfirmed = lead.confirmed === null || lead.confirmed === undefined;
+          const isMissingNote = !lead.setter_note_id;
+          return isMissingPickUp || isMissingConfirmed || isMissingNote;
+        }
       });
 
       setIncompleteLeads(incomplete);
@@ -104,14 +165,28 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
 
   const getMissingFields = (lead) => {
     const missing = [];
-    if (lead.picked_up === null || lead.picked_up === undefined) {
-      missing.push('Pick Up');
-    }
-    if (lead.confirmed === null || lead.confirmed === undefined) {
-      missing.push('Confirmed');
-    }
-    if (!lead.setter_note_id) {
-      missing.push('Setter Note');
+    if (mode === 'closer') {
+      // For closers, only check show up and purchase
+      if (lead.showed_up === null || lead.showed_up === undefined) {
+        missing.push('Show Up');
+      }
+      if (lead.purchased === null || lead.purchased === undefined) {
+        missing.push('Purchase');
+      }
+      if (!lead.closer_note_id) {
+        missing.push('Closer Note');
+      }
+    } else {
+      // For setters, check pick up, confirmed, and note
+      if (lead.picked_up === null || lead.picked_up === undefined) {
+        missing.push('Pick Up');
+      }
+      if (lead.confirmed === null || lead.confirmed === undefined) {
+        missing.push('Confirmed');
+      }
+      if (!lead.setter_note_id) {
+        missing.push('Setter Note');
+      }
     }
     return missing;
   };
@@ -121,20 +196,24 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
       case 'Pick Up': return '#ef4444'; // red
       case 'Confirmed': return '#f59e0b'; // yellow
       case 'Setter Note': return '#8b5cf6'; // purple
+      case 'Show Up': return '#10b981'; // green
+      case 'Purchase': return '#3b82f6'; // blue
       default: return '#6b7280';
     }
   };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} className="end-shift-modal">
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '90vh', overflow: 'hidden' }}>
+        {/* Header - Fixed */}
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
           gap: '12px', 
           marginBottom: '24px',
           paddingBottom: '16px',
-          borderBottom: '2px solid #e5e7eb'
+          borderBottom: '2px solid #e5e7eb',
+          flexShrink: 0
         }}>
           <AlertTriangle size={24} color="#f59e0b" />
           <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
@@ -147,12 +226,14 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
             <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading incomplete leads...</div>
           </div>
         ) : incompleteLeads.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
+          <div style={{ textAlign: 'center', padding: '40px', flexShrink: 0 }}>
             <div style={{ fontSize: '18px', color: '#10b981', fontWeight: '600' }}>
               🎉 All leads are complete! Great job!
             </div>
             <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '8px' }}>
-              No missing pick ups, confirmations, or setter notes found.
+              {mode === 'closer' 
+                ? 'No missing show ups or purchases found.'
+                : 'No missing pick ups, confirmations, or setter notes found.'}
             </div>
           </div>
         ) : (
@@ -162,7 +243,8 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
               border: '1px solid #f59e0b', 
               borderRadius: '8px', 
               padding: '16px', 
-              marginBottom: '20px' 
+              marginBottom: '20px',
+              flexShrink: 0
             }}>
               <div style={{ fontSize: '16px', fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>
                 {incompleteLeads.length} lead{incompleteLeads.length !== 1 ? 's' : ''} need{incompleteLeads.length === 1 ? 's' : ''} attention
@@ -175,7 +257,9 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
             <div style={{ 
               flex: 1,
               overflowY: 'auto',
-              minHeight: 0
+              minHeight: 0,
+              maxHeight: 'calc(90vh - 400px)',
+              paddingRight: '8px'
             }}>
               {incompleteLeads.map((lead, index) => {
                 const missingFields = getMissingFields(lead);
@@ -339,11 +423,12 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
           </>
         )}
 
-        {/* Closing Note Section */}
+        {/* Closing Note Section - Fixed */}
         <div style={{ 
           marginTop: '24px',
           paddingTop: '16px',
-          borderTop: '1px solid #e5e7eb'
+          borderTop: '1px solid #e5e7eb',
+          flexShrink: 0
         }}>
           <div style={{ 
             display: 'flex', 
@@ -404,12 +489,14 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
           </div>
         </div>
 
+        {/* Buttons - Fixed */}
         <div style={{ 
           display: 'flex', 
           justifyContent: 'flex-end', 
           gap: '12px', 
           marginTop: '16px',
-          flexWrap: 'wrap'
+          flexWrap: 'wrap',
+          flexShrink: 0
         }}>
           <button
             onClick={onClose}

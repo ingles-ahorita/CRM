@@ -719,6 +719,24 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         }}>
           {lead.email || 'No email'}
         </div>
+        <div style={{
+          fontSize: '12px',
+          color: '#6b7280',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          marginTop: '2px'
+        }}>
+          <Phone size={12} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
+          <a
+            href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || ''}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#6b7280', textDecoration: 'none' }}
+          >
+            {lead.phone || 'No phone'}
+          </a>
+        </div>
       </div>
 
       {/* Setter */}

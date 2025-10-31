@@ -64,32 +64,40 @@ import { useSimpleAuth } from '../useSimpleAuth';
 });
 
   // Check for active shift on component mount
-  // useEffect(() => {
-  //   checkActiveShift();
-  // }, []);
+  useEffect(() => {
+    checkActiveShift();
+  }, [closer]);
 
-  // const checkActiveShift = async () => {
-  //   try {
-  //     const { data, error } = await supabase
-  //       .from('setter_shifts')
-  //       .select('*')
-  //       .eq('closer_id', closer)
-  //       .eq('status', 'open')
-  //       .order('start_time', { ascending: false })
-  //       .limit(1)
-  //       .single();
+  // Update headerState when isShiftActive changes
+  useEffect(() => {
+    setHeaderState(prevState => ({
+      ...prevState,
+      isShiftActive: isShiftActive
+    }));
+  }, [isShiftActive]);
 
-  //     if (data && !error) {
-  //       setCurrentShift(data);
-  //       setIsShiftActive(true);
-  //     } else {
-  //       setCurrentShift(null);
-  //       setIsShiftActive(false);
-  //     }
-  //   } catch (err) {
-  //     console.error('Error checking active shift:', err);
-  //   }
-  // };
+  const checkActiveShift = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('closer_shifts')
+        .select('*')
+        .eq('closer_id', closer)
+        .eq('status', 'open')
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data && !error) {
+        setCurrentShift(data);
+        setIsShiftActive(true);
+      } else {
+        setCurrentShift(null);
+        setIsShiftActive(false);
+      }
+    } catch (err) {
+      console.error('Error checking active shift:', err);
+    }
+  };
 
   // Enable real-time updates for this closer
   useRealtimeLeads(dataState, setDataState, headerState.activeTab, null, closer);
@@ -186,6 +194,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
           closerMap={dataState.closerMap}
           currentShiftId={currentShift?.id}
           onShiftEnded={handleShiftEnded}
+          leads={dataState.leads}
         />
       </div>
     );

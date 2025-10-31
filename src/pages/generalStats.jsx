@@ -23,6 +23,7 @@ async function fetchStatsData(startDate, endDate) {
       phone,
       book_date,
       call_date,
+      setters (id, name),
       closers (id, name),
       leads (phone, source)
     `)
@@ -51,6 +52,7 @@ async function fetchStatsData(startDate, endDate) {
       lead_id,
       phone,
       book_date,
+      setters (id, name),
       closers (id, name),
       leads (phone, source)
     `)
@@ -123,6 +125,34 @@ const totalPurchased = purchasedCalls.length;
         closerStats[closerId].purchased++;
       }
     }
+  });
+
+  // Group by setter - calculate pick up rate and show up rate
+  const setterStats = {};
+  filteredCalls.forEach(call => {
+    if (call.setters) {
+      const setterId = call.setters.id;
+      if (!setterStats[setterId]) {
+        setterStats[setterId] = {
+          id: setterId,
+          name: call.setters.name,
+          totalBooked: 0,
+          totalPickedUp: 0,
+          totalShowedUp: 0,
+          totalConfirmed: 0
+        };
+      }
+      setterStats[setterId].totalBooked++;
+      if (call.picked_up === true) setterStats[setterId].totalPickedUp++;
+      if (call.showed_up === true) setterStats[setterId].totalShowedUp++;
+      if (call.confirmed === true) setterStats[setterId].totalConfirmed++;
+    }
+  });
+
+  // Calculate rates for each setter
+  Object.values(setterStats).forEach(setter => {
+    setter.pickUpRate = setter.totalBooked > 0 ? (setter.totalPickedUp / setter.totalBooked) * 100 : 0;
+    setter.showUpRate = setter.totalConfirmed > 0 ? (setter.totalShowedUp / setter.totalConfirmed) * 100 : 0;
   });
 
   // Group by country - use booked calls for activity metrics, purchased calls for sales
@@ -249,6 +279,7 @@ const totalPurchased = purchasedCalls.length;
     totalPurchased,
     totalRescheduled: calls.filter(c => c.is_reschedule).length,
     closers: Object.values(closerStats),
+    setters: Object.values(setterStats),
     countries: sortedCountries,
     sourceStats
   };
@@ -1074,6 +1105,94 @@ export default function StatsDashboard() {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Setter Stats - Pick Up Rate and Show Up Rate */}
+        {stats && stats.setters && stats.setters.length > 0 && (
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900">Setter Performance</h2>
+              <p className="text-sm text-gray-500 mt-1">Pick Up Rate and Show Up Rate per setter</p>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Setter
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Booked
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Picked Up
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Pick Up Rate
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Confirmed
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Showed Up
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Show Up Rate
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {stats.setters.map((setter) => {
+                    return (
+                      <tr key={setter.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900" onClick={() => navigate(`/setter/${setter.id}`)} onMouseEnter={(e) => e.currentTarget.style.cursor = 'pointer'}>
+                            {setter.name}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">{setter.totalBooked}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">{setter.totalPickedUp}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="inline-flex items-center">
+                            <span className={`text-lg font-bold ${
+                              setter.pickUpRate >= 70 ? 'text-green-600' :
+                              setter.pickUpRate >= 50 ? 'text-yellow-600' :
+                              'text-red-600'
+                            }`}>
+                              {setter.pickUpRate.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">{setter.totalConfirmed}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">{setter.totalShowedUp}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="inline-flex items-center">
+                            <span className={`text-lg font-bold ${
+                              setter.showUpRate >= 70 ? 'text-green-600' :
+                              setter.showUpRate >= 50 ? 'text-yellow-600' :
+                              'text-red-600'
+                            }`}>
+                              {setter.showUpRate.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
           {/* Country Sales Table */}
           <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -1153,10 +1272,10 @@ export default function StatsDashboard() {
               </table>
             </div>
           </div>
-        </div>
         </>
         )}
       </div>
-    </div> 
-    </div>);
+    </div>
+  </div>
+  );
 }

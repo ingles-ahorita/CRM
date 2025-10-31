@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Calendar, Clock, User, FileText, CheckCircle, Circle } from 'lucide-react';
+import { Modal } from './components/Modal';
 
 export default function ShiftsPage() {
   const [shifts, setShifts] = useState([]);
@@ -9,19 +10,26 @@ export default function ShiftsPage() {
   const [sortBy, setSortBy] = useState('start_time');
   const [sortOrder, setSortOrder] = useState('desc');
   const [filterStatus, setFilterStatus] = useState('all'); // all, open, closed
+  const [activeTab, setActiveTab] = useState('setters'); // 'setters' or 'closers'
+  const [selectedNote, setSelectedNote] = useState(null); // Store the shift with the note to display
 
   useEffect(() => {
     fetchShifts();
-  }, [sortBy, sortOrder, filterStatus]);
+  }, [sortBy, sortOrder, filterStatus, activeTab]);
 
   const fetchShifts = async () => {
     try {
       setLoading(true);
+      
+      // Determine which table to query based on active tab
+      const tableName = activeTab === 'setters' ? 'setter_shifts' : 'closer_shifts';
+      const relationName = activeTab === 'setters' ? 'setters' : 'closers';
+      
       let query = supabase
-        .from('setter_shifts')
+        .from(tableName)
         .select(`
           *,
-          setters(
+          ${relationName}(
             id,
             name
           )
@@ -128,6 +136,71 @@ export default function ShiftsPage() {
           <p style={{ color: '#6b7280', fontSize: '16px' }}>
             View and manage all setter and closer shifts
           </p>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '4px', 
+          marginBottom: '24px',
+          borderBottom: '2px solid #e5e7eb'
+        }}>
+          <button
+            onClick={() => setActiveTab('setters')}
+            style={{
+              outline: 'none',
+              padding: '12px 24px',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: activeTab === 'setters' ? '600' : '400',
+              color: activeTab === 'setters' ? '#001749ff' : '#6b7280',
+              borderBottom: activeTab === 'setters' ? '2px solid #001749ff' : 'none',
+              marginBottom: '-2px',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              if (activeTab !== 'setters') {
+                e.currentTarget.style.color = '#111827';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeTab !== 'setters') {
+                e.currentTarget.style.color = '#6b7280';
+              }
+            }}
+          >
+            Setters
+          </button>
+          <button
+            onClick={() => setActiveTab('closers')}
+            style={{
+              outline: 'none',
+              padding: '12px 24px',
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: activeTab === 'closers' ? '600' : '400',
+              color: activeTab === 'closers' ? '#001749ff' : '#6b7280',
+              borderBottom: activeTab === 'closers' ? '2px solid #001749ff' : 'none',
+              marginBottom: '-2px',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => {
+              if (activeTab !== 'closers') {
+                e.currentTarget.style.color = '#111827';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (activeTab !== 'closers') {
+                e.currentTarget.style.color = '#6b7280';
+              }
+            }}
+          >
+            Closers
+          </button>
         </div>
 
         {/* Controls */}
@@ -241,6 +314,11 @@ export default function ShiftsPage() {
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
                       Duration
                     </th>
+                    {activeTab === 'setters' && (
+                      <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
+                        Avg Call Time
+                      </th>
+                    )}
                     <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: '14px', fontWeight: '600', color: '#374151' }}>
                       Closing Note
                     </th>
@@ -289,10 +367,12 @@ export default function ShiftsPage() {
                           <User size={16} style={{ color: '#6b7280' }} />
                           <div>
                             <div style={{ fontWeight: '500', color: '#111827' }}>
-                              {shift.setters?.name || 'Unknown'}
+                              {activeTab === 'setters' 
+                                ? (shift.setters?.name || 'Unknown')
+                                : (shift.closers?.name || 'Unknown')}
                             </div>
                             <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                              {shift.setters ? 'Setter' : 'Closer'}
+                              {activeTab === 'setters' ? 'Setter' : 'Closer'}
                             </div>
                           </div>
                         </div>
@@ -328,10 +408,43 @@ export default function ShiftsPage() {
                         </div>
                       </td>
 
+                      {/* Avg Call Time - Only for setters */}
+                      {activeTab === 'setters' && (
+                        <td style={{ padding: '12px 16px' }}>
+                          {shift.avg_call_time !== null && shift.avg_call_time !== undefined ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Clock size={16} style={{ color: '#0ea5e9' }} />
+                              <span style={{ fontSize: '14px', color: '#374151', fontWeight: '500' }}>
+                                {shift.avg_call_time}m
+                              </span>
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '14px', color: '#9ca3af', fontStyle: 'italic' }}>
+                              N/A
+                            </span>
+                          )}
+                        </td>
+                      )}
+
                       {/* Closing Note */}
                       <td style={{ padding: '12px 16px' }}>
                         {shift.closing_note ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div 
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '8px',
+                              cursor: 'pointer',
+                              transition: 'opacity 0.2s'
+                            }}
+                            onClick={() => setSelectedNote(shift)}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.opacity = '0.7';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.opacity = '1';
+                            }}
+                          >
                             <FileText size={16} style={{ color: '#6b7280' }} />
                             <span 
                               style={{ 
@@ -340,10 +453,9 @@ export default function ShiftsPage() {
                                 maxWidth: '200px',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                cursor: 'pointer'
+                                whiteSpace: 'nowrap'
                               }}
-                              title={shift.closing_note}
+                              title="Click to view full note"
                             >
                               {shift.closing_note}
                             </span>
@@ -393,6 +505,114 @@ export default function ShiftsPage() {
             </div>
           </div>
         )}
+
+        {/* Closing Note Modal */}
+        <Modal 
+          isOpen={selectedNote !== null} 
+          onClose={() => setSelectedNote(null)}
+        >
+          <div style={{ 
+            minWidth: '500px', 
+            maxWidth: '700px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            <h2 style={{ 
+              fontSize: '24px', 
+              fontWeight: 'bold', 
+              color: '#111827', 
+              marginBottom: '24px',
+              flexShrink: 0
+            }}>
+              Closing Note
+            </h2>
+            
+            {selectedNote && (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                {/* User Info Section */}
+                <div style={{ 
+                  marginBottom: '20px',
+                  paddingBottom: '16px',
+                  borderBottom: '1px solid #e5e7eb',
+                  flexShrink: 0
+                }}>
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '12px'
+                  }}>
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      backgroundColor: '#f3f4f6',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <User size={20} style={{ color: '#6b7280' }} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#111827', fontSize: '16px', marginBottom: '4px' }}>
+                        {activeTab === 'setters' 
+                          ? (selectedNote.setters?.name || 'Unknown Setter')
+                          : (selectedNote.closers?.name || 'Unknown Closer')}
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Calendar size={14} />
+                        <span>
+                          {formatDate(selectedNote.start_time)} - {selectedNote.end_time ? formatDate(selectedNote.end_time) : 'Ongoing'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Note Content - Scrollable */}
+                <div style={{ 
+                  backgroundColor: '#f9fafb', 
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '20px',
+                  whiteSpace: 'pre-wrap',
+                  wordWrap: 'break-word',
+                  fontSize: '15px',
+                  color: '#374151',
+                  lineHeight: '1.6',
+                  flex: 1,
+                  overflowY: 'auto',
+                  minHeight: '150px',
+                  maxHeight: '400px'
+                }}>
+                  {selectedNote.closing_note}
+                </div>
+
+                {/* Average Call Time - Fixed at bottom */}
+                {selectedNote.avg_call_time !== null && selectedNote.avg_call_time !== undefined && (
+                  <div style={{ 
+                    marginTop: '16px',
+                    padding: '12px 16px',
+                    backgroundColor: '#f0f9ff',
+                    border: '1px solid #0ea5e9',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    color: '#0c4a6e',
+                    fontWeight: '500',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    flexShrink: 0
+                  }}>
+                    <Clock size={18} />
+                    <span>Average Call Time: <strong>{selectedNote.avg_call_time}m</strong></span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </Modal>
       </div>
     </div>
   );

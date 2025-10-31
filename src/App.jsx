@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LeadsPage from './pages/LeadsPage';
+import ManagementPage from './pages/ManagementPage';
 import LeadDetailPage from './pages/LeadDetailPage';
 import Closer from './pages/Closer';
 import Setter from './pages/Setter';
@@ -19,6 +20,11 @@ export default function App() {
       <Route path="/admin" element={
         <ProtectedRoute>
         <LeadsPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/management" element={
+        <ProtectedRoute>
+        <ManagementPage />
         </ProtectedRoute>
       } />
       <Route path="/lead/:leadID" element={<LeadDetailPage />} />

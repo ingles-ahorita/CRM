@@ -1,0 +1,183 @@
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/css/intlTelInput.min.css" />
+
+<style>
+ .iti {
+    display: flex;
+  align-items: center;       /* vertically center input and flag */
+  height: auto;              /* don't hard-code height */
+  min-height: 66px;          /* match input height */
+  box-sizing: border-box;
+  position: relative;
+  }
+
+  /* Position flag absolutely to the left */
+  .iti__flag-container {
+    position: absolute;
+    top: 0%;/* You can tweak this */
+    height: 100%;
+    display: flex;
+    align-items: center;
+    z-index: 2;
+    pointer-events: auto;
+  }
+
+.iti--allow-dropdown .iti__flag-container{
+    left: 1.5%;
+}
+
+  /* Ensure flag stays within bounds */
+  .iti__selected-flag {
+    height: 55px !important;
+background-color: transparent !important;
+transform: scale(0.85);
+transform-origin: left;
+padding: 0px;
+   
+  }
+
+.iti__country-list {
+  background-color: #ffffff !important;  /* white background */
+  color: #000000 !important;             /* black text */
+  font-size: 14px;
+  border: 1px solid #ccc;
+  z-index: 10000; /* make sure it's above other elements */
+}
+
+/* Style each country entry on hover */
+.iti__country:hover,
+.iti__country.iti__highlight {
+  background-color: #f0f0f0 !important;
+  color: #000 !important;
+}
+
+/* Optional: customize country names */
+.iti__country-name {
+  color: #000000 !important;
+}
+
+.iti__arrow {
+  border-top-color: #FFFFFF; /* your desired color */
+}
+
+@media (max-width: 767px) {
+
+.iti--allow-dropdown .iti__flag-container{
+    left: 5%;
+}
+
+
+}
+
+</style>
+
+<!-- 📌 FUNCIONALIDAD -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/intlTelInput.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+
+async function sendToDatabase(name, email, source, medium){
+  console.log('sending to supabase');
+  const url = 'https://ewutthaqmnvdxhcunbci.supabase.co/rest/v1/opt_ins';
+  const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3dXR0aGFxbW52ZHhoY3VuYmNpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxNDgyNjgsImV4cCI6MjA3MjcyNDI2OH0.dMQPQPJIZVnsDde2C09ZniR52eEn7zAVgpOBiMA_Qs8'
+
+  try {
+    const response = await fetch(url,{
+      method: 'POST',
+      headers: {
+        'Content-type': 'application/json',
+        'Authorization': 'Bearer ' + key
+      },
+      body: JSON.stringify({
+        name: name, 
+        email: email, 
+        source: 'ads',
+        medium: medium 
+    })
+  });
+
+    if(!response.ok){
+      console.error('Error sending to database:', response.statusText);
+  }
+} catch(error){
+    console.error('Error sending to database:', error);
+  }
+} 
+
+    
+    const form = document.querySelector("form");
+    const input = document.querySelector("#form_submission_phone_number");
+
+    if (!form) return;
+
+    let iti, errorBox;
+
+    if (input) {
+      iti = window.intlTelInput(input, {
+        initialCountry: "es",
+        preferredCountries: [
+          "ar", "bo", "cl", "co", "cr", "cu", "do", "ec", "es", "gt",
+          "hn", "mx", "ni", "pa", "pe", "pr", "py", "sv", "us", "uy", "ve"
+        ],
+        utilsScript: "https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8/js/utils.js"
+      });
+
+      input.value = "+" + iti.getSelectedCountryData().dialCode;
+
+      // ✅ Create error box with full-width styling
+      errorBox = document.createElement("div");
+      errorBox.id = "phone-error";
+      errorBox.style.display = "none";
+      errorBox.style.background = "#f9f9f9";
+      errorBox.style.color = "#f57c00";
+      errorBox.style.fontSize = "16px";
+      errorBox.style.padding = "12px 16px";
+      errorBox.style.marginTop = "10px";
+      errorBox.style.borderRadius = "6px";
+      errorBox.style.borderLeft = "5px solid #f57c00";
+      errorBox.style.fontWeight = "500";
+      errorBox.style.width = "100%";
+      errorBox.style.boxSizing = "border-box";
+
+      // 🔁 Insert it below the entire input block (usually its grandparent)
+      const inputWrapper = input.closest(".form-field") || input.parentNode;
+      inputWrapper.parentNode.insertBefore(errorBox, inputWrapper.nextSibling);
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault(); // Stop Kajabi default behavior
+
+      // Only validate phone if it exists
+      if (input && iti) {
+        input.classList.remove("error");
+        errorBox.style.display = "none";
+        errorBox.textContent = "";
+
+        if (!iti.isValidNumber()) {
+          input.classList.add("error");
+          errorBox.textContent = "Este valor debe ser un número de teléfono válido.";
+          errorBox.style.display = "block";
+          return;
+        }
+
+        input.value = iti.getNumber();
+      }
+
+      // Grab form data
+      const name = document.querySelector('input[name="form_submission[name]"]')?.value || "";
+      const email = document.querySelector('input[name="form_submission[email]"]')?.value || "";
+      const phone = input ? input.value : "";
+      const medium = new URLSearchParams(window.location.search).get('medium');
+
+      sendToDatabase(name, email, phone, medium);
+
+
+      // Submit + redirect
+      form.submit();
+      setTimeout(() => {
+        const encodedName = encodeURIComponent(name);
+        const encodedEmail = encodeURIComponent(email);
+        window.location.href = `https://www.inglesahorita.com/ads-new-masterclass-job?name=${name}&email=${email}`;
+      }, 500);
+    });
+  });
+</script>

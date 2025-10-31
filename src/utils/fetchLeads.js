@@ -10,7 +10,7 @@ export async function fetchAll(searchTerm, activeTab = 'all' ,
    sortField = 'book_date', order = 'desc', 
    setDataState,
     closerId, setterId, 
-    filters, leadId, startDate, endDate, firstSetterFilter, setterFilter)  {
+    filters, leadId, startDate, endDate, setterFilter, closerFilter)  {
 
 
 
@@ -123,15 +123,15 @@ if (searchTerm) {
       applyStatusFilters(query, filters)
     }
 
-    // Apply setter filters when viewing 'all'
+    // Apply setter and closer filters when viewing 'all'
     if (activeTab === 'all') {
-      if (firstSetterFilter) {
-        query = query.eq('first_setter_id', firstSetterFilter);
-        console.log("Filtering by first_setter_id:", firstSetterFilter);
-      }
       if (setterFilter) {
         query = query.eq('setter_id', setterFilter);
         console.log("Filtering by setter_id:", setterFilter);
+      }
+      if (closerFilter) {
+        query = query.eq('closer_id', closerFilter);
+        console.log("Filtering by closer_id:", closerFilter);
       }
     }
 
@@ -148,7 +148,7 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
   } else {
     const counts = {
       booked: leadsData?.length || 0,
-    confirmed: leadsData?.filter(lead => lead.confirmed).length || 0,
+    confirmed: leadsData?.filter(lead => lead.cancelled ? false : lead.confirmed).length || 0,
     cancelled: leadsData?.filter(lead => lead.confirmed === false || lead.cancelled === true ).length || 0,
         noPickup: leadsData?.filter(lead => lead.picked_up === false).length || 0,
     noShow: leadsData?.filter(lead => lead.showed_up).length || 0

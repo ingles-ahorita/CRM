@@ -32,7 +32,7 @@ const updateHeaderState = (updates) => {
 
 
 
-    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters, startDate, endDate, firstSetterFilter, setterFilter } = state;
+    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters, startDate, endDate, setterFilter, closerFilter } = state;
     return (
         <div style={{ marginBottom: '24px' }}>
 
@@ -88,8 +88,8 @@ const updateHeaderState = (updates) => {
                       showSearch: false,
                       startDate: '',
                       endDate: '',
-                      firstSetterFilter: '',
-                      setterFilter: ''
+                      setterFilter: '',
+                      closerFilter: ''
                     });
 
                     if(tab === 'tomorrow'){
@@ -161,33 +161,11 @@ const updateHeaderState = (updates) => {
     </div>
   )}
 
-  {/* Setter Filters - only when viewing all */}
-  {(activeTab === 'all' && mode === 'full') && (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
+  {/* Setter & Closer Filters - only when viewing all */}
+  {(activeTab === 'all' || mode === 'full') && (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>First Setter:</label>
-        <select
-          value={firstSetterFilter || ''}
-          onChange={(e) => updateHeaderState({ firstSetterFilter: e.target.value || null })}
-          style={{
-            padding: '6px 8px',
-            border: '1px solid #d1d5db',
-            borderRadius: '6px',
-            fontSize: '13px',
-            outline: 'none',
-            backgroundColor: 'white',
-            minWidth: '120px'
-          }}
-        >
-          <option value="">All First Setters</option>
-          {state.setterMap && Object.entries(state.setterMap).map(([id, name]) => (
-            <option key={`first-${id}`} value={id}>{name}</option>
-          ))}
-        </select>
-      </div>
-      
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>Current Setter:</label>
+        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>Setter:</label>
         <select
           value={setterFilter || ''}
           onChange={(e) => updateHeaderState({ setterFilter: e.target.value || null })}
@@ -201,9 +179,31 @@ const updateHeaderState = (updates) => {
             minWidth: '120px'
           }}
         >
-          <option value="">All Current Setters</option>
+          <option value="">All Setters</option>
           {state.setterMap && Object.entries(state.setterMap).map(([id, name]) => (
-            <option key={`current-${id}`} value={id}>{name}</option>
+            <option key={`setter-${id}`} value={id}>{name}</option>
+          ))}
+        </select>
+      </div>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <label style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500' }}>Closer:</label>
+        <select
+          value={closerFilter || ''}
+          onChange={(e) => updateHeaderState({ closerFilter: e.target.value || null })}
+          style={{
+            padding: '6px 8px',
+            border: '1px solid #d1d5db',
+            borderRadius: '6px',
+            fontSize: '13px',
+            outline: 'none',
+            backgroundColor: 'white',
+            minWidth: '120px'
+          }}
+        >
+          <option value="">All Closers</option>
+          {state.closerMap && Object.entries(state.closerMap).map(([id, name]) => (
+            <option key={`closer-${id}`} value={id}>{name}</option>
           ))}
         </select>
       </div>
@@ -221,7 +221,7 @@ const updateHeaderState = (updates) => {
 
     {(mode === 'full') && (<>
 
-{(activeTab !== "tomorrow") && (
+{(activeTab !== "tomorrow" && activeTab !== "tomorrow + 1") && (
       
     <div
       onClick={() =>{
@@ -486,7 +486,7 @@ const updateHeaderState = (updates) => {
   </button>
 
   {/* End of Shift Button */}
-  {mode === 'setter' && (
+  {(mode === 'setter' || mode === 'closer' )&& (
   <button
     style={{
       display: 'flex',

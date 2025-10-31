@@ -12,25 +12,47 @@ export function StartShiftModal({ isOpen, onClose, userId, userName, onShiftStar
     setError('');
 
     try {
+      if (!userId) {
+        setError('User ID is required to start a shift.');
+        setLoading(false);
+        return;
+      }
+
       // Create a new shift entry
       const shiftData = {
         start_time: new Date().toISOString(),
         status: 'open'
       };
 
+      // Determine the correct table based on mode
+      const shiftsTable = mode === 'closer' ? 'closer_shifts' : 'setter_shifts';
+      
       if (mode === 'setter') {
         shiftData.setter_id = userId;
+      } else if (mode === 'closer') {
+        shiftData.closer_id = userId;
       } 
 
+      console.log('Starting shift with data:', { shiftsTable, shiftData, mode, userId });
+
       const { data, error: insertError } = await supabase
-        .from('setter_shifts')
+        .from(shiftsTable)
         .insert(shiftData)
         .select()
         .single();
 
       if (insertError) {
         console.error('Error starting shift:', insertError);
-        setError('Failed to start shift. Please try again.');
+        console.error('Error details:', {
+          shiftsTable,
+          shiftData,
+          mode,
+          userId,
+          errorMessage: insertError.message,
+          errorDetails: insertError.details,
+          errorHint: insertError.hint
+        });
+        setError(`Failed to start shift: ${insertError.message || 'Please try again.'}`);
         return;
       }
 

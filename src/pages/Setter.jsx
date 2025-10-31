@@ -82,7 +82,6 @@ import { supabase } from '../lib/supabaseClient';
       sortOrder: 'desc',
       startDate: '',
       endDate: '',
-      firstSetterFilter: '',
       setterFilter: '',
       filters: {
         confirmed: false,
@@ -176,6 +175,7 @@ import { supabase } from '../lib/supabaseClient';
           closerMap={dataState.closerMap}
           currentShiftId={currentShift?.id}
           onShiftEnded={handleShiftEnded}
+          leads={dataState.leads}
         />
       </div>
     );

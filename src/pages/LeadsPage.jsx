@@ -38,8 +38,8 @@ const [headerState, setHeaderState] = useState({
   sortOrder: searchParams.get('sortOrder') || 'desc',             // Read from URL
   startDate: searchParams.get('start') || '',
   endDate: searchParams.get('end') || '',
-  firstSetterFilter: searchParams.get('firstSetter') || '',
   setterFilter: searchParams.get('setter') || '',
+  closerFilter: searchParams.get('closer') || '',
   filters: {
     confirmed: searchParams.get('confirmed') === 'true',          // Read from URL
     cancelled: searchParams.get('cancelled') === 'true',          // Read from URL
@@ -66,8 +66,8 @@ useEffect(() => {
   if (headerState.sortOrder !== 'desc') params.set('sortOrder', headerState.sortOrder);
   if (headerState.startDate) params.set('start', headerState.startDate);
   if (headerState.endDate) params.set('end', headerState.endDate);
-  if (headerState.firstSetterFilter) params.set('firstSetter', headerState.firstSetterFilter);
   if (headerState.setterFilter) params.set('setter', headerState.setterFilter);
+  if (headerState.closerFilter) params.set('closer', headerState.closerFilter);
   if (headerState.transferred) params.set('transferred', headerState.transferred);
   if (headerState.purchased) params.set('purchased', headerState.purchased);
   // Add filters
@@ -94,16 +94,17 @@ useEffect(() => {
     undefined,
     headerState.startDate,
     headerState.endDate,
-    headerState.firstSetterFilter,
-    headerState.setterFilter
+    headerState.setterFilter,
+    headerState.closerFilter
   );
   const loadSlots = async () => {
+    console.log('loading slots');
     const slotsData = await getDailySlotsTotal();
     setSlots(slotsData);
   };
   
   loadSlots();
-}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate, headerState.firstSetterFilter, headerState.setterFilter]);
+}, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate, headerState.setterFilter, headerState.closerFilter]);
 
 
 
@@ -221,6 +222,7 @@ useEffect(() => {
           userId={null}
           setterMap={dataState.setterMap}
           closerMap={dataState.closerMap}
+          leads={dataState.leads}
         />
 
       </div>
