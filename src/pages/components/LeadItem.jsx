@@ -2,7 +2,7 @@ import { supabase } from '../../lib/supabaseClient';
 import {Modal, NotesModal, ViewNotesModal} from './Modal';
 import { TransferSetterModal } from './TransferSetterModal';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Mail, Phone, User, Calendar } from 'lucide-react';
+import { Mail, Phone, User, Calendar, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import './LeadItem.css';
 
@@ -94,7 +94,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   }, [lead]);
 
   useEffect(() => {
-    setNoteButtonText((mode === 'closer' ? lead.closer_note_id : lead.setter_note_id) ? "📝 Edit note" : "✚ Add note");
+    setNoteButtonText(mode === 'admin' ? "📝 Notes" : (mode === 'closer' ? lead.closer_note_id : lead.setter_note_id) ? "📝 Edit note" : "✚ Add note");
   }, [showNoteModal]);
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
@@ -246,7 +246,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           </div>
           
           <button
-            onClick={() => (mode=== 'full' || mode === "view") ? setViewModalOpen(true) : setShowNoteModal(true)}
+            onClick={() => (mode=== 'admin' || mode === "view") ? setViewModalOpen(true) : setShowNoteModal(true)}
             className={`lead-notes-button ${(lead.setter_note_id && mode !== 'closer') || (lead.closer_note_id && mode === 'closer') ? 'has-note' : ''}`}
           > 
             {(mode === "full" || mode === "view") ? "📝 Notes" : (noteButtonText) }
@@ -257,7 +257,14 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
         <div className="lead-timeline-info">
 
-           {(mode === 'closer' || mode === 'full' || mode === 'view') && (
+            {(mode === 'admin') && (
+              <div className="lead-timeline-item">
+                <Clock size={12} />
+                <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.book_date) || 'N/A'}</span>
+              </div>
+            )}
+
+           {(mode === 'closer' || mode === 'full' || mode === 'admin') && (
             <div className="lead-timeline-item">
               <Calendar size={12} />
               <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.call_date)|| 'N/A'}</span>
@@ -287,13 +294,14 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               </span>
             )}
 
-            {(mode !== 'closer') && (
+            {(mode !== 'closer' && mode !== 'admin') && (
             <div className="lead-timeline-item">
-              <span>{DateHelpers.formatTimeAgo(lead.book_date) || 'N/A'}</span>
+              <span>{DateHelpers.formatTimeAgo(lead.book_date)|| 'N/A'}</span>
             </div>)}
-             {( mode !== 'closer' && mode === 'setter' ) && (
+             {( mode !== 'closer') && (
+              <a href={getZoomCallLogUrl(lead.phone, lead.book_date)} target="_blank" rel="noopener noreferrer">
              <span className="lead-status-badge" style={{backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called)}}>
-              {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span>
+              {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span> </a>
               )}
               
               {(new Date() - new Date(lead.book_date)) < (2 * 60 * 60 * 1000) && (lead.confirmed === null) &&(
@@ -682,14 +690,12 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
       {/* Name & Contact */}
       <div style={{ overflow: 'hidden' }}>
       <a
-  href={`/lead/${lead.lead_id}`}
+  href={`/lead/${lead.lead_id}`} target="_blank" 
   onClick={(e) => {
     if (!e.metaKey && !e.ctrlKey) {  // ← Only prevent default for regular clicks
       e.preventDefault();
       navigate(`/lead/${lead.lead_id}`);
-    }
-    // Cmd/Ctrl+Click will use browser default (opens in new tab)
-  }}
+    }}}
           style={{
             fontWeight: '600',
             color: '#111827',
@@ -697,8 +703,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            marginBottom: '2px',
-            textDecoration: 'none'
+            marginBottom: '2px'
           }}
         >
           {lead.name || 'No name'} {(lead.is_reschedule) && <div style={{
@@ -724,14 +729,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
           overflow: 'hidden',
           textOverflow: 'ellipsis'
         }}>
-          <a
-            href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email || '')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#6b7280', textDecoration: 'none' }}
-          >
-            {lead.email || 'No email'}
-          </a>
+          {lead.email || 'No email'}
         </div>
         <div style={{
           fontSize: '12px',
@@ -800,6 +798,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
 
       {/* Response Time */}
       <div style={{ textAlign: 'center' }}>
+        <a href={getZoomCallLogUrl(lead.phone, lead.book_date)} target="_blank" rel="noopener noreferrer">
         <span style={{
           backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called),
           color: '#343434ff',
@@ -810,6 +809,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         }}>
           {lead.called ? `${lead.responseTimeMinutes}m` : 'Not called'}
         </span>
+        </a>
       </div>
 
       {/*  Notes */}
@@ -941,4 +941,26 @@ const fetchTransferNote = async (leadId, setTransferNote, setLoadingNote) => {
   setTransferNote(data.note);
   setLoadingNote(false);
   return data;
+}
+
+
+function getZoomCallLogUrl(phone, bookDate) {
+  if (!phone || !bookDate) return '#';
+
+  // Calculate "from" date: one day before bookDate
+  const fromDate = new Date(bookDate);
+  fromDate.setDate(fromDate.getDate() - 1);
+
+  // "to" date: one month ahead of bookDate
+  const toDate = new Date(bookDate);
+  toDate.setMonth(toDate.getMonth() + 1);
+
+  // Format dates as YYYY-M-D (no zero padding)
+  const from = `${fromDate.getFullYear()}-${fromDate.getMonth() + 1}-${fromDate.getDate()} `;
+  const to = `${toDate.getFullYear()}-${toDate.getMonth() + 1}-${toDate.getDate()} `;
+
+  // Clean phone number
+  const phoneCleaned = '+' + phone.toString().replace(/\D/g, '');
+
+  return `https://us06web.zoom.us/pbx/page/telephone/callLog#/recording-list?page_size=15&page_number=1&recordingReport=0&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&keyword=${encodeURIComponent(phoneCleaned)}`;
 }

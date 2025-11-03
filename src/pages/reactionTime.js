@@ -13,61 +13,13 @@
             }
         };
 
-        // Cache configuration
-        const CACHE_CONFIG = {
-            CACHE_EXPIRY_MS: 10 * 60 * 1000, // 10 minutes
-            MAX_LOOKBACK_DAYS: 30, // Only fetch calls from last 30 days max
-            CACHE_KEYS: {
-                ZOOM_CALLS: 'zoom_call_logs_cache',
-                ZOOM_USERS: 'zoom_users_cache'
-            }
-        };
+        const MAX_LOOKBACK_DAYS = 90; // Only fetch calls from last 30 days max
 
-        // Cache management functions
-        function getCachedData(key) {
-            try {
-                const cached = sessionStorage.getItem(key);
-                if (!cached) return null;
-                
-                const { data, timestamp } = JSON.parse(cached);
-                const now = Date.now();
-                
-                if (now - timestamp > CACHE_CONFIG.CACHE_EXPIRY_MS) {
-                    sessionStorage.removeItem(key);
-                    return null;
-                }
-                
-                return data;
-            } catch (error) {
-                console.warn('Error reading cache:', error);
-                return null;
-            }
-        }
-
-        function setCachedData(key, data) {
-            try {
-                const cacheEntry = {
-                    data,
-                    timestamp: Date.now()
-                };
-                sessionStorage.setItem(key, JSON.stringify(cacheEntry));
-            } catch (error) {
-                console.warn('Error writing cache:', error);
-                // If storage is full, clear old cache
-                try {
-                    sessionStorage.clear();
-                    sessionStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-                } catch (e) {
-                    console.error('Failed to write cache:', e);
-                }
-            }
-        }
-
-        export async function runAnalysis(data) {
+        export async function runAnalysis(data, latestDate = null) {
             try {
                 const usersMap = await getZoomUsers();
                 const bookings = await filterDataFromSupabase(data);
-                const callLogs = await getZoomCallLogs(bookings);
+                const callLogs = await getZoomCallLogs(bookings, latestDate);
                 const analysis = analyzeResponseTimes(bookings, callLogs, usersMap);
 
                 const callTimeMap = {};
@@ -103,13 +55,6 @@
 }
 
         async function getZoomUsers() {
-            // Check cache first
-            const cached = getCachedData(CACHE_CONFIG.CACHE_KEYS.ZOOM_USERS);
-            if (cached) {
-                console.log('Using cached Zoom users');
-                return cached;
-            }
-            
             try {
                 const data = await makeZoomApiCall('https://zoom-api.floral-rain-cd3c.workers.dev/zoom-users', 'GET', null);
                 const users = data.users || [];
@@ -121,9 +66,6 @@
                         extension: user.extension_number || ''
                     };
                 });
-                
-                // Cache the users
-                setCachedData(CACHE_CONFIG.CACHE_KEYS.ZOOM_USERS, usersMap);
                 
                 return usersMap;
             } catch (error) {
@@ -148,7 +90,7 @@
             })).filter(booking => booking.phoneNumber && booking.setterId);
         }
 
-        async function getZoomCallLogs(bookings) {
+        async function getZoomCallLogs(bookings, latestDate = null) {
             if (!bookings || bookings.length === 0) {
                 return [];
             }
@@ -157,22 +99,15 @@
                 booking.bookingDate < earliest ? booking.bookingDate : earliest, 
                 bookings[0]?.bookingDate || new Date());
 
-            const today = new Date();
-            const maxLookbackDate = new Date(today);
-            maxLookbackDate.setDate(maxLookbackDate.getDate() - CACHE_CONFIG.MAX_LOOKBACK_DAYS);
+            // Use provided latestDate or default to today
+            const endDate = latestDate ? new Date(latestDate) : new Date();
+            const maxLookbackDate = new Date(endDate);
+            maxLookbackDate.setDate(maxLookbackDate.getDate() - MAX_LOOKBACK_DAYS);
             
             // Limit the date range to max lookback days
             const fromDateObj = earliestBooking < maxLookbackDate ? maxLookbackDate : earliestBooking;
             const fromDate = fromDateObj.toISOString().split('T')[0];
-            const toDate = today.toISOString().split('T')[0];
-
-            // Check cache - cache key based on date range
-            const cacheKey = `${CACHE_CONFIG.CACHE_KEYS.ZOOM_CALLS}_${fromDate}_${toDate}`;
-            const cached = getCachedData(cacheKey);
-            if (cached) {
-                console.log(`Using cached Zoom calls (${cached.length} calls)`);
-                return cached;
-            }
+            const toDate = endDate.toISOString().split('T')[0];
 
             console.log(`Fetching Zoom calls from ${fromDate} to ${toDate}`);
             let allCalls = [];
@@ -192,10 +127,6 @@
                 } while (nextPageToken);
                 
                 const filteredCalls = allCalls.filter(call => call.direction === 'outbound');
-                
-                // Cache the filtered calls
-                setCachedData(cacheKey, filteredCalls);
-                console.log(`Cached ${filteredCalls.length} outbound calls`);
                 
                 return filteredCalls;
                 

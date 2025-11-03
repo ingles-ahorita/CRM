@@ -155,7 +155,7 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
 
   };
 
-  const callMap = await runAnalysis(leadsData);
+  const callMap = await runAnalysis(leadsData, endDate);
 
   let leadsWithCallTime = leadsData.map(lead => ({...lead, ...callMap[lead.id]}));
 
