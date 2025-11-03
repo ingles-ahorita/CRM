@@ -40,9 +40,7 @@ export default function App() {
         </ProtectedRoute>
       } />
       <Route path="/rubenshift" element={
-        <ProtectedRoute>
           <RubenShift />
-        </ProtectedRoute>
       }/>
 
     </Routes>
