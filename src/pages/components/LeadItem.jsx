@@ -137,7 +137,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           </h2>
           <div className="lead-contact-info">
             <Mail size={12} style={{ }} />
-            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.email || 'No email'}</span>
+            <a href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`} target="_blank" rel="noopener noreferrer">
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.email || 'No email'}</span> </a>
           </div>
             <div className="lead-contact-info">
               <Phone size={12} />
@@ -728,8 +729,9 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis'
-        }}>
+        }}> <a style={{ color: '#6b7280', textDecoration: 'none' }} href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`} target="_blank" rel="noopener noreferrer">
           {lead.email || 'No email'}
+          </a>
         </div>
         <div style={{
           fontSize: '12px',

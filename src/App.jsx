@@ -10,6 +10,7 @@ import FortnightDashboard from './pages/setterStats';
 import StatsDashboard from './pages/generalStats';
 import CloserStatsDashboard from './pages/closerStats';
 import ShiftsPage from './pages/ShiftsPage';
+import RubenShift from './pages/RubenShift';
 import './App.css';
 
 export default function App() {
@@ -38,6 +39,12 @@ export default function App() {
           <ShiftsPage />
         </ProtectedRoute>
       } />
+      <Route path="/rubenshift" element={
+        <ProtectedRoute>
+          <RubenShift />
+        </ProtectedRoute>
+      }/>
+
     </Routes>
   );
 }
