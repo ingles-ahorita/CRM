@@ -70,7 +70,7 @@ useEffect(() => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {data.map((row, index) => (
+                {data.filter(row => `${row.period}-${row.fortnight}` >= '2025-10-B').map((row, index) => (
                   <tr key={index} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {row.period}
@@ -157,6 +157,7 @@ async function fetchFortnightStats(setter = null) {
  let query = supabase
   .from('calls')
   .select(`
+    name,
     book_date,
     call_date, 
     picked_up, 
@@ -167,7 +168,7 @@ async function fetchFortnightStats(setter = null) {
     setters (id, name),
     closers (id, name)
   `)
-  .gte('book_date', '2025-10-16')
+  .gte('book_date', '2025-07-01')
   .order('book_date', { ascending: true });
 
   // Filter by setter if provided
@@ -221,20 +222,37 @@ function calculateFortnightData(calls) {
 }
 
 
-    getFortnight(call.book_date).callsBooked++;
+    const fortnightBook = getFortnight(call.book_date);
+    if (fortnightBook) {
+      fortnightBook.callsBooked++;
+    }
     
-    if (call.picked_up === true) getFortnight(call.book_date).pickUps++;
-    if (call.showed_up === true) getFortnight(call.call_date).showUps++;
+    if (call.picked_up === true) {
+      const fortnight = getFortnight(call.book_date);
+      if (fortnight) fortnight.pickUps++;
+    }
+    
+    if (call.showed_up === true) {
+      const fortnight = getFortnight(call.call_date);
+      if (fortnight) fortnight.showUps++;
+    }
+    
     if (call.confirmed === true) {
-      getFortnight(call.call_date).confirmed++;
-      // Only count confirmed calls that have already happened for show-up rate calculation
-      if (call.call_date && new Date(call.call_date) < today) {
-        getFortnight(call.call_date).confirmedPast++;
+      const fortnight = getFortnight(call.call_date);
+      if (fortnight) {
+        fortnight.confirmed++;
+        // Only count confirmed calls that have already happened for show-up rate calculation
+        if (call.call_date && new Date(call.call_date) < today) {
+          fortnight.confirmedPast++;
+        }
       }
     }
-    const fortnightP = getFortnight(call.purchased_at);
-    if (fortnightP) fortnightP.purchases++; // ✅ Works
     
+    const fortnightP = getFortnight(call.purchased_at);
+    if (call.purchased === true && fortnightP) { 
+      console.log(fortnightP.period, fortnightP.fortnight, call.name, call.purchased_at);
+      fortnightP.purchases++; // ✅ Works
+    }
   });
 
   return Object.values(grouped).map(item => ({
@@ -243,6 +261,12 @@ function calculateFortnightData(calls) {
     showUpRate: item.confirmedPast > 0 ? (item.showUps / item.confirmedPast) * 100 : 0,
     total: (item.showUps * 4) + (item.purchases * 25),
     setterName: calls[0].setters.name
-  }));
+  })).sort((a, b) => {
+    // Sort by period (year-month), then by fortnight (A before B)
+    if (a.period !== b.period) {
+      return a.period.localeCompare(b.period);
+    }
+    return a.fortnight.localeCompare(b.fortnight);
+  });
 }
 

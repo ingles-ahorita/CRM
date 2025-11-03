@@ -682,12 +682,14 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
       {/* Name & Contact */}
       <div style={{ overflow: 'hidden' }}>
       <a
-  href={`/lead/${lead.lead_id}`} target="_blank" 
+  href={`/lead/${lead.lead_id}`}
   onClick={(e) => {
     if (!e.metaKey && !e.ctrlKey) {  // ← Only prevent default for regular clicks
       e.preventDefault();
       navigate(`/lead/${lead.lead_id}`);
-    }}}
+    }
+    // Cmd/Ctrl+Click will use browser default (opens in new tab)
+  }}
           style={{
             fontWeight: '600',
             color: '#111827',
@@ -695,7 +697,8 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            marginBottom: '2px'
+            marginBottom: '2px',
+            textDecoration: 'none'
           }}
         >
           {lead.name || 'No name'} {(lead.is_reschedule) && <div style={{
@@ -721,7 +724,14 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
           overflow: 'hidden',
           textOverflow: 'ellipsis'
         }}>
-          {lead.email || 'No email'}
+          <a
+            href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email || '')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#6b7280', textDecoration: 'none' }}
+          >
+            {lead.email || 'No email'}
+          </a>
         </div>
         <div style={{
           fontSize: '12px',

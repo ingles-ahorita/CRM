@@ -13,6 +13,56 @@
             }
         };
 
+        // Cache configuration
+        const CACHE_CONFIG = {
+            CACHE_EXPIRY_MS: 10 * 60 * 1000, // 10 minutes
+            MAX_LOOKBACK_DAYS: 30, // Only fetch calls from last 30 days max
+            CACHE_KEYS: {
+                ZOOM_CALLS: 'zoom_call_logs_cache',
+                ZOOM_USERS: 'zoom_users_cache'
+            }
+        };
+
+        // Cache management functions
+        function getCachedData(key) {
+            try {
+                const cached = sessionStorage.getItem(key);
+                if (!cached) return null;
+                
+                const { data, timestamp } = JSON.parse(cached);
+                const now = Date.now();
+                
+                if (now - timestamp > CACHE_CONFIG.CACHE_EXPIRY_MS) {
+                    sessionStorage.removeItem(key);
+                    return null;
+                }
+                
+                return data;
+            } catch (error) {
+                console.warn('Error reading cache:', error);
+                return null;
+            }
+        }
+
+        function setCachedData(key, data) {
+            try {
+                const cacheEntry = {
+                    data,
+                    timestamp: Date.now()
+                };
+                sessionStorage.setItem(key, JSON.stringify(cacheEntry));
+            } catch (error) {
+                console.warn('Error writing cache:', error);
+                // If storage is full, clear old cache
+                try {
+                    sessionStorage.clear();
+                    sessionStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+                } catch (e) {
+                    console.error('Failed to write cache:', e);
+                }
+            }
+        }
+
         export async function runAnalysis(data) {
             try {
                 const usersMap = await getZoomUsers();
@@ -53,6 +103,12 @@
 }
 
         async function getZoomUsers() {
+            // Check cache first
+            const cached = getCachedData(CACHE_CONFIG.CACHE_KEYS.ZOOM_USERS);
+            if (cached) {
+                console.log('Using cached Zoom users');
+                return cached;
+            }
             
             try {
                 const data = await makeZoomApiCall('https://zoom-api.floral-rain-cd3c.workers.dev/zoom-users', 'GET', null);
@@ -65,6 +121,9 @@
                         extension: user.extension_number || ''
                     };
                 });
+                
+                // Cache the users
+                setCachedData(CACHE_CONFIG.CACHE_KEYS.ZOOM_USERS, usersMap);
                 
                 return usersMap;
             } catch (error) {
@@ -90,20 +149,38 @@
         }
 
         async function getZoomCallLogs(bookings) {
+            if (!bookings || bookings.length === 0) {
+                return [];
+            }
 
             const earliestBooking = bookings.reduce((earliest, booking) => 
-        booking.bookingDate < earliest ? booking.bookingDate : earliest, 
-        bookings[0]?.bookingDate || new Date());
+                booking.bookingDate < earliest ? booking.bookingDate : earliest, 
+                bookings[0]?.bookingDate || new Date());
 
+            const today = new Date();
+            const maxLookbackDate = new Date(today);
+            maxLookbackDate.setDate(maxLookbackDate.getDate() - CACHE_CONFIG.MAX_LOOKBACK_DAYS);
             
+            // Limit the date range to max lookback days
+            const fromDateObj = earliestBooking < maxLookbackDate ? maxLookbackDate : earliestBooking;
+            const fromDate = fromDateObj.toISOString().split('T')[0];
+            const toDate = today.toISOString().split('T')[0];
+
+            // Check cache - cache key based on date range
+            const cacheKey = `${CACHE_CONFIG.CACHE_KEYS.ZOOM_CALLS}_${fromDate}_${toDate}`;
+            const cached = getCachedData(cacheKey);
+            if (cached) {
+                console.log(`Using cached Zoom calls (${cached.length} calls)`);
+                return cached;
+            }
+
+            console.log(`Fetching Zoom calls from ${fromDate} to ${toDate}`);
             let allCalls = [];
             let nextPageToken = '';
-            const fromDate = earliestBooking.toISOString().split('T')[0];
-            const today = new Date().toISOString().split('T')[0];
             
             try {
                 do {
-                    const url = `https://zoom-api.floral-rain-cd3c.workers.dev/zoom-calls?from=${fromDate}&to=${today}${nextPageToken ? '&next_page_token=' + nextPageToken : ''}`;
+                    const url = `https://zoom-api.floral-rain-cd3c.workers.dev/zoom-calls?from=${fromDate}&to=${toDate}${nextPageToken ? '&next_page_token=' + nextPageToken : ''}`;
                     
                     const data = await makeZoomApiCall(url, 'GET', null);
                     
@@ -114,7 +191,13 @@
                     
                 } while (nextPageToken);
                 
-                return allCalls.filter(call => call.direction === 'outbound');
+                const filteredCalls = allCalls.filter(call => call.direction === 'outbound');
+                
+                // Cache the filtered calls
+                setCachedData(cacheKey, filteredCalls);
+                console.log(`Cached ${filteredCalls.length} outbound calls`);
+                
+                return filteredCalls;
                 
             } catch (error) {
                 console.warn('Could not fetch call logs:', error);

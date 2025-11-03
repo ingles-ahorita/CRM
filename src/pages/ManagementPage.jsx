@@ -115,7 +115,7 @@ export default function ManagementPage() {
         </h1>
         
         <Header
-          state={{...headerState, setterMap: dataState.setterMap}}
+          state={{...headerState, setterMap: dataState.setterMap, closerMap: dataState.closerMap}}
           setState={setHeaderState}
           mode='full'
         />
