@@ -21,7 +21,8 @@ const formatStatusValue = (value) => {
   if(!called) return '#cfcfcfff';
   if(time < 6) return '#88ff2dff';
   if(time < 15) return '#fdd329ff';
-  if(time > 15) return '#ff8b8bff';
+  if(time >= 15) return '#ff8b8bff';
+  console.log("no color found", time, isRescheduled, called);
 }
 
 export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }) {
@@ -137,7 +138,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           </h2>
           <div className="lead-contact-info">
             <Mail size={12} style={{ }} />
-            <a href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`} target="_blank" rel="noopener noreferrer">
+            <a style={{ cursor: 'pointer', color: '#6b7280', textDecoration: 'none' }} href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`} target="_blank" rel="noopener noreferrer">
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.email || 'No email'}</span> </a>
           </div>
             <div className="lead-contact-info">
