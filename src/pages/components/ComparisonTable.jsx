@@ -51,13 +51,6 @@ const ComparisonTable = ({
                 Pick Up Rate
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Show Up Rate
-              </th>
-              {(periodLabel !== 'Day') && (
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Conversion Rate
-              </th> )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Bookings
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -66,6 +59,13 @@ const ComparisonTable = ({
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Confirmed
               </th>
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Show Up Rate
+              </th>
+              {(periodLabel !== 'Day') && (
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Conversion Rate
+              </th> )}
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Purchased
               </th>
@@ -100,6 +100,24 @@ const ComparisonTable = ({
                       {periodLabel !== 'Day' ? getChangeIndicator(item.pickUpRate, prevItem?.pickUpRate) : null}
                     </div>
                   </td>
+                   <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="text-sm text-gray-900">
+                      {item.bookinsMadeinPeriod}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="text-sm text-gray-900">
+                      {item.totalBooked}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="text-sm text-gray-900">
+                      {item.totalConfirmed}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalConfirmed, prevItem?.totalConfirmed) : null}
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.showUpRateConfirmed.toFixed(1)}%
@@ -113,24 +131,6 @@ const ComparisonTable = ({
                       {periodLabel !== 'Day' ? getChangeIndicator(item.conversionRateShowedUp, prevItem?.conversionRateShowedUp) : null}
                     </div>
                   </td>)}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.bookinsMadeinPeriod}
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
-                    </div>
-                  </td>
-                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.totalBooked}
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.totalConfirmed}
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalConfirmed, prevItem?.totalConfirmed) : null}
-                    </div>
-                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm font-semibold text-green-600">
                       {item.totalPurchased}
