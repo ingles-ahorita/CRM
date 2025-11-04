@@ -64,6 +64,9 @@ const ComparisonTable = ({
                 Total Calls
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Total Confirmed
+              </th>
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Purchased
               </th>
             </tr>
@@ -120,6 +123,12 @@ const ComparisonTable = ({
                     <div className="text-sm text-gray-900">
                       {item.totalBooked}
                       {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="text-sm text-gray-900">
+                      {item.totalConfirmed}
+                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalConfirmed, prevItem?.totalConfirmed) : null}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">

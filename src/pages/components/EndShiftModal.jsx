@@ -16,6 +16,7 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
   }, [isOpen, mode, userId]);
 
   const handleEndShift = async () => {
+    console.log("Ending shift", currentShiftId);
     if (!closingNote.trim()) {
       alert('Please provide a closing note before ending your shift.');
       return;
