@@ -42,7 +42,6 @@ useEffect(() => {
         <button onClick={() => navigate(-1)} style={{ backgroundColor: '#727272ff', marginBottom: 12, color: 'white', padding: '5px 7px' }}>← Back</button> 
         <div style={{ width: '90%', maxWidth: 1280, margin: '0 auto', background: 'white', padding: 20, borderRadius: 8, color: '#000000' }}>
           <h1 style={{ fontSize: 20, marginBottom: '8px' }}>
-            {isAds ? '📢 ' : '🌱 '}
             {lead.name}
           </h1>
           
