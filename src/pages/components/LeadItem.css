@@ -22,11 +22,24 @@
 .lead-main-content {
   display: flex;
   align-items: center;
-  gap: 35px;
+  gap: 12px;
   justify-content: left;
   flex-wrap: nowrap;
   overflow: hidden;
   flex: 1 1;
+}
+
+.lead-emoji-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-right: 8px;
+  padding-top: 4px;
+  min-width: 20px;
+  max-width: 20px;
+  flex-shrink: 0;
 }
 
 .lead-info-section {

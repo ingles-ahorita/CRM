@@ -30,7 +30,8 @@ let query = supabase
   .select(`
     *,
     closers (id, name),
-    setters (id, name)
+    setters (id, name),
+    leads (phone, source, medium)
   `)
   .order(sortField, { ascending: order === 'asc', nullsFirst: false });
 

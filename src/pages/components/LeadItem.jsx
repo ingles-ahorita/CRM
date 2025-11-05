@@ -92,10 +92,12 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     setShowUp(formatStatusValue(lead.showed_up));
     setPurchase(formatStatusValue(lead.purchased));
     setSetter(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+    console.log("re-rendering values");
   }, [lead]);
 
   useEffect(() => {
     setNoteButtonText(mode === 'admin' ? "📝 Notes" : (mode === 'closer' ? lead.closer_note_id : lead.setter_note_id) ? "📝 Edit note" : "✚ Add note");
+    setPurchase(formatStatusValue(lead.purchased));
   }, [showNoteModal]);
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
@@ -109,6 +111,25 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
       className="lead-item-container"
     >
       <div className="lead-main-content">
+        {/* Emoji Column */}
+        <div className="lead-emoji-column">
+          {(() => {
+            const leadSource = lead.leads?.source || 'organic';
+            const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+            return (
+              <>
+                <span style={{ fontSize: '16px', lineHeight: '1.5' }}>{isAds ? '💰' : '🌱'}</span>
+                {lead.is_reschedule && (
+                  <span style={{ fontSize: '16px', lineHeight: '1.5' }}>🔁</span>
+                )}
+                {lead.cancelled && (
+                  <span style={{ fontSize: '16px', lineHeight: '1.5' }}>❌</span>
+                )}
+              </>
+            );
+          })()}
+        </div>
+        
         <div className="lead-info-section">
           <h2 className="lead-name">
             <a href={`/lead/${lead.lead_id}`} 
@@ -119,21 +140,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                 }}}
               style={{ cursor: 'pointer', color: '#323232ff', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             >
-              {lead.name || 'No name'} {(lead.is_reschedule) && <div style={{
-                                                                          display: 'inline',
-                                                                          fontSize: '11px',
-                                                                          color: '#8c0bf5ff',
-                                                                          fontWeight: '600',
-                                                                          marginLeft: '5%', 
-                                                                          overflow: 'hidden',
-    textOverflow: 'ellipsis'}}> Reschedule</div>} {(lead.cancelled) && <div style={{
-                                                                          display: 'inline',
-                                                                          fontSize: '11px',
-                                                                          color: '#f7371aff',
-                                                                          fontWeight: '600',
-                                                                          marginLeft: '5%', 
-                                                                          overflow: 'hidden',
-    textOverflow: 'ellipsis'}}>Cancelled</div>}
+              {lead.name || 'No name'}
             </a>
           </h2>
           <div className="lead-contact-info">
@@ -177,7 +184,15 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           />
           <StatusDropdown
             value={purchase}
-            onChange={(value) => updateStatus(lead.id, 'purchased', value, setPurchase)}
+            onChange={(value) => {
+              // Open closer notes modal when changing purchased status (for closer/admin mode)
+              if (mode === 'closer' || mode === 'admin') {
+                setModeState('closer');
+                setShowNoteModal(true);
+              } else {
+                updateStatus(lead.id, 'purchased', value, setPurchase);
+              }
+            }}
             label="Purchased"
             disabled={mode === 'setter' || mode === 'view'}
           />
@@ -677,7 +692,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '2fr 1.5fr 1.2fr 1.2fr 1.2fr 1fr 1fr 0.8fr 0.8fr',
+        gridTemplateColumns: 'auto 2fr 1.5fr 1.2fr 1.2fr 1.2fr 1fr 1fr 0.8fr 0.8fr',
         gap: '16px',
         alignItems: 'center',
         padding: '12px 16px',
@@ -689,8 +704,34 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
       onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
       onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
     >
+      {/* Emoji Column */}
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'flex-start',
+        gap: '4px',
+        paddingTop: '2px'
+      }}>
+        {(() => {
+          const leadSource = lead.leads?.source || 'organic';
+          const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+          return (
+            <>
+              <span style={{ fontSize: '14px', lineHeight: '1.2' }}>{isAds ? '💰' : '🌱'}</span>
+              {lead.is_reschedule && (
+                <span style={{ fontSize: '14px', lineHeight: '1.2' }}>🔁</span>
+              )}
+              {lead.cancelled && (
+                <span style={{ fontSize: '14px', lineHeight: '1.2' }}>❌</span>
+              )}
+            </>
+          );
+        })()}
+      </div>
+      
       {/* Name & Contact */}
-      <div style={{ overflow: 'hidden' }}>
+      <div style={{ overflow: 'hidden', flex: 1 }}>
       <a
   href={`/lead/${lead.lead_id}`} target="_blank" 
   onClick={(e) => {
@@ -708,21 +749,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
             marginBottom: '2px'
           }}
         >
-          {lead.name || 'No name'} {(lead.is_reschedule) && <div style={{
-                                                                          display: 'inline',
-                                                                          fontSize: '11px',
-                                                                          color: '#8c0bf5ff',
-                                                                          fontWeight: '600',
-                                                                          marginLeft: '5%', 
-                                                                          overflow: 'hidden',
-    textOverflow: 'ellipsis'}}> Reschedule</div>} {(lead.cancelled) && <div style={{
-                                                                          display: 'inline',
-                                                                          fontSize: '11px',
-                                                                          color: '#f7371aff',
-                                                                          fontWeight: '600',
-                                                                          marginLeft: '5%', 
-                                                                          overflow: 'hidden',
-    textOverflow: 'ellipsis'}}>Cancelled</div>}
+          {lead.name || 'No name'}
         </a>
         <div style={{
           fontSize: '12px',
