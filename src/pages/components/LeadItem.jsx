@@ -184,13 +184,11 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           />
           <StatusDropdown
             value={purchase}
-            onChange={(value) => {
-              // Open closer notes modal when changing purchased status (for closer/admin mode)
+
+            onClick={() => {
               if (mode === 'closer' || mode === 'admin') {
                 setModeState('closer');
                 setShowNoteModal(true);
-              } else {
-                updateStatus(lead.id, 'purchased', value, setPurchase);
               }
             }}
             label="Purchased"
@@ -447,7 +445,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 
 
-  const StatusDropdown = ({ value, onChange, label, disabled = false}) => {
+  const StatusDropdown = ({ value, onChange, label, disabled = false, onClick = null}) => {
 
     // Get background color based on value
     const getBackgroundColor = () => {
@@ -480,8 +478,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   </label>
   <select 
   value={String(value)}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
+  onChange={(e) => onChange(e.target.value)}
+  disabled={disabled}
   style={{
     appearance: 'none',
     backgroundColor: getBackgroundColor(),
@@ -506,7 +504,12 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     e.currentTarget.style.opacity = '1';
     e.currentTarget.style.borderColor = '#d1d5db';
   }}
-  
+  onMouseDown={(e) => {
+    if (onClick) {
+      e.preventDefault(); // Prevent dropdown from opening
+      onClick();
+    }
+  }}
   >
     <option value={"true"} style={{
       backgroundColor: '#cfffc5',
