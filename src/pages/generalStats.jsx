@@ -25,7 +25,7 @@ async function fetchStatsData(startDate, endDate) {
       call_date,
       setters (id, name),
       closers (id, name),
-      leads (phone, source)
+      leads (phone, source, medium)
     `)
     .gte('call_date', startDate)
     .lte('call_date', endDate);
@@ -54,7 +54,7 @@ async function fetchStatsData(startDate, endDate) {
       book_date,
       setters (id, name),
       closers (id, name),
-      leads (phone, source)
+      leads (phone, source, medium)
     `)
     .eq('purchased', true)
     .gte('purchased_at', startDateObj.toISOString())
@@ -270,6 +270,83 @@ const totalPurchased = purchasedCalls.length;
     source.conversionRate = source.totalShowedUp > 0 ? (source.totalPurchased / source.totalShowedUp) * 100 : 0;
   });
 
+  // Group by medium (TikTok, Instagram, other) for ads only
+  const mediumStats = {
+    tiktok: {
+      totalBooked: 0,
+      totalPickedUp: 0,
+      totalShowedUp: 0,
+      totalConfirmed: 0,
+      totalPurchased: 0,
+      totalRescheduled: 0
+    },
+    instagram: {
+      totalBooked: 0,
+      totalPickedUp: 0,
+      totalShowedUp: 0,
+      totalConfirmed: 0,
+      totalPurchased: 0,
+      totalRescheduled: 0
+    },
+    other: {
+      totalBooked: 0,
+      totalPickedUp: 0,
+      totalShowedUp: 0,
+      totalConfirmed: 0,
+      totalPurchased: 0,
+      totalRescheduled: 0
+    }
+  };
+
+  // Process only ads calls for medium metrics
+  filteredCalls.forEach(call => {
+    const source = call.leads?.source || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    
+    if (isAds) {
+      const medium = call.leads?.medium?.toLowerCase();
+      let mediumKey = 'other';
+      
+      if (medium === 'tiktok') {
+        mediumKey = 'tiktok';
+      } else if (medium === 'instagram') {
+        mediumKey = 'instagram';
+      }
+      
+      mediumStats[mediumKey].totalBooked++;
+      if (call.picked_up) mediumStats[mediumKey].totalPickedUp++;
+      if (call.showed_up) mediumStats[mediumKey].totalShowedUp++;
+      if (call.confirmed) mediumStats[mediumKey].totalConfirmed++;
+      if (call.is_reschedule) mediumStats[mediumKey].totalRescheduled++;
+    }
+  });
+
+  // Process purchased calls for medium metrics
+  purchasedCalls.forEach(call => {
+    const source = call.leads?.source || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    
+    if (isAds) {
+      const medium = call.leads?.medium?.toLowerCase();
+      let mediumKey = 'other';
+      
+      if (medium === 'tiktok') {
+        mediumKey = 'tiktok';
+      } else if (medium === 'instagram') {
+        mediumKey = 'instagram';
+      }
+      
+      mediumStats[mediumKey].totalPurchased++;
+    }
+  });
+
+  // Calculate rates for each medium
+  Object.values(mediumStats).forEach(medium => {
+    medium.pickUpRate = medium.totalBooked > 0 ? (medium.totalPickedUp / medium.totalBooked) * 100 : 0;
+    medium.showUpRate = medium.totalBooked > 0 ? (medium.totalShowedUp / medium.totalConfirmed) * 100 : 0;
+    medium.conversionRate = medium.totalShowedUp > 0 ? (medium.totalPurchased / medium.totalShowedUp) * 100 : 0;
+  });
+
   return {
     bookinsMadeinPeriod,
     totalBooked,
@@ -281,7 +358,8 @@ const totalPurchased = purchasedCalls.length;
     closers: Object.values(closerStats),
     setters: Object.values(setterStats),
     countries: sortedCountries,
-    sourceStats
+    sourceStats,
+    mediumStats
   };
 }
 
@@ -866,6 +944,26 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
+            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-purple-600">
+                    TikTok: {stats.mediumStats.tiktok.pickUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-pink-600">
+                    Instagram: {stats.mediumStats.instagram.pickUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-gray-600">
+                    Other: {stats.mediumStats.other.pickUpRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.mediumStats.tiktok.totalPickedUp}/{stats.mediumStats.tiktok.totalBooked}</div>
+                  <div>{stats.mediumStats.instagram.totalPickedUp}/{stats.mediumStats.instagram.totalBooked}</div>
+                  <div>{stats.mediumStats.other.totalPickedUp}/{stats.mediumStats.other.totalBooked}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Show Up Rate / Confirmed */}
@@ -893,6 +991,26 @@ export default function StatsDashboard() {
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
                   <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalConfirmed}</div>
                   <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalConfirmed}</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-purple-600">
+                    TikTok: {stats.mediumStats.tiktok.showUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-pink-600">
+                    Instagram: {stats.mediumStats.instagram.showUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-gray-600">
+                    Other: {stats.mediumStats.other.showUpRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalConfirmed}</div>
+                  <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalConfirmed}</div>
+                  <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalConfirmed}</div>
                 </div>
               </div>
             )}
@@ -926,6 +1044,26 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
+            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-purple-600">
+                    TikTok: {stats.mediumStats.tiktok.showUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-pink-600">
+                    Instagram: {stats.mediumStats.instagram.showUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-gray-600">
+                    Other: {stats.mediumStats.other.showUpRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalBooked}</div>
+                  <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalBooked}</div>
+                  <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalBooked}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Conversion Rate / Show up */}
@@ -956,6 +1094,26 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
+            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-purple-600">
+                    TikTok: {stats.mediumStats.tiktok.conversionRate.toFixed(1)}%
+                  </div>
+                  <div className="text-pink-600">
+                    Instagram: {stats.mediumStats.instagram.conversionRate.toFixed(1)}%
+                  </div>
+                  <div className="text-gray-600">
+                    Other: {stats.mediumStats.other.conversionRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.mediumStats.tiktok.totalPurchased}/{stats.mediumStats.tiktok.totalShowedUp}</div>
+                  <div>{stats.mediumStats.instagram.totalPurchased}/{stats.mediumStats.instagram.totalShowedUp}</div>
+                  <div>{stats.mediumStats.other.totalPurchased}/{stats.mediumStats.other.totalShowedUp}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Conversion Rate / Booked */}
@@ -983,6 +1141,26 @@ export default function StatsDashboard() {
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
                   <div>{stats.sourceStats.ads.totalPurchased}/{stats.sourceStats.ads.totalBooked}</div>
                   <div>{stats.sourceStats.organic.totalPurchased}/{stats.sourceStats.organic.totalBooked}</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-purple-600">
+                    TikTok: {stats.mediumStats.tiktok.totalBooked > 0 ? ((stats.mediumStats.tiktok.totalPurchased / stats.mediumStats.tiktok.totalBooked) * 100).toFixed(1) : 0}%
+                  </div>
+                  <div className="text-pink-600">
+                    Instagram: {stats.mediumStats.instagram.totalBooked > 0 ? ((stats.mediumStats.instagram.totalPurchased / stats.mediumStats.instagram.totalBooked) * 100).toFixed(1) : 0}%
+                  </div>
+                  <div className="text-gray-600">
+                    Other: {stats.mediumStats.other.totalBooked > 0 ? ((stats.mediumStats.other.totalPurchased / stats.mediumStats.other.totalBooked) * 100).toFixed(1) : 0}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.mediumStats.tiktok.totalPurchased}/{stats.mediumStats.tiktok.totalBooked}</div>
+                  <div>{stats.mediumStats.instagram.totalPurchased}/{stats.mediumStats.instagram.totalBooked}</div>
+                  <div>{stats.mediumStats.other.totalPurchased}/{stats.mediumStats.other.totalBooked}</div>
                 </div>
               </div>
             )}
@@ -1018,6 +1196,26 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
+            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-purple-600">
+                    TikTok: {stats.mediumStats.tiktok.totalBooked > 0 ? ((stats.mediumStats.tiktok.totalRescheduled) / stats.mediumStats.tiktok.totalBooked * 100).toFixed(1) : 0}%
+                  </div>
+                  <div className="text-pink-600">
+                    Instagram: {stats.mediumStats.instagram.totalBooked > 0 ? ((stats.mediumStats.instagram.totalRescheduled) / stats.mediumStats.instagram.totalBooked * 100).toFixed(1) : 0}%
+                  </div>
+                  <div className="text-gray-600">
+                    Other: {stats.mediumStats.other.totalBooked > 0 ? ((stats.mediumStats.other.totalRescheduled) / stats.mediumStats.other.totalBooked * 100).toFixed(1) : 0}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.mediumStats.tiktok.totalRescheduled}/{stats.mediumStats.tiktok.totalBooked}</div>
+                  <div>{stats.mediumStats.instagram.totalRescheduled}/{stats.mediumStats.instagram.totalBooked}</div>
+                  <div>{stats.mediumStats.other.totalRescheduled}/{stats.mediumStats.other.totalBooked}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Total Calls Summary */}
@@ -1040,6 +1238,26 @@ export default function StatsDashboard() {
                 <div className="flex justify-between text-xs opacity-70 mt-1">
                   <div>{stats.sourceStats.ads.totalPurchased} deals</div>
                   <div>{stats.sourceStats.organic.totalPurchased} deals</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+              <div className="mt-3 pt-3 border-t border-white/20">
+                <div className="flex justify-between text-xs opacity-90">
+                  <div>
+                    TikTok: {stats.mediumStats.tiktok.totalShowedUp}
+                  </div>
+                  <div>
+                    Instagram: {stats.mediumStats.instagram.totalShowedUp}
+                  </div>
+                  <div>
+                    Other: {stats.mediumStats.other.totalShowedUp}
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs opacity-70 mt-1">
+                  <div>{stats.mediumStats.tiktok.totalPurchased} deals</div>
+                  <div>{stats.mediumStats.instagram.totalPurchased} deals</div>
+                  <div>{stats.mediumStats.other.totalPurchased} deals</div>
                 </div>
               </div>
             )}
