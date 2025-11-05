@@ -122,15 +122,18 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
           *,
           setters (id, name),
           closers (id, name)
-        `)
-        .gte('book_date', yesterday.toISOString())
-        .order('book_date', { ascending: false });
+        `);
+
 
       // Filter by user type
       if (mode === 'setter' && userId) {
         query = query.eq('setter_id', userId);
+        query = query.gte('book_date', yesterday.toISOString())
+        query = query.order('book_date', { ascending: false });
       } else if (mode === 'closer' && userId) {
         query = query.eq('closer_id', userId);
+        query = query.gte('call_date', yesterday.toISOString());
+        query = query.order('call_date', { ascending: false });
       }
 
       const { data: leads, error } = await query;
@@ -143,6 +146,10 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
       // Filter for incomplete leads based on mode
       const incomplete = leads.filter(lead => {
         if (mode === 'closer') {
+          const now = new Date();
+          const callDate = lead.call_date && new Date(lead.call_date);
+          const hasCallHappened = callDate && callDate <= now;
+          if (!hasCallHappened) return false;
           // For closers, only check show up and purchase
           const isMissingShowUp = lead.showed_up === null || lead.showed_up === undefined;
           const isMissingPurchase = lead.purchased === null || lead.purchased === undefined;

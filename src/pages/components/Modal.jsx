@@ -395,19 +395,34 @@ if (noteId) {
               style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
   </div>
 
-  <button type="submit" style={{ 
-    marginTop: '8px', 
-    padding: '10px 20px', 
-    backgroundColor: '#001749ff', 
-    color: 'white', 
-    border: 'none', 
-    borderRadius: '6px', 
-    cursor: 'pointer',
-    fontSize: '14px',
-    fontWeight: '500'
-  }}>
-    {noteData ? 'Update Note' : 'Add Note'}
-  </button>
+  <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+  <button type="button" onClick={onClose} style={{ 
+      padding: '10px 20px', 
+      backgroundColor: '#6b7280', 
+      color: 'white', 
+      border: 'none', 
+      borderRadius: '6px', 
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontWeight: '500',
+      flex: 1
+    }}>
+      Cancel
+    </button>
+    <button type="submit" style={{ 
+      padding: '10px 20px', 
+      backgroundColor: '#001749ff', 
+      color: 'white', 
+      border: 'none', 
+      borderRadius: '6px', 
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontWeight: '500',
+      flex: 1
+    }}>
+      {noteData ? 'Update Note' : 'Add Note'}
+    </button>
+  </div>
 </form>
       </> )}
     </Modal>)}
@@ -537,19 +552,34 @@ if (noteId) {
                     style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
         </div>
 
-        <button type="submit" style={{ 
-          marginTop: '8px', 
-          padding: '10px 20px', 
-          backgroundColor: '#001749ff', 
-          color: 'white', 
-          border: 'none', 
-          borderRadius: '6px', 
-          cursor: 'pointer',
-          fontSize: '14px',
-          fontWeight: '500'
-        }}>
-          {noteData ? 'Update Note' : 'Add Note'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+        <button type="button" onClick={onClose} style={{ 
+            padding: '10px 20px', 
+            backgroundColor: '#6b7280', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: '6px', 
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: '500',
+            flex: 1
+          }}>
+            Cancel
+          </button>
+          <button type="submit" style={{ 
+            padding: '10px 20px', 
+            backgroundColor: '#001749ff', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: '6px', 
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: '500',
+            flex: 1
+          }}>
+            {noteData ? 'Update Note' : 'Add Note'}
+          </button>
+        </div>
       </form>
     </>
   )}
