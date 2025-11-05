@@ -148,7 +148,9 @@ const closerPayload = {
   budget_max: formData.get('budget_max'),
   objection: formData.get('objection'),
   notes: formData.get('notes'),
-  setter_id: lead.setter_id || null
+  closer_id: lead.closer_id || null,
+  setter_id: lead.setter_id || null,
+  call_id: callId || null
 };
 
 

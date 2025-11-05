@@ -124,16 +124,14 @@ if (searchTerm) {
       applyStatusFilters(query, filters)
     }
 
-    // Apply setter and closer filters when viewing 'all'
-    if (activeTab === 'all') {
-      if (setterFilter) {
-        query = query.eq('setter_id', setterFilter);
-        console.log("Filtering by setter_id:", setterFilter);
-      }
-      if (closerFilter) {
-        query = query.eq('closer_id', closerFilter);
-        console.log("Filtering by closer_id:", closerFilter);
-      }
+    // Apply setter and closer filters for all tabs (not just 'all')
+    if (setterFilter) {
+      query = query.eq('setter_id', setterFilter);
+      console.log("Filtering by setter_id:", setterFilter);
+    }
+    if (closerFilter) {
+      query = query.eq('closer_id', closerFilter);
+      console.log("Filtering by closer_id:", closerFilter);
     }
 
   // Only apply limit if no email filter and showing 'all'
