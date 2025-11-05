@@ -25,7 +25,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
 
     const [noteData, setNoteData] = useState(null);
 
-    const table = mode === 'closer' ? 'closer_notes' : 'setter_notes';
+    const table = mode === 'closer' ? 'outcome_log' : 'setter_notes';
     const noteId = mode === 'closer' ? lead.closer_note_id : lead.setter_note_id;
   
   // Fetch offers when modal opens (for closer mode)
@@ -97,7 +97,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
   
   const handleSubmit = async (e) => {
 
-    const table = mode === 'closer' ? 'closer_notes' : 'setter_notes';
+    const table = mode === 'closer' ? 'outcome_log' : 'setter_notes';
 
     e.preventDefault();
 
@@ -621,7 +621,7 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
       // Fetch closer note if exists
       if (lead.closer_note_id) {
         const { data, error } = await supabase
-          .from('closer_notes')
+          .from('outcome_log')
           .select('*, offer:offer_id(id, name)')
           .eq('id', lead.closer_note_id)
           .single();
