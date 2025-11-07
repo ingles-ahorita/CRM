@@ -11,6 +11,9 @@ export default async function handler(req, res) {
       
       // Extract event type and payload
       const { event, payload } = webhookData;
+
+      console.log('Event:', event);
+      console.log('Payload:', payload);
       
       // Handle different event types
       if (event === 'invitee.created') {
@@ -64,11 +67,7 @@ async function notifyDiscord(payload) {
   const eventName = event.name || 'Unknown event';
   const startTime = event.start_time || payload?.scheduled_event?.start_time;
 
-  const messageLines = [
-    `📅 New Calendly booking: ${eventName}`,
-    `👤 ${inviteeName}`,
-    `✉️ ${inviteeEmail}`
-  ];
+  const messageLines = [payload];
 
   if (startTime) {
     messageLines.push(`🕒 Starts at: ${startTime}`);
