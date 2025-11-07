@@ -1,9 +1,18 @@
-import { supabase } from '../src/lib/supabaseClient.js';
+import { createClient } from '@supabase/supabase-js';
+
+// In Vercel serverless functions, use the raw env var names
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.VITE_SUPABASE_ANON_KEY
+);
 
 const WEBHOOK_LOG_TABLE =
   process.env.SUPABASE_WEBHOOK_TABLE || 'calendly_webhook_logs';
 
 export default async function handler(req, res) {
+    console.log('Supabase URL:', process.env.VITE_SUPABASE_URL ? 'Found' : 'Missing');
+  console.log('Supabase Key:', process.env.VITE_SUPABASE_ANON_KEY ? 'Found' : 'Missing');
+
   try {
     console.log('Webhook received!');
     console.log('Method:', req.method);
