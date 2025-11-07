@@ -134,6 +134,7 @@ async function notifyDiscord(payload) {
 }
 
 async function logWebhook({ event, payload, rawBody, status, error }) {
+    console.log('Logging webhook to Supabase');
   if (!supabase) {
     console.warn(
       'Supabase environment variables missing; skipping webhook logging'
