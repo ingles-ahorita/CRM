@@ -59,15 +59,19 @@ export default async function handler(req, res) {
 async function notifyDiscord(payload) {
   const DISCORD_WEBHOOK_URL = 'https://discord-notifiactions.floral-rain-cd3c.workers.dev/';
 
-  const invitee = payload?.invitee || {};
+  const inviteeName = payload?.name || 'Unknown name';
   const event = payload?.event || {};
 
-  const inviteeName = invitee.name || 'Unknown invitee';
+
   const inviteeEmail = invitee.email || 'Unknown email';
-  const eventName = event.name || 'Unknown event';
+  const eventName = payload?.event || 'Unknown event';
   const startTime = event.start_time || payload?.scheduled_event?.start_time;
 
-  const messageLines = [payload];
+  const messageLines = [
+    `👤 ${inviteeName}`,
+    `✉️ ${inviteeEmail}`,
+    `🕒 ${startTime}`
+  ];
 
   if (startTime) {
     messageLines.push(`🕒 Starts at: ${startTime}`);
