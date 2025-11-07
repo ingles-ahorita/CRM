@@ -5,6 +5,7 @@ const FIELD_MAP = {
   confirmed: 13312466,
   showed_up: 13238842,
   purchased: 13238837,
+  setter_id: 13239191,
 };
 
 /**
@@ -14,6 +15,7 @@ const FIELD_MAP = {
  * @param {any} value - The value to set (true/false/string)
  */
 export const updateManychatField = async (subscriberId, fieldKey, value) => {
+  console.log('Updating Manychat field:', fieldKey, 'to', value);
   const fieldId = FIELD_MAP[fieldKey];
   
   if (!fieldId) {

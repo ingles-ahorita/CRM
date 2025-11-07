@@ -36,7 +36,7 @@ const SetterDropdown = ({ value, onChange, label, options }) => {
   );
 };
 
-const transferLead = async (callId, newSetterId, currentSetterId, transferNote, transferredBy, mcID) => {
+const transferLead = async (callId, newSetterId, currentSetterId, transferNote, transferredBy, mcID, setterOptions) => {
   console.log('Transferring lead', callId, 'to setter', newSetterId);
 
   // Create transfer log entry first
@@ -68,13 +68,18 @@ const transferLead = async (callId, newSetterId, currentSetterId, transferNote, 
   }
 
   // Update Manychat if available
-//   if (mcID) {
-//     const { error: mcError } = await ManychatService.updateManychatField(mcID, 'setter_id', newSetterId);
-//     if (mcError) {
-//       console.error('Error updating manychat field:', mcError);
-//       // Don't return false here, the main transfer still succeeded
-//     }
-//   }
+  if (mcID) {
+    try {
+      // Find the setter name from the options array
+      const setterOption = setterOptions.find(opt => opt.id === newSetterId);
+      const setterName = setterOption?.name || newSetterId;
+      
+      await ManychatService.updateManychatField(mcID, 'setter_id', setterName);
+    } catch (mcError) {
+      console.error('Error updating manychat field:', mcError);
+      // Don't return false here, the main transfer still succeeded
+    }
+  }
 
   return true;
 };
@@ -105,7 +110,8 @@ export function TransferSetterModal({
       lead.setter_id,
       transferNote,
       currentUserId,
-      lead.manychat_user_id
+      lead.manychat_user_id,
+      setterOptions
     );
 
     if (success) {
