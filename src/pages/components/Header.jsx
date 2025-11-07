@@ -77,7 +77,7 @@ const updateHeaderState = (updates) => {
             marginBottom: '16px',
             borderBottom: '2px solid #e5e7eb',
           }}>
-            {['yesterday', 'today', 'tomorrow', 'tomorrow + 1', 'all'].filter(tab => !(mode==='setter' && tab === 'tomorrow'))
+            {['yesterday', 'today', 'tomorrow', 'tomorrow + 1', 'follow ups', 'all'].filter(tab => !(mode==='setter' && tab === 'tomorrow'))
             .map(tab => (
               <button
                 key={tab}
@@ -221,7 +221,7 @@ const updateHeaderState = (updates) => {
 
     {(mode === 'full') && (<>
 
-{(activeTab !== "tomorrow" && activeTab !== "tomorrow + 1") && (
+{(activeTab !== "tomorrow" && activeTab !== "tomorrow + 1" && sortBy !== 'purchased_at') && (
       
     <div
       onClick={() =>{
@@ -255,7 +255,11 @@ const updateHeaderState = (updates) => {
   {/* Date type toggle */}
   <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#111827' }}>
     <Calendar size={16} />
-    {sortBy === 'book_date' ? 'Book Date' : 'Call Date'}
+    {sortBy === 'book_date'
+      ? 'Book Date'
+      : sortBy === 'purchased_at'
+      ? 'Purchase Date'
+      : 'Call Date'}
   </span> </>
 )}
 
@@ -341,7 +345,10 @@ const updateHeaderState = (updates) => {
 <FilterButton
     label="Purchased"
     active={filters.purchased}
-    onClick={() => toggleFilter('purchased')}
+    onClick={() => {
+      toggleFilter('purchased');
+      updateHeaderState({ sortBy: sortBy === 'purchased_at' ? 'book_date' : 'purchased_at' });
+    }}
   />
 
 </div>)}

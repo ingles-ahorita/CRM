@@ -291,7 +291,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               <span style={{whiteSpace: 'nowrap'}}>{DateHelpers.formatTimeWithRelative(lead.call_date, lead.timezone) + " " + DateHelpers.getUTCOffset(lead.timezone) || 'N/A'}</span>
             </div>)}
 
-            {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id !== currentSetter)  && (mode === 'setter') && (
+            {(lead.first_setter_id !== lead.setter_id) && ( lead.first_setter_id !== currentSetter)  && (mode === 'setter' || mode === 'admin') && (
               <span
                 className="lead-transfer-info"
                 onClick={() => fetchTransferNote(lead.id)}
@@ -684,12 +684,46 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [setter, setSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+  const [transferNote, setTransferNote] = useState(null);
+  const [loadingNote, setLoadingNote] = useState(false);
+  const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
   const { setter: currentSetter } = useParams();
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
     id,
     name,
   }));
+
+  const fetchTransferNote = async (callId) => {
+    setLoadingNote(true);
+    setShowTransferNoteModal(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('transfer_log')
+        .select('note, transferred_by, created_at, from_setter_id')
+        .eq('call_id', callId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      
+      if (!error && data && data.length > 0) {
+        setTransferNote(data[0]);
+      } else {
+        setTransferNote({ note: 'No note found' });
+      }
+    } catch (err) {
+      console.error('Error fetching transfer note:', err);
+      setTransferNote({ note: 'Error loading note' });
+    } finally {
+      setLoadingNote(false);
+    }
+  };
+
+  const handleCloseTransferNoteModal = () => {
+    setShowTransferNoteModal(false);
+    setTransferNote(null);
+    setLoadingNote(false);
+  };
 
   return (
     <div
@@ -723,7 +757,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
             <>
               <span style={{ fontSize: '14px', lineHeight: '1.2' }}>{isAds ? '💰' : '🌱'}</span>
               {lead.is_reschedule && (
-                <span style={{ fontSize: '14px', lineHeight: '1.2' }}>🔁</span>
+                <span style={{ fontSize: '14px', lineHeight: '1.2' }}>🔄</span>
               )}
               {lead.cancelled && (
                 <span style={{ fontSize: '14px', lineHeight: '1.2' }}>❌</span>
@@ -792,10 +826,29 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
           cursor: 'pointer',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
-          textOverflow: 'ellipsis'
+          textOverflow: 'ellipsis',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
         }}
       >
         {setterMap[lead.setter_id] || 'N/A'}
+        {lead.first_setter_id && lead.setter_id && lead.first_setter_id !== lead.setter_id && (
+          <span 
+            onClick={(e) => {
+              e.stopPropagation();
+              fetchTransferNote(lead.id);
+            }}
+            style={{ 
+              fontSize: '14px',
+              cursor: 'pointer',
+              transition: 'transform 0.2s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.2)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            title="View transfer note"
+          >📩</span>
+        )}
       </div>
 
       {/* Closer */}
@@ -892,6 +945,66 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         onTransfer={(newSetterId) => setSetter(newSetterId)}
       />
 
+      <Modal isOpen={showTransferNoteModal} onClose={handleCloseTransferNoteModal}>
+        <div style={{ padding: '20px', maxWidth: '500px' }}>
+          <h2 style={{ marginBottom: '16px', fontSize: '18px', fontWeight: '600' }}>
+            Transfer Note
+            {transferNote?.from_setter_id && (
+              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '4px', fontWeight: 400 }}>
+                From: <span style={{ fontWeight: 500 }}>{setterMap[transferNote.from_setter_id] || 'Unknown'}</span>
+              </div>
+            )}
+            {transferNote?.created_at && (
+              <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                Date: <span style={{ fontWeight: 500 }}>{DateHelpers.formatTimeWithRelative(transferNote.created_at)}</span>
+              </div>
+            )}
+          </h2>
+          {loadingNote ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '20px' }}>
+              <div style={{ 
+                width: '20px', 
+                height: '20px', 
+                border: '2px solid #e5e7eb', 
+                borderTop: '2px solid #3b82f6', 
+                borderRadius: '50%', 
+                animation: 'spin 1s linear infinite' 
+              }}></div>
+              <span>Loading transfer note...</span>
+            </div>
+          ) : (
+            <div>
+              <p style={{ 
+                marginBottom: '16px', 
+                padding: '12px', 
+                backgroundColor: '#f9fafb', 
+                borderRadius: '6px',
+                border: '1px solid #e5e7eb',
+                whiteSpace: 'pre-wrap',
+                minHeight: '60px'
+              }}>
+                {transferNote?.note || transferNote || 'No note provided'}
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={handleCloseTransferNoteModal}
+                  style={{
+                    backgroundColor: '#6b7280',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '8px 16px',
+                    cursor: 'pointer',
+                    fontSize: '14px'
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       
     </div>

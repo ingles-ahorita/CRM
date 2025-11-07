@@ -25,20 +25,30 @@ if (filters?.purchased) {
 }
   
   // Fetch leads
+  // Use inner join for follow ups tab, regular join for others
+  const outcomeLogSelect = activeTab === 'follow ups' 
+    ? `outcome_log!inner!call_id (id, outcome)`
+    : `outcome_log!call_id (id, outcome)`;
+
 let query = supabase
   .from('calls')
   .select(`
     *,
     closers (id, name),
     setters (id, name),
-    leads (phone, source, medium)
+    leads (phone, source, medium),
+    ${outcomeLogSelect}
   `)
   .order(sortField, { ascending: order === 'asc', nullsFirst: false });
 
 
 
   // Filter by date based on active tab
-  if (activeTab !== 'all') {
+  if (activeTab === 'follow ups') {
+    // Filter for calls that have outcome_log entries with outcome = 'follow_up'
+    // The inner join already ensures only calls with outcome_log entries are returned
+    query = query.eq('outcome_log.outcome', 'follow_up');
+  } else if (activeTab !== 'all') {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
@@ -138,6 +148,10 @@ if (searchTerm) {
   if (!searchTerm && activeTab === 'all') {
     query = query.limit(100);
   }
+
+  // For follow ups, filter results in JavaScript if relationship filter doesn't work
+  // This ensures we only show calls with outcome = 'follow_up'
+  let shouldFilterFollowUps = activeTab === 'follow ups';
 console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc');
   const { data: leadsData, error: leadsError } = await query;
 
@@ -158,11 +172,31 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
 
   let leadsWithCallTime = leadsData.map(lead => ({...lead, ...callMap[lead.id]}));
 
+  // Filter for follow ups if needed (in case relationship filter didn't work)
+  if (shouldFilterFollowUps) {
+    leadsWithCallTime = leadsWithCallTime.filter(lead => {
+      // Check if any outcome_log entry has outcome = 'follow_up'
+      if (Array.isArray(lead.outcome_log)) {
+        return lead.outcome_log.some(ol => ol.outcome === 'follow_up');
+      }
+      return lead.outcome_log?.outcome === 'follow_up';
+    });
+  }
+
   if (filters?.transferred) {
     leadsWithCallTime = leadsWithCallTime.filter(lead => lead.first_setter_id !== lead.setter_id);
   }
 
-    updateDataState({ leads: leadsWithCallTime || [], counts: counts});
+  // Recalculate counts after filtering
+  const finalCounts = {
+    booked: leadsWithCallTime?.length || 0,
+    confirmed: leadsWithCallTime?.filter(lead => lead.cancelled ? false : lead.confirmed).length || 0,
+    cancelled: leadsWithCallTime?.filter(lead => lead.confirmed === false || lead.cancelled === true ).length || 0,
+    noPickup: leadsWithCallTime?.filter(lead => lead.picked_up === false).length || 0,
+    noShow: leadsWithCallTime?.filter(lead => lead.showed_up).length || 0
+  };
+
+    updateDataState({ leads: leadsWithCallTime || [], counts: finalCounts});
   }
   
   const { data: settersData, error: settersError } = await supabase

@@ -138,11 +138,18 @@ if (outcomeValue === 'yes' && offerId) {
   }
 }
 
+// Extract and format purchase_date
+const purchasedDateValue = formData.get('purchase_date') || null;
+const purchasedDate = purchasedDateValue 
+  ? new Date(purchasedDateValue).toISOString() 
+  : null;
+
 const closerPayload = {
   outcome: formData.get('outcome') || null,
   offer_id: offerId || null,
   discount: discountValue || null,
   commission: commission,
+  purchase_date: purchasedDate,
   prepared_score: parseInt(formData.get('prepared_score')) || null,
   prepared_reason: formData.get('prepared_reason'),
   budget_max: formData.get('budget_max'),
@@ -482,6 +489,7 @@ if (noteId) {
               <option value="no">NO</option>
               <option value="lock_in">LOCK IN</option>
               <option value="follow_up">FOLLOW UP NEEDED</option>
+              <option value="refund">REFUND</option>
             </select>
           </div>
         )}
@@ -518,6 +526,23 @@ if (noteId) {
               />
             </div>
           </>
+        )}
+
+        {/* Purchased Date - Only show when outcome is yes or lock_in */}
+        {mode === 'closer' && (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') && (
+          <div>
+            <label style={labelStyle}>📅 Purchased Date:</label>
+            <input
+              name="purchase_date"
+              type="date"
+              defaultValue={
+                noteData?.purchase_date 
+                  ? new Date(noteData.purchase_date).toISOString().split('T')[0]
+                  : new Date().toISOString().split('T')[0]
+              }
+              style={{...inputStyle, width: '100%'}}
+            />
+          </div>
         )}
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} >
@@ -823,6 +848,15 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                   <div>
                     <div style={labelStyle}>💵 Commission</div>
                     <div style={valueStyle}>${closerNote.commission.toFixed(2)}</div>
+                  </div>
+                )}
+
+                {closerNote.purchase_date && (closerNote.outcome === 'yes' || closerNote.outcome === 'lock_in' || closerNote.outcome === 'refund') && (
+                  <div>
+                    <div style={labelStyle}>📅 Purchased Date</div>
+                    <div style={valueStyle}>
+                      {new Date(closerNote.purchase_date).toLocaleDateString()}
+                    </div>
                   </div>
                 )}
 
