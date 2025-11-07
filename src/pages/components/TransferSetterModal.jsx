@@ -72,7 +72,10 @@ const transferLead = async (callId, newSetterId, currentSetterId, transferNote, 
     try {
       // Find the setter name from the options array
       const setterOption = setterOptions.find(opt => opt.id === newSetterId);
-      const setterName = setterOption?.name || newSetterId;
+      const capitalizeFirst = (word) => word ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : '';
+      const setterName = setterOption?.name ? capitalizeFirst(setterOption.name) : '';
+
+      console.log('Setter name:', setterName);
       
       await ManychatService.updateManychatField(mcID, 'setter_id', setterName);
     } catch (mcError) {
