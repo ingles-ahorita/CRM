@@ -1,15 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-
-const supabase =
-  supabaseUrl && supabaseServiceKey
-    ? createClient(supabaseUrl, supabaseServiceKey, {
-        auth: { persistSession: false }
-      })
-    : null;
+import { supabase } from '../src/lib/supabaseClient.js';
 
 const WEBHOOK_LOG_TABLE =
   process.env.SUPABASE_WEBHOOK_TABLE || 'calendly_webhook_logs';
