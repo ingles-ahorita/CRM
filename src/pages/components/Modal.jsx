@@ -111,6 +111,8 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
   decision_maker_present: formData.get('decision_maker_present') === 'on',
   prepared: formData.get('prepared') === 'on',
   show_up_confirmed: formData.get('show_up_confirmed') === 'on',
+  watched_masterclass: formData.get('watched_masterclass') === 'on',
+  age: parseInt(formData.get('age')) || null,
   notes: formData.get('notes')
 };
 
@@ -354,12 +356,19 @@ if (noteId) {
         {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
       </h2>
 
-<form onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '40px', paddingRight: '40px', paddingBottom: '20px' }}>
+<div style={{ marginBottom: '20px' }}>
+<form id="setter-note-form" onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '40px', paddingRight: '40px' }}>
   
   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
     <label style={labelStyle}>🔥 Commitment level (1–10):</label>
     <input name="commitment_level" type="number" min="1" max="10" 
-           defaultValue={noteData?.commitment_level || ''} style={{...inputStyle, width: '14%', textAlign: 'left'}} />
+           defaultValue={noteData?.commitment_level || ''} style={{...inputStyle, width: '60px', minWidth: '60px', textAlign: 'center'}} />
+  </div>
+
+  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    <label style={labelStyle}>👤 Age:</label>
+    <input name="age" type="number" min="1" max="120" 
+           defaultValue={noteData?.age || ''} style={{...inputStyle, width: '60px', minWidth: '60px', textAlign: 'center'}} />
   </div>
 
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -367,13 +376,6 @@ if (noteId) {
            defaultChecked={noteData?.practice_daily || false}
            style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
     <label style={labelStyle}>⏱️ Practice daily (min. 30m)</label>
-  </div>
-
-  <div>
-    <label style={labelStyle}>🎯 Motivation (why):</label>
-    <textarea name="motivation" rows="3" 
-              defaultValue={noteData?.motivation || ''} 
-              style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
   </div>
 
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -397,14 +399,31 @@ if (noteId) {
     <label style={labelStyle}>📅 Show-up time/date confirmed?</label>
   </div>
 
-  <div>
-    <label style={labelStyle}>⚠️ Extra notes:</label>
-    <textarea name="notes" rows="3" 
-              defaultValue={noteData?.notes || ''} 
-              style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
+  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <input name="watched_masterclass" type="checkbox" 
+           defaultChecked={noteData?.watched_masterclass || false}
+           style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+    <label style={labelStyle}>🎥 Watched masterclass?</label>
   </div>
 
-  <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+  <div style={{ gridColumn: '1 / -1' }}>
+    <label style={labelStyle}>🎯 Motivation (why):</label>
+    <textarea name="motivation" rows="2" 
+              defaultValue={noteData?.motivation || ''} 
+              style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
+  </div>
+
+  <div style={{ gridColumn: '1 / -1' }}>
+    <label style={labelStyle}>⚠️ Extra notes:</label>
+    <textarea name="notes" rows="2" 
+              defaultValue={noteData?.notes || ''} 
+              style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
+  </div>
+
+</form>
+</div>
+
+  <div style={{ display: 'flex', gap: '10px', paddingLeft: '40px', paddingRight: '40px' }}>
   <button type="button" onClick={onClose} style={{ 
       padding: '10px 20px', 
       backgroundColor: '#6b7280', 
@@ -418,7 +437,7 @@ if (noteId) {
     }}>
       Cancel
     </button>
-    <button type="submit" style={{ 
+    <button type="submit" form="setter-note-form" style={{ 
       padding: '10px 20px', 
       backgroundColor: '#001749ff', 
       color: 'white', 
@@ -432,7 +451,6 @@ if (noteId) {
       {noteData ? 'Update Note' : 'Add Note'}
     </button>
   </div>
-</form>
       </> )}
     </Modal>)}
 
@@ -471,11 +489,12 @@ if (noteId) {
         {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
       </h2>
 
-      <form onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingLeft: '40px', paddingRight: '40px', paddingBottom: '20px' }}>
+      <div style={{ marginBottom: '20px', maxHeight: (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') ? '60vh' : 'none', overflowY: (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') ? 'auto' : 'visible', paddingRight: (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') ? '10px' : '0' }}>
+      <form id="closer-note-form" onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '40px', paddingRight: '40px' }}>
         
         {/* Outcome Dropdown - Only for closer mode */}
         {mode === 'closer' && (
-          <div>
+          <div style={{ gridColumn: '1 / -1' }}>
             <label style={labelStyle}>📊 Outcome: <span style={{ color: 'red' }}>*</span></label>
             <select
               name="outcome"
@@ -548,38 +567,42 @@ if (noteId) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} >
           <label style={labelStyle}>🟢 Prepared score:</label>
             <input name="prepared_score" type="number" min="1" max="10" 
-           defaultValue={noteData?.prepared_score || ''} style={{...inputStyle, width: '14%', textAlign: 'center'}} />
+           defaultValue={noteData?.prepared_score || ''} style={{...inputStyle, width: '60px', minWidth: '60px', textAlign: 'center'}} />
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <textarea name="prepared_reason" rows="3" placeholder='Reason for score'
-                    defaultValue={noteData?.prepared_reason || ''} 
-                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
-  </div>
 
         <div>
           <label style={labelStyle}>💲 Budget (max):</label>
           <input name="budget_max" type="text" 
                  defaultValue={noteData?.budget_max || ''} 
                  placeholder="e.g., $1000"
-                 style={inputStyle} />
+                 style={{...inputStyle, width: '100%'}} />
         </div>
 
-        <div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={labelStyle}>Reason for score:</label>
+          <textarea name="prepared_reason" rows="2" placeholder='Reason for score'
+                    defaultValue={noteData?.prepared_reason || ''} 
+                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
+        </div>
+
+        <div style={{ gridColumn: '1 / -1' }}>
           <label style={labelStyle}>⚡ Objection:</label>
-          <textarea name="objection" rows="3" 
+          <textarea name="objection" rows="2" 
                     defaultValue={noteData?.objection || ''} 
-                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
+                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
         </div>
 
-        <div>
-          <label style={labelStyle}>📝 Note:</label><br></br>
-          <textarea name="notes" rows="3" 
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label style={labelStyle}>📝 Note:</label>
+          <textarea name="notes" rows="2" 
                     defaultValue={noteData?.notes || ''} 
-                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit'}} />
+                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+      </form>
+      </div>
+
+      <div style={{ display: 'flex', gap: '10px', paddingLeft: '40px', paddingRight: '40px' }}>
         <button type="button" onClick={onClose} style={{ 
             padding: '10px 20px', 
             backgroundColor: '#6b7280', 
@@ -593,7 +616,7 @@ if (noteId) {
           }}>
             Cancel
           </button>
-          <button type="submit" style={{ 
+          <button type="submit" form="closer-note-form" style={{ 
             padding: '10px 20px', 
             backgroundColor: '#001749ff', 
             color: 'white', 
@@ -607,7 +630,6 @@ if (noteId) {
             {noteData ? 'Update Note' : 'Add Note'}
           </button>
         </div>
-      </form>
     </>
   )}
 </Modal>
@@ -728,7 +750,7 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
             Notes for <b>{lead.name}</b>
           </h2>
 
-          <div style={{ paddingLeft: '40px', paddingRight: '40px', paddingBottom: '20px', maxHeight: '600px', overflowY: 'auto' }}>
+          <div style={{ paddingLeft: '40px', paddingRight: '50px', paddingBottom: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
             
             {/* Setter Notes Section */}
             {setterNote ? (
@@ -786,6 +808,20 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                   </span>
                   <span style={{ fontSize: '15px' }}>📅 Show-up confirmed</span>
                 </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={checkmarkStyle(setterNote.watched_masterclass)}>
+                    {setterNote.watched_masterclass ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: '15px' }}>🎥 Watched masterclass</span>
+                </div>
+
+                {setterNote.age && (
+                  <div>
+                    <div style={labelStyle}>👤 Age</div>
+                    <div style={valueStyle}>{setterNote.age}</div>
+                  </div>
+                )}
 
                 {setterNote.notes && (
                   <div>

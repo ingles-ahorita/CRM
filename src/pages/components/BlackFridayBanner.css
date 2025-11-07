@@ -1,0 +1,45 @@
+.black-friday-banner {
+  background: linear-gradient(90deg, #CC0000 0%, #FF0000 50%, #CC0000 100%);
+  padding: 12px 20px;
+  text-align: center;
+  color: white;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.bf-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.bf-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.bf-highlight {
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+@media (max-width: 768px) {
+  .black-friday-banner {
+    padding: 10px 15px;
+  }
+  
+  .bf-content {
+    gap: 10px;
+  }
+  
+  .bf-text {
+    font-size: 13px;
+    width: 100%;
+  }
+}
+
+
+
