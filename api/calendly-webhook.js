@@ -1,84 +1,93 @@
 export default async function handler(req, res) {
-    // Only accept POST requests
+  try {
+    console.log('Webhook received!');
+    console.log('Method:', req.method);
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed' });
     }
-  
-    try {
-      const webhookData = req.body;
-      
-      console.log('Received Calendly webhook:', JSON.stringify(webhookData, null, 2));
-      
-      // Extract event type and payload
-      const { event, payload } = webhookData;
 
-      console.log('Event:', event);
-      console.log('Payload:', payload);
-      
-      // Handle different event types
-      if (event === 'invitee.created') {
-        await handleNewBooking(payload);
-      } else if (event === 'invitee.canceled') {
-        await handleCancellation(payload);
-      } else if (event === 'invitee_no_show.created') {
-        await handleNoShow(payload);
-      }
-      
-      // Always return 200 to acknowledge receipt
-      return res.status(200).json({ received: true });
-      
-    } catch (error) {
-      console.error('Webhook processing error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
+    const { event, payload } = req.body || {};
+
+    if (!event || !payload) {
+      console.warn('Missing event or payload in Calendly webhook');
+      return res.status(200).json({
+        received: true,
+        warning: 'Missing event or payload',
+        timestamp: new Date().toISOString()
+      });
     }
-  }
-  
-  async function handleNewBooking(payload) {
-    console.log('New booking:', payload);
-    
 
-    
-    // Add other integrations here
+    if (event === 'invitee.created') {
+    //   console.log('New invitee created:');
+    //   console.log('Name:', payload.name);
+    //   console.log('Email:', payload.email);
+    //   console.log('Event:', payload.scheduled_event?.name);
+    //   console.log('Start time:', payload.scheduled_event?.start_time);
+      await handleNewBooking(payload);
+    } else if (event === 'invitee.canceled') {
+      await handleCancellation(payload);
+    } else if (event === 'invitee_no_show.created') {
+      await handleNoShow(payload);
+    } else {
+      console.log(`Unhandled Calendly event type: ${event}`);
+    }
+
+    return res.status(200).json({
+      received: true,
+      event,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    return res.status(200).json({
+      received: true,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+async function handleNewBooking(payload) {
+  console.log('Processing new booking payload for Discord notification');
+  console.log('Payload:', payload);
   await notifyDiscord(payload);
-  }
-  
-  async function handleCancellation(payload) {
-    console.log('Cancellation:', payload);
-    // Handle cancellation logic
-  }
-  
-  async function handleNoShow(payload) {
-    console.log('No show:', payload);
-    // Handle no-show logic
-  }
-  
-  async function sendToManyChat(data) {
-    // We'll fill this in next - what data do you send to ManyChat currently?
-  }
+
+  // Add other integrations here
+}
+
+async function handleCancellation(payload) {
+  console.log('Cancellation received:', payload);
+  // Handle cancellation logic
+}
+
+async function handleNoShow(payload) {
+  console.log('No-show received:', payload);
+  // Handle no-show logic
+}
+
+async function sendToManyChat(data) {
+  // We'll fill this in next - what data do you send to ManyChat currently?
+}
 
 async function notifyDiscord(payload) {
   const DISCORD_WEBHOOK_URL = 'https://discord-notifiactions.floral-rain-cd3c.workers.dev/';
 
   const inviteeName = payload?.name || 'Unknown name';
-  const event = payload?.event || {};
-
-
-  const inviteeEmail = invitee.email || 'Unknown email';
-  const eventName = payload?.event || 'Unknown event';
-  const startTime = event.start_time || payload?.scheduled_event?.start_time;
+  const inviteeEmail = payload?.email || 'Unknown email';
+  const eventName = payload?.scheduled_event?.name || 'Unknown event';
+  const startTime = payload?.scheduled_event?.start_time || 'Unknown start time';
 
   const messageLines = [
+    `📅 New Calendly booking: ${eventName}`,
     `👤 ${inviteeName}`,
     `✉️ ${inviteeEmail}`,
-    `🕒 ${startTime}`
+    `🕒 Starts at: ${startTime}`
   ];
 
-//   if (startTime) {
-//     messageLines.push(`🕒 Starts at: ${startTime}`);
-//   }
-
   const body = {
-    message: messageLines.toString(),
+    message: messageLines.join('\n'),
     userId: '447184380939599880'
   };
 
