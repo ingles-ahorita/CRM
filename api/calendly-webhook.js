@@ -25,7 +25,7 @@ export default async function handler(req, res) {
       }
       
       // Always return 200 to acknowledge receipt
-      return res.status(200).json({ received: true });
+      return res.status(200).json({ receiveda: true });
       
     } catch (error) {
       console.error('Webhook processing error:', error);
@@ -73,9 +73,9 @@ async function notifyDiscord(payload) {
     `🕒 ${startTime}`
   ];
 
-  if (startTime) {
-    messageLines.push(`🕒 Starts at: ${startTime}`);
-  }
+//   if (startTime) {
+//     messageLines.push(`🕒 Starts at: ${startTime}`);
+//   }
 
   const body = {
     message: messageLines.join('\n'),
