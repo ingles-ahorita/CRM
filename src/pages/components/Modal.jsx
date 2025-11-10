@@ -535,14 +535,24 @@ if (noteId) {
             </div>
 
             <div>
-              <label style={labelStyle}>💸 Discount:</label>
-              <input
-                name="discount"
-                type="text"
-                defaultValue={noteData?.discount || ''}
-                placeholder="e.g., 20%, $50, etc."
-                style={{...inputStyle, width: '100%'}}
-              />
+              <label style={{...labelStyle, marginBottom: '12px', display: 'block'}}>💸 Discount:</label>
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <input
+                  name="discount"
+                  type="text"
+                  defaultValue={noteData?.discount || ''}
+                  placeholder="e.g., 10%"
+                  style={{...inputStyle, width: '150px', paddingRight: '30px'}}
+                />
+                <span style={{ 
+                  position: 'absolute', 
+                  right: '12px', 
+                  top: '50%', 
+                  transform: 'translateY(-50%)', 
+                  color: '#6b7280',
+                  pointerEvents: 'none'
+                }}>%</span>
+              </div>
             </div>
           </>
         )}
@@ -1181,7 +1191,7 @@ export const PurchaseLogModal = ({ isOpen, onClose, lead, callId, onPurchaseComp
                   type="text"
                   value={discount}
                   onChange={(e) => setDiscount(e.target.value)}
-                  placeholder="e.g., 20%, $50, etc."
+                  placeholder="e.g., 20%"
                   style={inputStyle}
                 />
               </div>

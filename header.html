@@ -1,0 +1,220 @@
+<!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-MGZLRSN8');</script>
+    <!-- End Google Tag Manager -->
+    
+    <script>
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      const utmSource = params.get('utm_source');
+      const utmMedium = params.get('utm_medium');
+      const utmCampaign = params.get('utm_campaign');
+    
+      if (utmSource || utmMedium || utmCampaign) {
+        localStorage.setItem('utm_source', utmSource || 'direct');
+        localStorage.setItem('utm_medium', utmMedium || '');
+        localStorage.setItem('utm_campaign', utmCampaign || '');
+      }
+    })();
+    </script>
+    <style>
+        .black-friday-banner {
+            background: linear-gradient(90deg, #CC0000 0%, #FF0000 50%, #CC0000 100%);
+            padding: 12px 20px;
+            text-align: center;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .checkout-banner {
+            padding-top: 1% !important;
+        }
+        
+        .bf-content {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .bf-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        
+        .bf-highlight {
+            text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        
+        .countdown-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .countdown-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 12px;
+            border-radius: 4px;
+            min-width: 45px;
+        }
+        
+        .countdown-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffffff;
+            line-height: 1;
+        }
+        
+        .countdown-separator {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffffff;
+            margin: 0 2px;
+        }
+        
+        @media (max-width: 768px) {
+            .black-friday-banner {
+                padding: 10px 15px;
+            }
+            
+            .bf-content {
+                gap: 10px;
+            }
+            
+            .bf-text {
+                font-size: 13px;
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            
+            .countdown-box {
+                padding: 6px 8px;
+                min-width: 35px;
+            }
+            
+            .countdown-number {
+                font-size: 18px;
+            }
+            
+            .countdown-separator {
+                font-size: 18px;
+            }
+        }
+    </style>
+    
+    <script>
+    (function() {
+        // Wait for jQuery to be available
+        function waitForjQuery(callback) {
+            if (typeof jQuery !== 'undefined') {
+                callback(jQuery);
+            } else {
+                setTimeout(function() {
+                    waitForjQuery(callback);
+                }, 50);
+            }
+        }
+        
+        waitForjQuery(function($) {
+            $(document).ready(function() {
+                // Check if current page matches allowed paths
+                const pathname = window.location.pathname;
+                const allowedPaths = ['/ads-opt-in-masterclass', '/pro', '/'];
+                const isAllowedPage = allowedPaths.some(path => {
+                    if (path === '/') {
+                        // For root, check if pathname is exactly '/' or empty
+                        return pathname === '/' || pathname === '';
+                    } else {
+                        // For other paths, check if pathname ends with the path
+                        return pathname.endsWith(path);
+                    }
+                });
+                
+                // Only proceed if on an allowed page
+                if (!isAllowedPage) {
+                    return;
+                }
+                
+                const blackFridayBanner = `
+                    <div class="black-friday-banner">
+                        <div class="bf-content">
+                            <div class="bf-text">
+                                La oferta de <span class="bf-highlight">BLACK NOVEMBER</span> finalizará en:
+                            </div>
+                            <div class="countdown-container">
+                                <div class="countdown-box">
+                                    <div id="bf-days" class="countdown-number">00</div>
+                                </div>
+                                <span class="countdown-separator">:</span>
+                                <div class="countdown-box">
+                                    <div id="bf-hours" class="countdown-number">00</div>
+                                </div>
+                                <span class="countdown-separator">:</span>
+                                <div class="countdown-box">
+                                    <div id="bf-minutes" class="countdown-number">00</div>
+                                </div>
+                                <span class="countdown-separator">:</span>
+                                <div class="countdown-box">
+                                    <div id="bf-seconds" class="countdown-number">00</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Remove any existing <a> that may wrap .checkout-banner
+                var $checkoutBanner = $('.checkout-banner');
+                if ($checkoutBanner.parent('a').length) {
+                    $checkoutBanner.unwrap();
+                }
+                
+                // Insert banner only once
+                if ($('.black-friday-banner').length === 0) {
+                    $('body').prepend(blackFridayBanner);
+                }
+    
+                // Wait a moment then start countdown
+                setTimeout(function() {
+                    // SET YOUR END DATE HERE - November 29, 2025 at 11:59:59 PM
+                    const endDate = new Date(2025, 10, 29, 23, 59, 59).getTime();
+                    
+                    function updateCountdown() {
+                        const now = new Date().getTime();
+                        const distance = endDate - now;
+                        
+                        // If countdown is finished
+                        if (distance < 0) {
+                            $('.black-friday-banner').fadeOut();
+                            return;
+                        }
+                        
+                        // Calculate time units
+                        const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                        const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                        const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                        const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                        
+                        // Update the display
+                        $('#bf-days').text(String(days).padStart(2, '0'));
+                        $('#bf-hours').text(String(hours).padStart(2, '0'));
+                        $('#bf-minutes').text(String(minutes).padStart(2, '0'));
+                        $('#bf-seconds').text(String(seconds).padStart(2, '0'));
+                    }
+                    
+                    // Update immediately
+                    updateCountdown();
+                    
+                    // Update every second
+                    setInterval(updateCountdown, 1000);
+                }, 200);
+            });
+        });
+    })();
+    </script>
