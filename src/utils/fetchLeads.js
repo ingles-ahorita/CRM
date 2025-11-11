@@ -36,7 +36,7 @@ let query = supabase
     *,
     closers (id, name),
     setters (id, name),
-    leads (phone, source, medium),
+    leads (phone, source, medium, mc_id),
     ${outcomeLogSelect}
   `)
   .order(sortField, { ascending: order === 'asc', nullsFirst: false });

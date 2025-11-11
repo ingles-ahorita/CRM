@@ -8,6 +8,7 @@ import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
 import * as ManychatService from '../../utils/manychatService';
+import { buildCallDataFromLead, updateManychatCallFields } from '../../utils/manychatService';
 
 const formatStatusValue = (value) => {
   if (value === true) return 'true';
@@ -152,10 +153,10 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               <Phone size={12} />
               <span>
                 <a
-                  href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || ''}`}
+                  href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || lead.leads?.mc_id || ''}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: '#6b7280' }}
+                  style={{ color: (lead.manychat_user_id || lead.leads?.mc_id) ? '#6b7280' : 'red' }}
                 >
                   {lead.phone || 'No phone'}
                 </a>
@@ -407,6 +408,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             mode={mode}
             modalSetter={setShowNoteModal}
             setMode={setModeState}
+            lead={lead}
           />
         </div>
 
@@ -527,7 +529,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 
 
-const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
+const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead}) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -632,6 +634,52 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode,  modalSetter}) => {
           Closer Notes
         </button>
       )}
+      
+      <button 
+        onClick={async (e) => { 
+          e.stopPropagation(); 
+          if (lead) {
+            try {
+              // Get ManyChat subscriber ID
+              const subscriberId = lead.leads?.mc_id || lead.manychat_user_id;
+              
+              if (!subscriberId) {
+                console.error('No ManyChat subscriber ID found for this lead');
+                alert('No ManyChat subscriber ID found for this lead');
+                setMenuOpen(false);
+                return;
+              }
+
+              // Build call data (setter and closer names come from joins)
+              const callData = buildCallDataFromLead(lead);
+              console.log('Sending to ManyChat:', { subscriberId, callData });
+              
+              // Send to ManyChat
+              await updateManychatCallFields(subscriberId, callData);
+              console.log('✅ Successfully sent to ManyChat');
+              alert('Successfully sent to ManyChat!');
+            } catch (error) {
+              console.error('❌ Error sending to ManyChat:', error);
+              alert('Error sending to ManyChat: ' + error.message);
+            }
+          }
+          setMenuOpen(false); 
+        }}
+        style={{
+          width: '100%',
+          padding: '8px 16px',
+          border: 'none',
+          background: 'none',
+          textAlign: 'left',
+          cursor: 'pointer',
+          color: '#3b82f6',
+          fontWeight: '300',
+          fontSize: '14px',
+          outline: 'none'
+        }}
+      >
+        Send to ManyChat
+      </button>
       
       <button 
         onClick={(e) => { 
@@ -808,10 +856,10 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         }}>
           <Phone size={12} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
           <a
-            href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || ''}`}
+            href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || lead.leads?.mc_id || ''}`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: '#6b7280', textDecoration: 'none' }}
+            style={{ color: (lead.manychat_user_id || lead.leads?.mc_id) ? '#6b7280' : 'red', textDecoration: 'none' }}
           >
             {lead.phone || 'No phone'}
           </a>
@@ -924,6 +972,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
     onEdit={() => setIsModalOpen(true)}
     onDelete={() => console.log('Delete')}
     mode={'full'}
+    lead={lead}
   />
 
   </div>
