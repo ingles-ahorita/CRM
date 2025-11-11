@@ -87,7 +87,8 @@ import { supabase } from '../lib/supabaseClient';
         confirmed: false,
         cancelled: false,
         noShow: false,
-        transferred: false
+        transferred: false,
+        noManychatId: false
       },
       currentSetter: setter,
       onEndShift: handleEndShift,

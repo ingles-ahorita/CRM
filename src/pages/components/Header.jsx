@@ -351,15 +351,47 @@ const updateHeaderState = (updates) => {
     }}
   />
 
+  <FilterButton
+    label="No ManyChat ID"
+    active={filters.noManychatId}
+    onClick={() => toggleFilter('noManychatId')}
+  />
+
 </div>)}
 
 {(mode === 'setter') && (
-  <FilterButton
-    label="Transfered"
-    active={filters.transferred}
-    onClick={() => toggleFilter('transferred')
-    }
-  />
+  <div style={{
+    display: 'flex',
+    gap: '8px',
+    marginTop: '12px',
+    flexWrap: 'wrap'
+  }}>
+    <FilterButton
+      label="Transfered"
+      active={filters.transferred}
+      onClick={() => toggleFilter('transferred')}
+    />
+    <FilterButton
+      label="No ManyChat ID"
+      active={filters.noManychatId}
+      onClick={() => toggleFilter('noManychatId')}
+    />
+  </div>
+)}
+
+{(mode === 'closer') && (
+  <div style={{
+    display: 'flex',
+    gap: '8px',
+    marginTop: '12px',
+    flexWrap: 'wrap'
+  }}>
+    <FilterButton
+      label="No ManyChat ID"
+      active={filters.noManychatId}
+      onClick={() => toggleFilter('noManychatId')}
+    />
+  </div>
 )}
 
 

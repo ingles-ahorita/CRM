@@ -48,7 +48,8 @@ import { useSimpleAuth } from '../useSimpleAuth';
         confirmed: false,
         cancelled: false,
         noShow: false,
-        transferred: false
+        transferred: false,
+        noManychatId: false
       },
       currentCloser: closer,
       onEndShift: handleEndShift,

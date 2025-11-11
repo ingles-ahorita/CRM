@@ -47,7 +47,8 @@ const [headerState, setHeaderState] = useState({
     noPickUp: searchParams.get('noPickUp') === 'true',            // Read from URL
     rescheduled: searchParams.get('rescheduled') === 'true',      // Read from URL
     transferred: searchParams.get('transferred') === 'true',      // Read from URL
-    purchased: searchParams.get('purchased') === 'true'            // Read from URL
+    purchased: searchParams.get('purchased') === 'true',          // Read from URL
+    noManychatId: searchParams.get('noManychatId') === 'true'     // Read from URL
   },
   onEndShift: () => setIsEndShiftModalOpen(true)
 });

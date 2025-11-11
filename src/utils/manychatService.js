@@ -147,7 +147,7 @@ export const buildCallDataFromLead = (lead) => {
 
   // Setter name (from join)
   if (lead.setters?.name) {
-    callData.setter = lead.setters.name;
+    callData.setter = lead.setters.name.charAt(0).toUpperCase() + lead.setters.name.slice(1).toLowerCase();
   }
 
   // Closer name (from join)

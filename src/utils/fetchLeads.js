@@ -187,6 +187,14 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
     leadsWithCallTime = leadsWithCallTime.filter(lead => lead.first_setter_id !== lead.setter_id);
   }
 
+  // Filter for leads with no ManyChat ID
+  if (filters?.noManychatId) {
+    leadsWithCallTime = leadsWithCallTime.filter(lead => {
+      const mcId = lead.leads?.mc_id || lead.manychat_user_id;
+      return !mcId || mcId === null || mcId === undefined || mcId === '';
+    });
+  }
+
   // Recalculate counts after filtering
   const finalCounts = {
     booked: leadsWithCallTime?.length || 0,
