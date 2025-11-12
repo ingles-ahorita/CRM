@@ -481,6 +481,12 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                         body: JSON.stringify({ eventUri: lead.calendly_id })
                       });
 
+                      // If Calendly cancellation succeeded, set calls.cancelled to true in Supabase
+                      if (response.ok) {
+                        // Update Supabase "calls" table: set cancelled = true for this call
+                        await supabase.from('calls').update({ cancelled: true }).eq('id', lead.id);
+                      }
+
                       if (!response.ok) {
                         const error = await response.json();
                         console.error('Error canceling Calendly event:', error);
