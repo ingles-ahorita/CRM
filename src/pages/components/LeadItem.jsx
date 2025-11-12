@@ -485,6 +485,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                       if (response.ok) {
                         // Update Supabase "calls" table: set cancelled = true for this call
                         await supabase.from('calls').update({ cancelled: true }).eq('id', lead.id);
+                        showToast('Call cancelled successfully!', 'success');
                       }
 
                       if (!response.ok) {
