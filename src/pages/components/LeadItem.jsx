@@ -54,8 +54,19 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   const [transferNote, setTransferNote] = useState(null);
   const [loadingNote, setLoadingNote] = useState(false);
   const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  const [showConfirmCancelModal, setShowConfirmCancelModal] = useState(false);
+  const [pendingConfirmedValue, setPendingConfirmedValue] = useState(null);
   const { setter: currentSetter } = useParams();  
   const navigate = useNavigate();
+
+  // Toast function
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: '', type: 'success' });
+    }, 3000);
+  };
 
   const fetchTransferNote = async (callId) => {
     setLoadingNote(true);
@@ -173,7 +184,16 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           />
           <StatusDropdown
             value={confirmed}
-            onChange={(value) => updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id)}
+            onChange={(value) => {
+              // If changing to "no" (false), show confirmation modal
+              if (value === 'false' || value === false) {
+                setPendingConfirmedValue(value);
+                setShowConfirmCancelModal(true);
+              } else {
+                // For other values (yes/null), update directly
+                updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id);
+              }
+            }}
             label="Confirmed"
             disabled={mode === 'closer' || mode === 'view'}
           />
@@ -400,6 +420,110 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           )}
         </div>
       </Modal>
+
+      {/* Confirmation Modal for Cancelling Confirmation */}
+      <Modal isOpen={showConfirmCancelModal} onClose={() => {
+        setShowConfirmCancelModal(false);
+        setPendingConfirmedValue(null);
+      }}>
+        <div style={{ padding: '24px', maxWidth: '400px' }}>
+          <h2 style={{ 
+            marginBottom: '16px', 
+            fontSize: '20px', 
+            fontWeight: '600',
+            color: '#111827'
+          }}>
+            Confirm Cancellation
+          </h2>
+          <p style={{ 
+            marginBottom: '24px', 
+            fontSize: '14px', 
+            color: '#6b7280',
+            lineHeight: '1.5'
+          }}>
+            Are you sure you want to <strong>cancel this call</strong>?
+          </p>
+          <div style={{ 
+            display: 'flex', 
+            gap: '12px', 
+            justifyContent: 'flex-end' 
+          }}>
+            <button
+              onClick={() => {
+                setShowConfirmCancelModal(false);
+                setPendingConfirmedValue(null);
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#f3f4f6',
+                color: '#374151',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  // Cancel Calendly event if calendly_id exists
+                  if (lead.calendly_id) {
+                    try {
+                      const response = await fetch('/api/cancel-calendly', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ eventUri: lead.calendly_id })
+                      });
+
+                      if (!response.ok) {
+                        const error = await response.json();
+                        console.error('Error canceling Calendly event:', error);
+                        showToast('Call cancelled but Calendly cancellation failed', 'error');
+                      } else {
+                        console.log('Calendly event cancelled successfully');
+                        showToast('Call and Calendly event cancelled', 'success');
+                      }
+                    } catch (calendlyError) {
+                      console.error('Error calling Calendly cancellation API:', calendlyError);
+                      showToast('Call cancelled but Calendly cancellation failed', 'error');
+                    }
+                  }
+
+                  // Update confirmed status
+                  if (pendingConfirmedValue !== null) {
+                    updateStatus(lead.id, 'confirmed', pendingConfirmedValue, setConfirmed, lead.manychat_user_id);
+                  }
+                } catch (error) {
+                  console.error('Error in cancellation process:', error);
+                  showToast('Error cancelling call', 'error');
+                }
+                
+                setShowConfirmCancelModal(false);
+                setPendingConfirmedValue(null);
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#ef4444',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </Modal>
         
         <div className="lead-menu-button">
           <ThreeDotsMenu
@@ -409,8 +533,45 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             modalSetter={setShowNoteModal}
             setMode={setModeState}
             lead={lead}
+            showToast={showToast}
           />
         </div>
+
+        {/* Toast Notification */}
+        {toast.show && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: '24px',
+              right: '24px',
+              backgroundColor: toast.type === 'success' ? '#10b981' : '#ef4444',
+              color: 'white',
+              padding: '12px 20px',
+              borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+              zIndex: 10000,
+              fontSize: '14px',
+              fontWeight: '500',
+              animation: 'slideIn 0.3s ease-out',
+              maxWidth: '300px'
+            }}
+          >
+            {toast.message}
+          </div>
+        )}
+
+        <style>{`
+          @keyframes slideIn {
+            from {
+              transform: translateX(100%);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+        `}</style>
 
     </div>
   );
@@ -529,7 +690,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 
 
-const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead}) => {
+const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, showToast}) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -680,6 +841,43 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead}) =>
       >
         Send to ManyChat
       </button>
+
+      {(mode === 'admin' || mode === 'full') && (
+        <button 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            if (lead) {
+              const leadId = lead.lead_id || lead.id;
+              if (leadId) {
+                navigator.clipboard.writeText(leadId.toString()).then(() => {
+                  console.log('Lead ID copied to clipboard:', leadId);
+                  showToast('Lead ID copied to clipboard!', 'success');
+                }).catch(err => {
+                  console.error('Failed to copy:', err);
+                  showToast('Failed to copy Lead ID', 'error');
+                });
+              } else {
+                showToast('No Lead ID found', 'error');
+              }
+            }
+            setMenuOpen(false); 
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: '#6b7280',
+            fontWeight: '300',
+            fontSize: '14px',
+            outline: 'none'
+          }}
+        >
+          Copy Lead ID
+        </button>
+      )}
       
       <button 
         onClick={(e) => { 

@@ -42,7 +42,7 @@ const handleSubmit = async (e) => {
   const expiresAt = Date.now() + (3 * 60 * 60 * 1000);
 
   // Check if admin email
-  if (emailLower === 'admin@inglesahorita.com') {
+  if (emailLower === 'admin@inglesahorita.com' || emailLower === 'ruben@hola.com') {
     localStorage.setItem('userEmail', emailLower);
     localStorage.setItem('userRole', 'admin');
     localStorage.setItem('userId', null);
