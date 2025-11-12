@@ -275,7 +275,7 @@ export default function CloserStatsDashboard() {
                 >
                   <div>Contact Info</div>
                   <div>Setter</div>
-                  <div>Call Date</div>
+                  <div>Purchase Date</div>
                   <div>Offer</div>
                   <div style={{ textAlign: 'center' }}>Commission</div>
                   <div style={{ textAlign: 'center' }}>Notes</div>
@@ -578,9 +578,9 @@ function PurchaseItem({ lead, setterMap = {} }) {
         {setterMap[lead.setter_id] || 'N/A'}
       </div>
 
-      {/* Call Date */}
+      {/* Purchase Date */}
       <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {DateHelpers.formatTimeWithRelative(lead.call_date) || 'N/A'}
+        {DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
       </div>
 
       {/* Offer Name */}

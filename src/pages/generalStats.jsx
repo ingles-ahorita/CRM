@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { getCountryFromPhone } from '../utils/phoneNumberParser';
 import ComparisonTable from './components/ComparisonTable';
 import PeriodSelector from './components/PeriodSelector';
+import { ViewNotesModal } from './components/Modal';
+import { Mail, Phone } from 'lucide-react';
+import * as DateHelpers from '../utils/dateHelpers';
 
 // Mock function - replace with your actual Supabase fetch
 async function fetchStatsData(startDate, endDate) {
@@ -35,33 +38,12 @@ async function fetchStatsData(startDate, endDate) {
     return null;
   }
 
-  // Fetch 2: Get all calls with purchases in the date range for country analysis
-  const startDateObj = new Date(startDate);
-  const endDateObj = new Date(endDate);
-  endDateObj.setHours(23, 59, 59, 999);
-
-  const { data: purchasedCalls, error: purchasedError } = await supabase
-    .from('calls')
-    .select(`
-      picked_up,
-      showed_up,
-      confirmed,
-      purchased,
-      purchased_at,
-      is_reschedule,
-      lead_id,
-      phone,
-      book_date,
-      setters (id, name),
-      closers (id, name),
-      leads (phone, source, medium)
-    `)
-    .eq('purchased', true)
-    .gte('purchased_at', startDateObj.toISOString())
-    .lte('purchased_at', endDateObj.toISOString());
-
-  if (purchasedError) {
-    console.error('Error fetching purchased calls:', purchasedError);
+  // Fetch 2: Get all purchases from outcome_log in the date range for analysis
+  // Use the same function as purchase log view to ensure consistency
+  const purchasedCalls = await fetchPurchasesForDateRange(startDate, endDate);
+  
+  if (!purchasedCalls) {
+    console.error('Error fetching purchased calls');
     return null;
   }
 
@@ -157,11 +139,11 @@ const totalPurchased = purchasedCalls.length;
 
   // Group by country - use booked calls for activity metrics, purchased calls for sales
   const countryStats = {};
-  console.log('Booked calls for country analysis:', calls.length);
+  console.log('Booked calls for country analysis:', filteredCalls.length);
   console.log('Purchased calls for country analysis:', purchasedCalls.length);
   
   // Process booked calls for activity metrics (booked, picked up, showed up, confirmed)
-  calls.forEach(call => {
+  filteredCalls.forEach(call => {
     const phoneNumber = call.phone;
     const country = getCountryFromPhone(phoneNumber);
     
@@ -354,7 +336,7 @@ const totalPurchased = purchasedCalls.length;
     totalShowedUp,
     totalConfirmed,
     totalPurchased,
-    totalRescheduled: calls.filter(c => c.is_reschedule).length,
+    totalRescheduled: filteredCalls.filter(c => c.is_reschedule).length,
     closers: Object.values(closerStats),
     setters: Object.values(setterStats),
     countries: sortedCountries,
@@ -551,6 +533,225 @@ async function fetchDailyStats(numDays = 30) {
   return daysData.reverse();
 }
 
+// Fetch purchases for date range
+async function fetchPurchasesForDateRange(startDate, endDate) {
+  const startDateObj = new Date(startDate);
+  const endDateObj = new Date(endDate);
+  endDateObj.setHours(23, 59, 59, 999);
+
+  let query = supabase
+    .from('outcome_log')
+    .select(`
+      *,
+      calls!inner!closer_notes_call_id_fkey (
+        *,
+        closers (id, name),
+        setters (id, name)
+      ),
+      offers!offer_id (
+        id,
+        name
+      )
+    `)
+    .eq('outcome', 'yes')
+    .gte('purchase_date', startDateObj.toISOString())
+    .lte('purchase_date', endDateObj.toISOString())
+    .order('purchase_date', { ascending: false });
+
+  const { data: outcomeLogs, error } = await query;
+
+  if (error) {
+    console.error('Error fetching purchases:', error);
+    return [];
+  }
+
+  // Transform outcome_log entries to match the expected lead format
+  const purchases = (outcomeLogs || [])
+    .filter(outcomeLog => outcomeLog.calls && outcomeLog.calls.id)
+    .map(outcomeLog => ({
+      ...outcomeLog.calls,
+      outcome_log_id: outcomeLog.id,
+      purchase_date: outcomeLog.purchase_date,
+      outcome: outcomeLog.outcome,
+      commission: outcomeLog.commission,
+      offer_id: outcomeLog.offer_id,
+      offer_name: outcomeLog.offers?.name || null,
+      discount: outcomeLog.discount,
+      purchased_at: outcomeLog.purchase_date,
+      purchased: true
+    }));
+
+  return purchases;
+}
+
+// Purchase Item Component for general stats
+function PurchaseItem({ lead, setterMap = {}, closerMap = {} }) {
+  const navigate = useNavigate();
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+        gap: '16px',
+        alignItems: 'center',
+        padding: '12px 16px',
+        backgroundColor: 'white',
+        borderBottom: '1px solid #e5e7eb',
+        fontSize: '14px',
+        transition: 'background-color 0.2s'
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
+      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+    >
+      {/* Contact Info */}
+      <div style={{ overflow: 'hidden', flex: 1 }}>
+        <a
+          href={`/lead/${lead.lead_id}`} 
+          target="_blank"
+          onClick={(e) => {
+            if (!e.metaKey && !e.ctrlKey) {
+              e.preventDefault();
+              navigate(`/lead/${lead.lead_id}`);
+            }
+          }}
+          style={{
+            fontWeight: '600',
+            color: '#111827',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            marginBottom: '4px',
+            display: 'block'
+          }}
+        >
+          {lead.name || 'No name'}
+        </a>
+        <div style={{
+          fontSize: '12px',
+          color: '#6b7280',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          marginBottom: '2px'
+        }}>
+          <Mail size={12} />
+          <a 
+            style={{ color: '#6b7280', textDecoration: 'none' }} 
+            href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+          >
+            {lead.email || 'No email'}
+          </a>
+        </div>
+        <div style={{
+          fontSize: '12px',
+          color: '#6b7280',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <Phone size={12} />
+          <a
+            href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || ''}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#6b7280', textDecoration: 'none' }}
+          >
+            {lead.phone || 'No phone'}
+          </a>
+        </div>
+      </div>
+
+      {/* Setter */}
+      <div
+        onClick={() => navigate(`/setter/${lead.setter_id}`)}
+        style={{
+          color: '#001749ff',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          fontSize: '13px'
+        }}
+      >
+        {setterMap[lead.setter_id] || 'N/A'}
+      </div>
+
+      {/* Closer */}
+      <div
+        onClick={() => navigate(`/closer/${lead.closer_id}`)}
+        style={{
+          color: '#001749ff',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          fontSize: '13px'
+        }}
+      >
+        {closerMap[lead.closer_id] || 'N/A'}
+      </div>
+
+      {/* Call Date */}
+      <div style={{ fontSize: '13px', color: '#6b7280' }}>
+        {DateHelpers.formatTimeWithRelative(lead.call_date) || 'N/A'}
+      </div>
+
+      {/* Purchase Date */}
+      <div style={{ fontSize: '13px', color: '#6b7280' }}>
+        {DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
+      </div>
+
+      {/* Offer Name */}
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>
+        {lead.offer_name || 'N/A'}
+      </div>
+
+      {/* Commission */}
+      <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600', textAlign: 'center' }}>
+        {lead.commission ? `$${lead.commission.toFixed(2)}` : 'N/A'}
+      </div>
+
+      {/* Notes */}
+      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+        <button
+          onClick={() => setViewModalOpen(true)}
+          style={{
+            padding: '5px 12px',
+            backgroundColor: (lead.setter_note_id) || (lead.closer_note_id) ? '#7053d0ff' : '#3f2f76ff',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: '500',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          📝 Notes
+        </button>
+      </div>
+
+      <ViewNotesModal 
+        isOpen={viewModalOpen} 
+        onClose={() => setViewModalOpen(false)} 
+        lead={lead}
+        callId={lead.id}
+      />
+    </div>
+  );
+}
+
 export default function StatsDashboard() {
   const formatDateLocal = (date) => {
     // Format as YYYY-MM-DDTHH:mm:ss (local time, without timezone specifier)
@@ -600,6 +801,11 @@ export default function StatsDashboard() {
   const [loadingMonthly, setLoadingMonthly] = useState(false);
   const [loadingDaily, setLoadingDaily] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'ads', 'organic'
+  const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
+  const [purchases, setPurchases] = useState([]);
+  const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [setterMap, setSetterMap] = useState({});
+  const [closerMap, setCloserMap] = useState({});
 
   const parseDateLocal = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
@@ -709,6 +915,43 @@ export default function StatsDashboard() {
     }
   }, [comparisonView, selectedDays]);
 
+  // Fetch setters and closers maps
+  useEffect(() => {
+    const fetchMaps = async () => {
+      const { data: settersData } = await supabase
+        .from('setters')
+        .select('id, name');
+      if (settersData) {
+        const setterMapObj = {};
+        settersData.forEach(s => { setterMapObj[s.id] = s.name; });
+        setSetterMap(setterMapObj);
+      }
+
+      const { data: closersData } = await supabase
+        .from('closers')
+        .select('id, name');
+      if (closersData) {
+        const closerMapObj = {};
+        closersData.forEach(c => { closerMapObj[c.id] = c.name; });
+        setCloserMap(closerMapObj);
+      }
+    };
+    fetchMaps();
+  }, []);
+
+  // Fetch purchases when view mode changes or date range changes
+  useEffect(() => {
+    if (viewMode === 'purchases' && comparisonView === 'none') {
+      const loadPurchases = async () => {
+        setPurchasesLoading(true);
+        const purchasesData = await fetchPurchasesForDateRange(startDate, endDate);
+        setPurchases(purchasesData);
+        setPurchasesLoading(false);
+      };
+      loadPurchases();
+    }
+  }, [viewMode, startDate, endDate, comparisonView]);
+
   if (loading && comparisonView === 'none') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -784,8 +1027,34 @@ export default function StatsDashboard() {
             </div>
           </div>
 
-           {/* Source Filter - Only show if not in comparison view */}
-           {comparisonView === 'none' && stats && stats.sourceStats && (
+           {/* View Mode Toggle - Only show if not in comparison view */}
+           {comparisonView === 'none' && (
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setViewMode('stats')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  viewMode === 'stats'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Stats
+              </button>
+              <button
+                onClick={() => setViewMode('purchases')}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  viewMode === 'purchases'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Purchase Log
+              </button>
+            </div>
+           )}
+
+           {/* Source Filter - Only show if not in comparison view and in stats mode */}
+           {comparisonView === 'none' && viewMode === 'stats' && stats && stats.sourceStats && (
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setSourceFilter('all')}
@@ -912,8 +1181,63 @@ export default function StatsDashboard() {
           />
         )}
 
-        {/* Overall Metrics Grid - Only show if not in comparison view */}
-        {comparisonView === 'none' && (
+        {/* Purchase Log View - Only show if not in comparison view and viewMode is purchases */}
+        {comparisonView === 'none' && viewMode === 'purchases' && (
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Purchase Log
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {purchases.length} purchase{purchases.length !== 1 ? 's' : ''} found
+              </p>
+            </div>
+            {purchasesLoading ? (
+              <div className="p-8 text-center text-gray-500">Loading purchases...</div>
+            ) : purchases.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No purchases found for this date range.</div>
+            ) : (
+              <div>
+                {/* Purchase Log Header */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                    gap: '16px',
+                    padding: '12px 16px',
+                    backgroundColor: '#f3f4f6',
+                    borderBottom: '2px solid #e5e7eb',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: '#6b7280',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}
+                >
+                  <div>Contact Info</div>
+                  <div>Setter</div>
+                  <div>Closer</div>
+                  <div>Call Date</div>
+                  <div>Purchase Date</div>
+                  <div>Offer</div>
+                  <div style={{ textAlign: 'center' }}>Commission</div>
+                  <div style={{ textAlign: 'center' }}>Notes</div>
+                </div>
+                {purchases.map(lead => (
+                  <PurchaseItem
+                    key={lead.id}
+                    lead={lead}
+                    setterMap={setterMap}
+                    closerMap={closerMap}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Overall Metrics Grid - Only show if not in comparison view and in stats mode */}
+        {comparisonView === 'none' && viewMode === 'stats' && (
         <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Pick Up Rate */}
