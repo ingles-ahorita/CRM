@@ -47,18 +47,40 @@ async function fetchStatsData(startDate, endDate) {
     return null;
   }
 
-  const { count: bookinsMadeinPeriod, error: bookingsError } = await supabase
-  .from('calls')
-  .select('*', { count: 'exact', head: true })
-  .gte('book_date', startDate)
-  .lte('book_date', endDate);
-
-  console.log('bookinsMadeinPeriod', bookinsMadeinPeriod);
+  // Fetch bookings made in period with source breakdown
+  const { data: bookingsData, error: bookingsError } = await supabase
+    .from('calls')
+    .select(`
+      book_date,
+      leads (source)
+    `)
+    .gte('book_date', startDate)
+    .lte('book_date', endDate);
 
   if (bookingsError) {
     console.error('Error fetching bookings made in period:', bookingsError);
     return null;
   }
+
+  const bookinsMadeinPeriod = bookingsData?.length || 0;
+  
+  // Calculate bookings by source
+  const bookingsBySource = {
+    organic: 0,
+    ads: 0
+  };
+  
+  bookingsData?.forEach(booking => {
+    const source = booking.leads?.source || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    if (isAds) {
+      bookingsBySource.ads++;
+    } else {
+      bookingsBySource.organic++;
+    }
+  });
+
+  console.log('bookinsMadeinPeriod', bookinsMadeinPeriod);
 
   // Use booked calls for main analysis
   const calls = bookedCalls;
@@ -331,6 +353,7 @@ const totalPurchased = purchasedCalls.length;
 
   return {
     bookinsMadeinPeriod,
+    bookingsBySource,
     totalBooked,
     totalPickedUp,
     totalShowedUp,

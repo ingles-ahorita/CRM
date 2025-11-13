@@ -34,28 +34,53 @@ const ComparisonTable = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden mb-8">
+    <div className="bg-white rounded-lg shadow mb-8">
       <div className="px-6 py-4 border-b border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
         <p className="text-sm text-gray-500 mt-1">{description}</p>
       </div>
       
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+      <div className="overflow-x-auto" style={{ width: '100%', maxWidth: '100%' }}>
+        <table className="divide-y divide-gray-200" style={{ minWidth: 'max-content' }}>
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 {periodLabel}
               </th>
+              {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Book Date
+                </th>
+              )}
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Pick Up Rate
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Bookings
               </th>
+              {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                <>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Organic Bookings
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ads Bookings
+                  </th>
+                </>
+              )}
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Calls
               </th>
+              {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                <>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Organic Calls
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ads Calls
+                  </th>
+                </>
+              )}
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Confirmed
               </th>
@@ -94,47 +119,84 @@ const ComparisonTable = ({
                       <br />
                     </div>
                   </td>
+                  {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="text-sm text-gray-600">
+                        {(() => {
+                          if (periodLabel === 'Week' && item.weekStart && item.weekEnd) {
+                            const start = new Date(item.weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            const end = new Date(item.weekEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            return `${start} - ${end}`;
+                          } else if (periodLabel === 'Day' && item.dayStart) {
+                            return new Date(item.dayStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          }
+                          return 'N/A';
+                        })()}
+                      </div>
+                    </td>
+                  )}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.pickUpRate.toFixed(1)}%
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.pickUpRate, prevItem?.pickUpRate) : null}
                     </div>
                   </td>
                    <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.bookinsMadeinPeriod}
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
                     </div>
                   </td>
+                  {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                    <>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-green-600">
+                          {item.bookingsBySource?.organic || 0}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-blue-600">
+                          {item.bookingsBySource?.ads || 0}
+                        </div>
+                      </td>
+                    </>
+                  )}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.totalBooked}
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalBooked, prevItem?.totalBooked) : null}
                     </div>
                   </td>
+                  {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                    <>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-green-600">
+                          {item.sourceStats?.organic?.totalBooked || 0}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-blue-600">
+                          {item.sourceStats?.ads?.totalBooked || 0}
+                        </div>
+                      </td>
+                    </>
+                  )}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.totalConfirmed}
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalConfirmed, prevItem?.totalConfirmed) : null}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.showUpRateConfirmed.toFixed(1)}%
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.showUpRateConfirmed, prevItem?.showUpRateConfirmed) : null}
                     </div>
                   </td>
                   {(periodLabel !== 'Day') && (
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
                       {item.conversionRateShowedUp.toFixed(1)}%
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.conversionRateShowedUp, prevItem?.conversionRateShowedUp) : null}
                     </div>
                   </td>)}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm font-semibold text-green-600">
                       {item.totalPurchased}
-                      {periodLabel !== 'Day' ? getChangeIndicator(item.totalPurchased, prevItem?.totalPurchased) : null}
                     </div>
                   </td>
                 </tr>
