@@ -4,7 +4,42 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 import logo from '../assets/logo.png';
 
+// Helper function to log login events
+async function logLoginEvent(email, success, metadata = {}) {
+  try {
+    // Get IP address using a service
+    let ipAddress = null;
+    try {
+      const ipResponse = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipResponse.json();
+      ipAddress = ipData.ip;
+    } catch (ipError) {
+      console.error('Error fetching IP address:', ipError);
+    }
 
+    // Get user agent
+    const userAgent = navigator.userAgent || null;
+
+    // Insert login event
+    const { error } = await supabase
+      .from('login_events')
+      .insert({
+        email: email.toLowerCase().trim(),
+        occurred_at: new Date().toISOString(),
+        ip_address: ipAddress,
+        user_agent: userAgent,
+        success: success,
+        metadata: metadata,
+        created_at: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error('Error logging login event:', error);
+    }
+  } catch (error) {
+    console.error('Error in logLoginEvent:', error);
+  }
+}
 
 export default function EmailLogin() {
   const [email, setEmail] = useState('');
@@ -47,6 +82,7 @@ const handleSubmit = async (e) => {
     localStorage.setItem('userRole', 'admin');
     localStorage.setItem('userId', null);
     localStorage.setItem('expiresAt', expiresAt);
+    await logLoginEvent(emailLower, true, { role: 'admin' });
     navigate('/management');
     setLoading(false);
     return;
@@ -64,7 +100,8 @@ const handleSubmit = async (e) => {
     localStorage.setItem('userRole', 'closer');
     localStorage.setItem('userId', closer.id);
     localStorage.setItem('userName', closer.name);
-    localStorage.setItem('expiresAt', expiresAt); // ← ADD THIS
+    localStorage.setItem('expiresAt', expiresAt);
+    await logLoginEvent(closer.email, true, { role: 'closer', userId: closer.id, userName: closer.name });
     navigate(`/closer/${closer.id}`);
     setLoading(false);
     return;
@@ -82,13 +119,15 @@ const handleSubmit = async (e) => {
     localStorage.setItem('userRole', 'setter');
     localStorage.setItem('userId', setter.id);
     localStorage.setItem('userName', setter.name);
-    localStorage.setItem('expiresAt', expiresAt); // ← ADD THIS
+    localStorage.setItem('expiresAt', expiresAt);
+    await logLoginEvent(setter.email, true, { role: 'setter', userId: setter.id, userName: setter.name });
     navigate(`/setter/${setter.id}`);
     setLoading(false);
     return;
   }
 
-  // Not found
+  // Not found - log failed login attempt
+  await logLoginEvent(emailLower, false, { reason: 'email_not_found' });
   setError('Email not found. Please contact admin.');
   setLoading(false);
 };
