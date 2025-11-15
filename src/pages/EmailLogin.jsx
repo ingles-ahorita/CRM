@@ -43,6 +43,7 @@ async function logLoginEvent(email, success, metadata = {}) {
 
 export default function EmailLogin() {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -76,8 +77,24 @@ const handleSubmit = async (e) => {
   const emailLower = email.toLowerCase().trim();
   const expiresAt = Date.now() + (3 * 60 * 60 * 1000);
 
+  // Validate password is provided
+  if (!password) {
+    setError('Please enter your password.');
+    setLoading(false);
+    return;
+  }
+
   // Check if admin email
   if (emailLower === 'admin@inglesahorita.com' || emailLower === 'ruben@hola.com') {
+    // For admin, you can set a password here or check against a config
+    // For now, allowing admin login with any password (you should add proper password check)
+    const adminPassword = 'admin123'; // TODO: Move to environment variable or secure config
+    if (password !== adminPassword) {
+      await logLoginEvent(emailLower, false, { reason: 'invalid_password', role: 'admin' });
+      setError('Invalid email or password.');
+      setLoading(false);
+      return;
+    }
     localStorage.setItem('userEmail', emailLower);
     localStorage.setItem('userRole', 'admin');
     localStorage.setItem('userId', null);
@@ -91,11 +108,23 @@ const handleSubmit = async (e) => {
   // Check closers table
   const { data: closer } = await supabase
     .from('closers')
-    .select('id, name, email')
+    .select('id, name, email, password')
     .eq('email', emailLower)
     .single();
 
   if (closer) {
+    // Verify password
+    // Note: If passwords are hashed in DB, use a hashing library like bcrypt
+    if (closer.password && closer.password !== password) {
+      await logLoginEvent(emailLower, false, { reason: 'invalid_password', role: 'closer', userId: closer.id });
+      setError('Invalid email or password.');
+      setLoading(false);
+      return;
+    }
+    // If no password set in DB yet, allow login (for migration period)
+    if (!closer.password) {
+      console.warn('No password set for user. Please set a password in the database.');
+    }
     localStorage.setItem('userEmail', closer.email);
     localStorage.setItem('userRole', 'closer');
     localStorage.setItem('userId', closer.id);
@@ -110,11 +139,23 @@ const handleSubmit = async (e) => {
   // Check setters table
   const { data: setter } = await supabase
     .from('setters')
-    .select('id, name, email')
+    .select('id, name, email, password')
     .eq('email', emailLower)
     .single();
 
   if (setter) {
+    // Verify password
+    // Note: If passwords are hashed in DB, use a hashing library like bcrypt
+    if (setter.password && setter.password !== password) {
+      await logLoginEvent(emailLower, false, { reason: 'invalid_password', role: 'setter', userId: setter.id });
+      setError('Invalid email or password.');
+      setLoading(false);
+      return;
+    }
+    // If no password set in DB yet, allow login (for migration period)
+    if (!setter.password) {
+      console.warn('No password set for user. Please set a password in the database.');
+    }
     localStorage.setItem('userEmail', setter.email);
     localStorage.setItem('userRole', 'setter');
     localStorage.setItem('userId', setter.id);
@@ -128,7 +169,7 @@ const handleSubmit = async (e) => {
 
   // Not found - log failed login attempt
   await logLoginEvent(emailLower, false, { reason: 'email_not_found' });
-  setError('Email not found. Please contact admin.');
+  setError('Invalid email or password.');
   setLoading(false);
 };
 
@@ -165,7 +206,7 @@ const handleSubmit = async (e) => {
           marginBottom: '24px',
           fontSize: '15px'
         }}>
-          Enter your email to continue
+          Enter your email and password to continue
         </p>
         
         <form onSubmit={handleSubmit}>
@@ -174,6 +215,26 @@ const handleSubmit = async (e) => {
             placeholder="your.email@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={loading}
+            style={{ 
+              width: '100%', 
+              padding: '12px', 
+              marginBottom: '16px',
+              border: '1px solid #f9fafb',
+              color: 'black',
+              backgroundColor: 'white',
+              borderRadius: '6px',
+              fontSize: '14px',
+              boxSizing: 'border-box'
+            }}
+          />
+          
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             required
             disabled={loading}
             style={{ 
@@ -204,7 +265,7 @@ const handleSubmit = async (e) => {
               cursor: loading ? 'not-allowed' : 'pointer'
             }}
           >
-            {loading ? 'Checking...' : 'Continue'}
+            {loading ? 'Checking...' : 'Login'}
           </button>
         </form>
         

@@ -1,0 +1,46 @@
+<style>
+#calendly-widget {
+  min-width: 320px;
+  height: 700px;
+}
+</style>
+
+<div id="calendly-widget"></div>
+
+<script src="https://assets.calendly.com/assets/external/widget.js" type="text/javascript"></script>
+<script>
+  // --- ORIGINAL AUTOFILL CODE (commented out) ---
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const name = urlParams.get("name");
+  const email = urlParams.get("email");
+  const phone = urlParams.get("phone");
+  const medium = urlParams.get("medium");
+
+  // Use different Calendly URL based on medium parameter
+  const calendlyUrl = medium === 'dm' 
+    ? 'https://calendly.com/d/cskp-nyf-6dz/videollamada-personalizada-org'
+    : 'https://calendly.com/d/csz6-4vp-9b7/llamada-personalizada';
+
+  Calendly.initInlineWidget({
+    url: calendlyUrl,
+    parentElement: document.getElementById("calendly-widget"),
+    prefill: {
+      name: name,
+      email: email,
+      customAnswers: {
+        a1: phone  // Make sure your Calendly event has a question here
+      }
+    }
+  });
+
+/*
+  // --- SIMPLIFIED VERSION WITHOUT AUTOFILL ---
+  Calendly.initInlineWidget({
+    url: 'https://calendly.com/d/csz6-4vp-9b7/llamada-personalizada',
+    parentElement: document.getElementById("calendly-widget")
+  });
+
+*/
+</script>
+
