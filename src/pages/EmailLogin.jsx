@@ -75,7 +75,7 @@ const handleSubmit = async (e) => {
   setError('');
 
   const emailLower = email.toLowerCase().trim();
-  const expiresAt = Date.now() + (3 * 60 * 60 * 1000);
+  const expiresAt = Date.now() + (1 * 23 * 60 * 60 * 1000); // 2 days
 
   // Validate password is provided
   if (!password) {
