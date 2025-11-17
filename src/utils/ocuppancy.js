@@ -3,14 +3,14 @@ async function getDailySlotsTotal() {
     const PAT = 'eyJraWQiOiIxY2UxZTEzNjE3ZGNmNzY2YjNjZWJjY2Y4ZGM1YmFmYThhNjVlNjg0MDIzZjdjMzJiZTgzNDliMjM4MDEzNWI0IiwidHlwIjoiUEFUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJodHRwczovL2F1dGguY2FsZW5kbHkuY29tIiwiaWF0IjoxNzU5MTQyODUwLCJqdGkiOiIyNTQxMTBjNC1iMzQ5LTQzMzQtODdhOS0xY2FlYWRhMmVjYTEiLCJ1c2VyX3V1aWQiOiIzZWQyOTYzNC1iYzY5LTQ4MjYtOGU2Yy1mNzJjMWEzZWIxMzgifQ.nB3bY9P-R8eezA0_Rk8QtAfo-3Hq8QqEASfLhCYJ8xIiiouBrGOLtT-MGyg7Xqmw0Y7VX-RHQBQxklpYAAtGFQ';
     const base = 'https://api.calendly.com';
     const TZ = 'Europe/Madrid';
-    const SLOT_DURATION_MINUTES = 30; // Duration of each slot in minutes
+    const SLOT_DURATION_MINUTES = 60; // Duration of each slot in minutes
   
     // Get organization and members
     const me = await getJson(base + '/users/me', PAT);
     const orgUri = me.resource.current_organization;
     const members = await listAllMembers(orgUri, PAT, base);
   
-    const included = ["Alessandra", "Samuel", "Emiliano"];
+    const included = ["Alessandra", "Samuel", "Emiliano", "Jorge", "Arturo"];
     const users = members
       .map(m => ({
         uri: m.user.uri,

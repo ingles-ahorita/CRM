@@ -11,6 +11,7 @@ import StatsDashboard from './pages/generalStats';
 import CloserStatsDashboard from './pages/closerStats';
 import ShiftsPage from './pages/ShiftsPage';
 import RubenShift from './pages/RubenShift';
+import RubenShiftsView from './pages/RubenShiftsView';
 import './App.css';
 
 export default function App() {
@@ -41,6 +42,9 @@ export default function App() {
       } />
       <Route path="/rubenshift" element={
           <RubenShift />
+      }/>
+      <Route path="/rubenshifts" element={
+          <RubenShiftsView />
       }/>
 
     </Routes>
