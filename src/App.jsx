@@ -10,6 +10,8 @@ import FortnightDashboard from './pages/setterStats';
 import StatsDashboard from './pages/generalStats';
 import CloserStatsDashboard from './pages/closerStats';
 import ShiftsPage from './pages/ShiftsPage';
+import SchedulePage from './pages/schedules/SchedulePage';
+import TestSetterSchedule from './pages/TestSetterSchedule';
 import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
 import './App.css';
@@ -40,12 +42,22 @@ export default function App() {
           <ShiftsPage />
         </ProtectedRoute>
       } />
+      <Route path="/schedules" element={
+        <ProtectedRoute>
+          <SchedulePage />
+        </ProtectedRoute>
+      } />
       <Route path="/rubenshift" element={
           <RubenShift />
       }/>
       <Route path="/rubenshifts" element={
           <RubenShiftsView />
       }/>
+      <Route path="/test-setter" element={
+        <ProtectedRoute>
+          <TestSetterSchedule />
+        </ProtectedRoute>
+      } />
 
     </Routes>
   );

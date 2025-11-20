@@ -183,20 +183,43 @@ async function fetchFortnightStats(setter = null) {
     return [];
   }
 
-  return calculateFortnightData(calls);
+  // Fetch purchases from outcome_log table
+  let outcomeQuery = supabase
+    .from('outcome_log')
+    .select(`
+      purchase_date,
+      outcome,
+      call_id,
+      calls!inner!call_id (
+        setter_id,
+        setters (id, name)
+      )
+    `)
+    .eq('outcome', 'yes')
+    .not('purchase_date', 'is', null)
+    .gte('purchase_date', '2025-07-01');
+
+  // Filter by setter via the calls relationship
+  if (setter) {
+    outcomeQuery = outcomeQuery.eq('calls.setter_id', setter);
+  }
+
+  const { data: purchases, error: purchasesError } = await outcomeQuery;
+
+  if (purchasesError) {
+    console.error('Error fetching purchases from outcome_log:', purchasesError);
+  }
+
+  return calculateFortnightData(calls, purchases || []);
 }
 
-function calculateFortnightData(calls) {
+function calculateFortnightData(calls, purchases = []) {
   const grouped = {};
   const today = new Date();
   today.setHours(0, 0, 0, 0); // Reset time to start of day
 
-  calls.forEach(call => {
-    if (!call.book_date) return;
-
-    function getFortnight(dateValue){
-    
-        if (!dateValue) return null;
+  function getFortnight(dateValue){
+    if (!dateValue) return null;
 
     const date = new Date(dateValue);
     const year = date.getFullYear();
@@ -219,8 +242,10 @@ function calculateFortnightData(calls) {
       };
     }
     return grouped[key];
-}
+  }
 
+  calls.forEach(call => {
+    if (!call.book_date) return;
 
     const fortnightBook = getFortnight(call.book_date);
     if (fortnightBook) {
@@ -247,11 +272,15 @@ function calculateFortnightData(calls) {
         }
       }
     }
-    
-    const fortnightP = getFortnight(call.purchased_at);
-    if (call.purchased === true && fortnightP) { 
-      console.log(fortnightP.period, fortnightP.fortnight, call.name, call.purchased_at);
-      fortnightP.purchases++; // ✅ Works
+  });
+
+  // Count purchases from outcome_log table
+  purchases.forEach(purchase => {
+    if (purchase.purchase_date) {
+      const fortnightP = getFortnight(purchase.purchase_date);
+      if (fortnightP) {
+        fortnightP.purchases++;
+      }
     }
   });
 
