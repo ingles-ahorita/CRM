@@ -22,7 +22,7 @@ import { supabase } from '../lib/supabaseClient';
   const [currentShift, setCurrentShift] = useState(null);
   const [isShiftActive, setIsShiftActive] = useState(false);
 
-  // Check for active shift on component mount
+  // Check for active shift on component mounta
   useEffect(() => {
     checkActiveShift();
   }, []);
