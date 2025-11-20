@@ -179,7 +179,8 @@ async function getCurrentSetterOnShift() {
       if (matchingOverride && matchingOverride.setters) {
         return {
           id: matchingOverride.setters.id,
-          name: matchingOverride.setters.name
+          name: matchingOverride.setters.name,
+          discord_id: matchingOverride.setters.discord_id || null
         };
       }
     }
@@ -211,7 +212,8 @@ async function getCurrentSetterOnShift() {
       if (matchingRecurring && matchingRecurring.setters) {
         return {
           id: matchingRecurring.setters.id,
-          name: matchingRecurring.setters.name
+          name: matchingRecurring.setters.name,
+          discord_id: matchingRecurring.setters.discord_id || null
         };
       }
     }
@@ -243,7 +245,8 @@ async function getCurrentSetterOnShift() {
       if (matchingRecurring && matchingRecurring.setters) {
         return {
           id: matchingRecurring.setters.id,
-          name: matchingRecurring.setters.name
+          name: matchingRecurring.setters.name,
+          discord_id: matchingRecurring.setters.discord_id || null
         };
       }
     }
@@ -263,6 +266,11 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Get Spain time for debugging
+    const spainNow = getSpainTime();
+    const currentDate = `${spainNow.year}-${String(spainNow.month).padStart(2, '0')}-${String(spainNow.day).padStart(2, '0')}`;
+    const currentTime = `${String(spainNow.hours).padStart(2, '0')}:${String(spainNow.minutes).padStart(2, '0')}:${String(spainNow.seconds).padStart(2, '0')}`;
+    
     const setter = await getCurrentSetterOnShift();
     
     if (setter) {
@@ -271,14 +279,28 @@ export default async function handler(req, res) {
         setter: {
           id: setter.id,
           name: setter.name,
-          time: currentTime
+          discord_id: setter.discord_id
+        },
+        debug: {
+          timezone: 'Europe/Madrid',
+          date: currentDate,
+          time: currentTime,
+          dayOfWeek: spainNow.dayOfWeek,
+          serverTime: new Date().toISOString()
         }
       });
     } else {
       return res.status(200).json({
         success: true,
         setter: null,
-        message: 'No setter is currently scheduled'
+        message: 'No setter is currently scheduled',
+        debug: {
+          timezone: 'Europe/Madrid',
+          date: currentDate,
+          time: currentTime,
+          dayOfWeek: spainNow.dayOfWeek,
+          serverTime: new Date().toISOString()
+        }
       });
     }
   } catch (error) {
