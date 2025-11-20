@@ -161,7 +161,8 @@ async function getCurrentSetterOnShift() {
       if (matchingOverride && matchingOverride.setters) {
         return {
           id: matchingOverride.setters.id,
-          name: matchingOverride.setters.name
+          name: matchingOverride.setters.name,
+          discord_id: matchingOverride.setters.discord_id ? String(matchingOverride.setters.discord_id) : null
         };
       }
     }
@@ -180,7 +181,7 @@ async function getCurrentSetterOnShift() {
         return {
           id: matchingOverride.setters.id,
           name: matchingOverride.setters.name,
-          discord_id: matchingOverride.setters.discord_id || null
+          discord_id: matchingOverride.setters.discord_id ? String(matchingOverride.setters.discord_id) : null
         };
       }
     }
