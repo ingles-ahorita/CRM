@@ -123,7 +123,8 @@ async function getCurrentSetterOnShift() {
         *,
         setters (
           id,
-          name
+          name,
+          discord_id
         )
       `)
       .eq('specific_date', currentDate)
@@ -140,7 +141,8 @@ async function getCurrentSetterOnShift() {
         *,
         setters (
           id,
-          name
+          name,
+          discord_id
         )
       `)
       .eq('specific_date', nextDateStr)
@@ -189,7 +191,8 @@ async function getCurrentSetterOnShift() {
         *,
         setters (
           id,
-          name
+          name,
+          discord_id
         )
       `)
       .eq('day_of_week', currentDayOfWeek)
@@ -221,7 +224,8 @@ async function getCurrentSetterOnShift() {
         *,
         setters (
           id,
-          name
+          name,
+          discord_id
         )
       `)
       .eq('day_of_week', prevDayOfWeek)
@@ -266,7 +270,8 @@ export default async function handler(req, res) {
         success: true,
         setter: {
           id: setter.id,
-          name: setter.name
+          name: setter.name,
+          time: currentTime
         }
       });
     } else {
