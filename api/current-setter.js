@@ -120,58 +120,91 @@ async function getCurrentSetterOnShift() {
     nextDate.setDate(nextDate.getDate() + 1);
     const nextDateStr = formatDateLocal(nextDate);
 
-    // Helper function to convert discord_id to string immediately after fetch
-    // IMPORTANT: If discord_id is stored as BIGINT in the database, Supabase will return it as a number
-    // in JSON, and JavaScript will parse it, potentially losing precision for values > Number.MAX_SAFE_INTEGER.
-    // The database column should be TEXT/VARCHAR to prevent this. This function converts it to string
-    // as early as possible, but if precision is already lost, it cannot be recovered.
-    const processSetters = (schedules) => {
-      if (!schedules) return schedules;
-      return schedules.map(schedule => {
-        if (schedule.setters && schedule.setters.discord_id != null) {
-          // Convert to string immediately - if precision was already lost in JSON parsing, this won't help
-          // but if the value is still accurate, this preserves it as a string
-          schedule.setters.discord_id = String(schedule.setters.discord_id);
+    // Fetch schedules using REST API with discord_id cast to text to prevent precision loss
+    const fetchSchedulesWithDiscordAsText = async (queryParams) => {
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
+      
+      // Build the query URL
+      let url = `${supabaseUrl}/rest/v1/setter_schedules?select=*,setters(id,name,discord_id::text)`;
+      
+      // Add query parameters
+      const params = new URLSearchParams();
+      if (queryParams.specific_date) {
+        params.append('specific_date', `eq.${queryParams.specific_date}`);
+      }
+      if (queryParams.day_of_week !== undefined) {
+        params.append('day_of_week', `eq.${queryParams.day_of_week}`);
+      }
+      if (queryParams.is_null_specific_date) {
+        params.append('specific_date', 'is.null');
+      }
+      
+      if (params.toString()) {
+        url += '&' + params.toString();
+      }
+      
+      const response = await fetch(url, {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
         }
-        return schedule;
       });
+      
+      if (!response.ok) {
+        throw new Error(`Supabase REST API error: ${response.status}`);
+      }
+      
+      return await response.json();
     };
 
     // First, check for date-specific overrides on today
-    const { data: todayOverridesRaw, error: todayError } = await supabase
-      .from('setter_schedules')
-      .select(`
-        *,
-        setters (
-          id,
-          name,
-          discord_id
-        )
-      `)
-      .eq('specific_date', currentDate)
-      .not('specific_date', 'is', null);
-    
-    const todayOverrides = processSetters(todayOverridesRaw);
+    let todayOverrides = [];
+    try {
+      todayOverrides = await fetchSchedules(
+        supabase
+          .from('setter_schedules')
+          .select(`
+            *,
+            setters (
+              id,
+              name,
+              discord_id
+            )
+          `)
+          .eq('specific_date', currentDate)
+          .not('specific_date', 'is', null)
+      );
+    } catch (todayError) {
+      console.error('Error fetching today\'s override schedules:', todayError);
+    }
 
     if (todayError) {
       console.error('Error fetching today\'s override schedules:', todayError);
     }
 
     // Check for date-specific overrides on next day (for overnight shifts ending today)
-    const { data: nextDayOverridesRaw, error: nextDayError } = await supabase
-      .from('setter_schedules')
-      .select(`
-        *,
-        setters (
-          id,
-          name,
-          discord_id
-        )
-      `)
-      .eq('specific_date', nextDateStr)
-      .not('specific_date', 'is', null);
-    
-    const nextDayOverrides = processSetters(nextDayOverridesRaw);
+    let nextDayOverrides = [];
+    try {
+      nextDayOverrides = await fetchSchedules(
+        supabase
+          .from('setter_schedules')
+          .select(`
+            *,
+            setters (
+              id,
+              name,
+              discord_id
+            )
+          `)
+          .eq('specific_date', nextDateStr)
+          .not('specific_date', 'is', null)
+      );
+    } catch (nextDayError) {
+      console.error('Error fetching next day override schedules:', nextDayError);
+    }
 
     if (nextDayError) {
       console.error('Error fetching next day override schedules:', nextDayError);
@@ -214,20 +247,25 @@ async function getCurrentSetterOnShift() {
     }
 
     // If no override found, check recurring schedules for today
-    const { data: todayRecurringRaw, error: recurringError } = await supabase
-      .from('setter_schedules')
-      .select(`
-        *,
-        setters (
-          id,
-          name,
-          discord_id
-        )
-      `)
-      .eq('day_of_week', currentDayOfWeek)
-      .is('specific_date', null);
-    
-    const todayRecurring = processSetters(todayRecurringRaw);
+    let todayRecurring = [];
+    try {
+      todayRecurring = await fetchSchedules(
+        supabase
+          .from('setter_schedules')
+          .select(`
+            *,
+            setters (
+              id,
+              name,
+              discord_id
+            )
+          `)
+          .eq('day_of_week', currentDayOfWeek)
+          .is('specific_date', null)
+      );
+    } catch (recurringError) {
+      console.error('Error fetching recurring schedules:', recurringError);
+    }
 
     if (recurringError) {
       console.error('Error fetching recurring schedules:', recurringError);
@@ -259,20 +297,25 @@ async function getCurrentSetterOnShift() {
 
     // Check previous day's recurring schedules (for overnight shifts ending today)
     const prevDayOfWeek = (currentDayOfWeek - 1 + 7) % 7; // Wrap around
-    const { data: prevDayRecurringRaw, error: prevDayError } = await supabase
-      .from('setter_schedules')
-      .select(`
-        *,
-        setters (
-          id,
-          name,
-          discord_id
-        )
-      `)
-      .eq('day_of_week', prevDayOfWeek)
-      .is('specific_date', null);
-    
-    const prevDayRecurring = processSetters(prevDayRecurringRaw);
+    let prevDayRecurring = [];
+    try {
+      prevDayRecurring = await fetchSchedules(
+        supabase
+          .from('setter_schedules')
+          .select(`
+            *,
+            setters (
+              id,
+              name,
+              discord_id
+            )
+          `)
+          .eq('day_of_week', prevDayOfWeek)
+          .is('specific_date', null)
+      );
+    } catch (prevDayError) {
+      console.error('Error fetching previous day recurring schedules:', prevDayError);
+    }
 
     if (!prevDayError && prevDayRecurring && prevDayRecurring.length > 0) {
       const matchingRecurring = prevDayRecurring.find(schedule => {
