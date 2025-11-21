@@ -214,7 +214,7 @@ async function getCurrentSetterOnShift() {
         return {
           id: matchingRecurring.setters.id,
           name: matchingRecurring.setters.name,
-          discord_id: matchingRecurring.setters.discord_id || null
+          discord_id: matchingRecurring.setters.discord_id ? String(matchingRecurring.setters.discord_id) : null
         };
       }
     }
@@ -247,7 +247,7 @@ async function getCurrentSetterOnShift() {
         return {
           id: matchingRecurring.setters.id,
           name: matchingRecurring.setters.name,
-          discord_id: matchingRecurring.setters.discord_id || null
+          discord_id: matchingRecurring.setters.discord_id ? String(matchingRecurring.setters.discord_id) : null
         };
       }
     }
