@@ -110,6 +110,10 @@ async function getCurrentSetterOnShift() {
     const currentDayOfWeek = spainNow.dayOfWeek; // 0=Sunday, 1=Monday, etc.
     const currentTime = `${String(spainNow.hours).padStart(2, '0')}:${String(spainNow.minutes).padStart(2, '0')}:00`;
     const currentMinutes = timeToMinutes(currentTime);
+    
+    console.log('=== getCurrentSetterOnShift Debug ===');
+    console.log('Spain time:', currentDate, currentTime, `(day ${currentDayOfWeek})`);
+    console.log('Current minutes:', currentMinutes);
 
     // Calculate next day for overnight shift checking
     const nextDate = new Date(spainNow.year, spainNow.month - 1, spainNow.day);
@@ -231,11 +235,18 @@ async function getCurrentSetterOnShift() {
     }
 
     if (todayRecurring && todayRecurring.length > 0) {
+      console.log('Checking today recurring:', todayRecurring.length, 'schedules');
+      todayRecurring.forEach(schedule => {
+        const matches = timeInRange(currentMinutes, schedule.start_time, schedule.end_time, true);
+        console.log(`Schedule ${schedule.id}: ${schedule.start_time}-${schedule.end_time}, setter: ${schedule.setters?.name} (${schedule.setters?.id}), discord_id: ${schedule.setters?.discord_id}, matches: ${matches}`);
+      });
+      
       const matchingRecurring = todayRecurring.find(schedule =>
         timeInRange(currentMinutes, schedule.start_time, schedule.end_time, true)
       );
       
       if (matchingRecurring && matchingRecurring.setters) {
+        console.log('Matched recurring:', matchingRecurring.setters.name, 'discord_id:', matchingRecurring.setters.discord_id);
         // Convert discord_id to string immediately to prevent precision loss
         const discordId = matchingRecurring.setters.discord_id;
         return {
@@ -306,19 +317,30 @@ export default async function handler(req, res) {
     const setter = await getCurrentSetterOnShift();
     
     if (setter) {
+      // Log the discord_id to see what we're getting
+      console.log('Returning setter:', {
+        id: setter.id,
+        name: setter.name,
+        discord_id: setter.discord_id,
+        discord_id_type: typeof setter.discord_id
+      });
+      
       return res.status(200).json({
         success: true,
         setter: {
           id: setter.id,
           name: setter.name,
-          discord_id: setter.discord_id
+          discord_id: setter.discord_id ? String(setter.discord_id) : null
         },
         debug: {
           timezone: 'Europe/Madrid',
           date: currentDate,
           time: currentTime,
           dayOfWeek: spainNow.dayOfWeek,
-          serverTime: new Date().toISOString()
+          serverTime: new Date().toISOString(),
+          discordIdRaw: setter.discord_id,
+          discordIdType: typeof setter.discord_id,
+          note: 'If discord_id precision is lost, the database column type must be TEXT/VARCHAR, not BIGINT'
         }
       });
     } else {
