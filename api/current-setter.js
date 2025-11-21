@@ -116,8 +116,25 @@ async function getCurrentSetterOnShift() {
     nextDate.setDate(nextDate.getDate() + 1);
     const nextDateStr = formatDateLocal(nextDate);
 
+    // Helper function to convert discord_id to string immediately after fetch
+    // IMPORTANT: If discord_id is stored as BIGINT in the database, Supabase will return it as a number
+    // in JSON, and JavaScript will parse it, potentially losing precision for values > Number.MAX_SAFE_INTEGER.
+    // The database column should be TEXT/VARCHAR to prevent this. This function converts it to string
+    // as early as possible, but if precision is already lost, it cannot be recovered.
+    const processSetters = (schedules) => {
+      if (!schedules) return schedules;
+      return schedules.map(schedule => {
+        if (schedule.setters && schedule.setters.discord_id != null) {
+          // Convert to string immediately - if precision was already lost in JSON parsing, this won't help
+          // but if the value is still accurate, this preserves it as a string
+          schedule.setters.discord_id = String(schedule.setters.discord_id);
+        }
+        return schedule;
+      });
+    };
+
     // First, check for date-specific overrides on today
-    const { data: todayOverrides, error: todayError } = await supabase
+    const { data: todayOverridesRaw, error: todayError } = await supabase
       .from('setter_schedules')
       .select(`
         *,
@@ -129,13 +146,15 @@ async function getCurrentSetterOnShift() {
       `)
       .eq('specific_date', currentDate)
       .not('specific_date', 'is', null);
+    
+    const todayOverrides = processSetters(todayOverridesRaw);
 
     if (todayError) {
       console.error('Error fetching today\'s override schedules:', todayError);
     }
 
     // Check for date-specific overrides on next day (for overnight shifts ending today)
-    const { data: nextDayOverrides, error: nextDayError } = await supabase
+    const { data: nextDayOverridesRaw, error: nextDayError } = await supabase
       .from('setter_schedules')
       .select(`
         *,
@@ -147,6 +166,8 @@ async function getCurrentSetterOnShift() {
       `)
       .eq('specific_date', nextDateStr)
       .not('specific_date', 'is', null);
+    
+    const nextDayOverrides = processSetters(nextDayOverridesRaw);
 
     if (nextDayError) {
       console.error('Error fetching next day override schedules:', nextDayError);
@@ -178,16 +199,18 @@ async function getCurrentSetterOnShift() {
       });
       
       if (matchingOverride && matchingOverride.setters) {
+        // Convert discord_id to string immediately to prevent precision loss
+        const discordId = matchingOverride.setters.discord_id;
         return {
           id: matchingOverride.setters.id,
           name: matchingOverride.setters.name,
-          discord_id: matchingOverride.setters.discord_id ? String(matchingOverride.setters.discord_id) : null
+          discord_id: discordId != null ? String(discordId) : null
         };
       }
     }
 
     // If no override found, check recurring schedules for today
-    const { data: todayRecurring, error: recurringError } = await supabase
+    const { data: todayRecurringRaw, error: recurringError } = await supabase
       .from('setter_schedules')
       .select(`
         *,
@@ -199,6 +222,8 @@ async function getCurrentSetterOnShift() {
       `)
       .eq('day_of_week', currentDayOfWeek)
       .is('specific_date', null);
+    
+    const todayRecurring = processSetters(todayRecurringRaw);
 
     if (recurringError) {
       console.error('Error fetching recurring schedules:', recurringError);
@@ -211,17 +236,19 @@ async function getCurrentSetterOnShift() {
       );
       
       if (matchingRecurring && matchingRecurring.setters) {
+        // Convert discord_id to string immediately to prevent precision loss
+        const discordId = matchingRecurring.setters.discord_id;
         return {
           id: matchingRecurring.setters.id,
           name: matchingRecurring.setters.name,
-          discord_id: matchingRecurring.setters.discord_id ? String(matchingRecurring.setters.discord_id) : null
+          discord_id: discordId != null ? String(discordId) : null
         };
       }
     }
 
     // Check previous day's recurring schedules (for overnight shifts ending today)
     const prevDayOfWeek = (currentDayOfWeek - 1 + 7) % 7; // Wrap around
-    const { data: prevDayRecurring, error: prevDayError } = await supabase
+    const { data: prevDayRecurringRaw, error: prevDayError } = await supabase
       .from('setter_schedules')
       .select(`
         *,
@@ -233,6 +260,8 @@ async function getCurrentSetterOnShift() {
       `)
       .eq('day_of_week', prevDayOfWeek)
       .is('specific_date', null);
+    
+    const prevDayRecurring = processSetters(prevDayRecurringRaw);
 
     if (!prevDayError && prevDayRecurring && prevDayRecurring.length > 0) {
       const matchingRecurring = prevDayRecurring.find(schedule => {
@@ -244,10 +273,12 @@ async function getCurrentSetterOnShift() {
       });
       
       if (matchingRecurring && matchingRecurring.setters) {
+        // Convert discord_id to string immediately to prevent precision loss
+        const discordId = matchingRecurring.setters.discord_id;
         return {
           id: matchingRecurring.setters.id,
           name: matchingRecurring.setters.name,
-          discord_id: matchingRecurring.setters.discord_id ? String(matchingRecurring.setters.discord_id) : null
+          discord_id: discordId != null ? String(discordId) : null
         };
       }
     }
