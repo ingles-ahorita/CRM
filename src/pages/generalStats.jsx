@@ -26,9 +26,10 @@ async function fetchStatsData(startDate, endDate) {
       phone,
       book_date,
       call_date,
+      source_type,
       setters (id, name),
       closers (id, name),
-      leads (phone, source, medium)
+      leads (phone, medium)
     `)
     .gte('call_date', startDate)
     .lte('call_date', endDate);
@@ -52,7 +53,7 @@ async function fetchStatsData(startDate, endDate) {
     .from('calls')
     .select(`
       book_date,
-      leads (source)
+      source_type
     `)
     .gte('book_date', startDate)
     .lte('book_date', endDate);
@@ -63,6 +64,7 @@ async function fetchStatsData(startDate, endDate) {
   }
 
   const bookinsMadeinPeriod = bookingsData?.length || 0;
+  console.log('bookingsData', bookingsData);
   
   // Calculate bookings by source
   const bookingsBySource = {
@@ -71,7 +73,7 @@ async function fetchStatsData(startDate, endDate) {
   };
   
   bookingsData?.forEach(booking => {
-    const source = booking.leads?.source || 'organic';
+    const source = booking.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     if (isAds) {
       bookingsBySource.ads++;
@@ -247,7 +249,7 @@ const totalPurchased = purchasedCalls.length;
 
   // Process booked calls for source metrics
   filteredCalls.forEach(call => {
-    const source = call.leads?.source || 'organic';
+    const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     const sourceKey = isAds ? 'ads' : 'organic';
     
@@ -260,7 +262,7 @@ const totalPurchased = purchasedCalls.length;
 
   // Process purchased calls for source metrics
   purchasedCalls.forEach(call => {
-    const source = call.leads?.source || 'organic';
+    const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     const sourceKey = isAds ? 'ads' : 'organic';
     
@@ -304,7 +306,7 @@ const totalPurchased = purchasedCalls.length;
 
   // Process only ads calls for medium metrics
   filteredCalls.forEach(call => {
-    const source = call.leads?.source || 'organic';
+    const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     
     if (isAds) {
@@ -327,7 +329,7 @@ const totalPurchased = purchasedCalls.length;
 
   // Process purchased calls for medium metrics
   purchasedCalls.forEach(call => {
-    const source = call.leads?.source || 'organic';
+    const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     
     if (isAds) {

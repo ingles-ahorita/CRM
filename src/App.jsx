@@ -9,6 +9,7 @@ import ProtectedRoute from './pages/components/ProtectedRoute';
 import FortnightDashboard from './pages/setterStats';
 import StatsDashboard from './pages/generalStats';
 import CloserStatsDashboard from './pages/closerStats';
+import UTMStatsDashboard from './pages/utmStats';
 import ShiftsPage from './pages/ShiftsPage';
 import SchedulePage from './pages/schedules/SchedulePage';
 import TestSetterSchedule from './pages/TestSetterSchedule';
@@ -37,6 +38,7 @@ export default function App() {
       <Route path="/stats/:setter" element={<FortnightDashboard/>} />
       <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
+      <Route path="/utm-stats" element={<UTMStatsDashboard/>}/>
       <Route path="/shifts" element={
         <ProtectedRoute>
           <ShiftsPage />

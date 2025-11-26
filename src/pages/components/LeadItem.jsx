@@ -128,6 +128,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           {(() => {
             const leadSource = lead.leads?.source || 'organic';
             const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+            const isDmSetter = lead.utm_campaign && lead.utm_campaign.toLowerCase().includes('dm-setter');
             return (
               <>
                 <span style={{ fontSize: '16px', lineHeight: '1.5' }}>{isAds ? '💰' : '🌱'}</span>
@@ -136,6 +137,9 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                 )}
                 {lead.cancelled && (
                   <span style={{ fontSize: '16px', lineHeight: '1.5' }}>❌</span>
+                )}
+                {isDmSetter && (
+                  <span style={{ fontSize: '16px', lineHeight: '1.5' }}>💬</span>
                 )}
               </>
             );
@@ -1006,6 +1010,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         {(() => {
           const leadSource = lead.leads?.source || 'organic';
           const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+          const isDmSetter = lead.utm_campaign && lead.utm_campaign.toLowerCase().includes('dm-setter');
           return (
             <>
               <span style={{ fontSize: '14px', lineHeight: '1.2' }}>{isAds ? '💰' : '🌱'}</span>
@@ -1014,6 +1019,9 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
               )}
               {lead.cancelled && (
                 <span style={{ fontSize: '14px', lineHeight: '1.2' }}>❌</span>
+              )}
+              {isDmSetter && (
+                <span style={{ fontSize: '14px', lineHeight: '1.2' }}>💬</span>
               )}
             </>
           );
