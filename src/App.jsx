@@ -38,7 +38,7 @@ export default function App() {
       <Route path="/stats/:setter" element={<FortnightDashboard/>} />
       <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
-      <Route path="/utm-stats" element={<UTMStatsDashboard/>}/>
+      <Route path="/organicstats" element={<UTMStatsDashboard/>}/>
       <Route path="/shifts" element={
         <ProtectedRoute>
           <ShiftsPage />
