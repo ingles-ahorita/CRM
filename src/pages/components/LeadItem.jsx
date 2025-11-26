@@ -757,6 +757,32 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, sho
         Transfer
       </button>
       
+      {lead?.reschedule_link && (
+        <button 
+          onClick={(e) => { 
+            e.stopPropagation();
+            if (lead.reschedule_link) {
+              window.open(lead.reschedule_link, '_blank', 'noopener,noreferrer');
+            }
+            setMenuOpen(false); 
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: '#3b82f6',
+            fontWeight: '300',
+            fontSize: '14px',
+            outline: 'none'
+          }}
+        >
+          Reschedule Link
+        </button>
+      )}
+      
       {(mode === 'closer' || mode === 'view' || mode === 'full') && (
         <button 
           onClick={(e) => { 
@@ -862,13 +888,25 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, sho
               if (leadId) {
                 navigator.clipboard.writeText(leadId.toString()).then(() => {
                   console.log('Lead ID copied to clipboard:', leadId);
-                  showToast('Lead ID copied to clipboard!', 'success');
+                  if (showToast) {
+                    showToast('Lead ID copied to clipboard!', 'success');
+                  } else {
+                    alert('Lead ID copied to clipboard!');
+                  }
                 }).catch(err => {
                   console.error('Failed to copy:', err);
-                  showToast('Failed to copy Lead ID', 'error');
+                  if (showToast) {
+                    showToast('Failed to copy Lead ID', 'error');
+                  } else {
+                    alert('Failed to copy Lead ID');
+                  }
                 });
               } else {
-                showToast('No Lead ID found', 'error');
+                if (showToast) {
+                  showToast('No Lead ID found', 'error');
+                } else {
+                  alert('No Lead ID found');
+                }
               }
             }
             setMenuOpen(false); 
@@ -944,7 +982,16 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
   const [transferNote, setTransferNote] = useState(null);
   const [loadingNote, setLoadingNote] = useState(false);
   const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const { setter: currentSetter } = useParams();
+
+  // Toast function
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: '', type: 'success' });
+    }, 3000);
+  };
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
     id,
@@ -1186,6 +1233,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
     onDelete={() => console.log('Delete')}
     mode={'full'}
     lead={lead}
+    showToast={showToast}
   />
 
   </div>
@@ -1268,6 +1316,41 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         </div>
       </Modal>
 
+      {/* Toast Notification */}
+      {toast.show && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            backgroundColor: toast.type === 'success' ? '#10b981' : '#ef4444',
+            color: 'white',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            zIndex: 10000,
+            fontSize: '14px',
+            fontWeight: '500',
+            animation: 'slideIn 0.3s ease-out',
+            maxWidth: '300px'
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
       
     </div>
   );

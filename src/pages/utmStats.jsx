@@ -52,7 +52,10 @@ async function fetchUTMStatsData(startDate, endDate) {
       utm_medium,
       utm_campaign,
       is_reschedule,
-      lead_id
+      lead_id,
+      picked_up,
+      showed_up,
+      confirmed
     `)
     .gte('book_date', startDate)
     .lte('book_date', endDate);
@@ -61,10 +64,11 @@ async function fetchUTMStatsData(startDate, endDate) {
     console.error('Error fetching bookings made in period:', bookingsError);
   }
 
-  // Filter bookings made to exclude ads
+  // Filter bookings made to only include organic calls
   const filteredBookingsMade = (bookingsMade || []).filter(booking => {
     const source = booking.source_type || '';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    // Only include organic calls (not ads)
     return !isAds;
   });
 
@@ -87,18 +91,20 @@ async function fetchUTMStatsData(startDate, endDate) {
   const filteredCalls = calls.filter(call => {
     // Filter out rescheduled leads
     const keepReschedule = call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id);
-    // Filter out ads source_type
+    // Only include organic calls (exclude ads)
     const source = call.source_type || '';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
-    return keepReschedule && !isAds;
+    const isOrganic = !isAds; // Only organic calls
+    return keepReschedule && isOrganic;
   });
 
-  // Calculate totals
-  const totalBooked = filteredCalls.length;
-  const totalPickedUp = filteredCalls.filter(c => c.picked_up === true).length;
-  const totalShowedUp = filteredCalls.filter(c => c.showed_up === true).length;
-  const totalConfirmed = filteredCalls.filter(c => c.confirmed === true).length;
-  const totalPurchased = purchasedCalls.length;
+  // Calculate totals - these will be recalculated from breakdowns to ensure accuracy
+  // But keep original for verification
+  const _totalBookedRaw = filteredCalls.length;
+  const _totalPickedUpRaw = filteredCalls.filter(c => c.picked_up === true).length;
+  const _totalShowedUpRaw = filteredCalls.filter(c => c.showed_up === true).length;
+  const _totalConfirmedRaw = filteredCalls.filter(c => c.confirmed === true).length;
+  const _totalPurchasedRaw = purchasedCalls.length;
 
   // Helper function to get UTM value from calls table
   const getUTMValue = (call, field) => {
@@ -134,6 +140,8 @@ async function fetchUTMStatsData(startDate, endDate) {
     }
     
     sourceStats[source].totalBookedInPeriod++;
+    // Track picked up from bookings made in period (for pick up rate calculation)
+    if (booking.picked_up) sourceStats[source].totalPickedUp++;
   });
   
   // Process calls that happened in period (by call_date)
@@ -156,9 +164,10 @@ async function fetchUTMStatsData(startDate, endDate) {
     }
     
     sourceStats[source].totalCallsInPeriod++;
-    if (call.picked_up) sourceStats[source].totalPickedUp++;
+    // Track showed_up and confirmed from calls that happened in period
     if (call.showed_up) sourceStats[source].totalShowedUp++;
     if (call.confirmed) sourceStats[source].totalConfirmed++;
+    // Note: totalPickedUp is now tracked from bookings made in period, not from calls in period
   });
 
   // Process purchased calls for source metrics
@@ -182,9 +191,9 @@ async function fetchUTMStatsData(startDate, endDate) {
     sourceStats[source].totalPurchased++;
   });
 
-  // Calculate rates for each source (using calls in period)
+  // Calculate rates for each source (pick up rate uses bookings made in period)
   Object.values(sourceStats).forEach(source => {
-    source.pickUpRate = source.totalCallsInPeriod > 0 ? (source.totalPickedUp / source.totalCallsInPeriod) * 100 : 0;
+    source.pickUpRate = source.totalBookedInPeriod > 0 ? (source.totalPickedUp / source.totalBookedInPeriod) * 100 : 0;
     source.showUpRate = source.totalCallsInPeriod > 0 ? (source.totalShowedUp / source.totalCallsInPeriod) * 100 : 0;
     source.conversionRate = source.totalShowedUp > 0 ? (source.totalPurchased / source.totalShowedUp) * 100 : 0;
   });
@@ -212,6 +221,8 @@ async function fetchUTMStatsData(startDate, endDate) {
     }
     
     mediumStats[medium].totalBookedInPeriod++;
+    // Track picked up from bookings made in period (for pick up rate calculation)
+    if (booking.picked_up) mediumStats[medium].totalPickedUp++;
   });
   
   // Process calls that happened in period (by call_date)
@@ -234,9 +245,10 @@ async function fetchUTMStatsData(startDate, endDate) {
     }
     
     mediumStats[medium].totalCallsInPeriod++;
-    if (call.picked_up) mediumStats[medium].totalPickedUp++;
+    // Track showed_up and confirmed from calls that happened in period
     if (call.showed_up) mediumStats[medium].totalShowedUp++;
     if (call.confirmed) mediumStats[medium].totalConfirmed++;
+    // Note: totalPickedUp is now tracked from bookings made in period, not from calls in period
   });
 
   // Process purchased calls for medium metrics
@@ -260,9 +272,9 @@ async function fetchUTMStatsData(startDate, endDate) {
     mediumStats[medium].totalPurchased++;
   });
 
-  // Calculate rates for each medium (using calls in period)
+  // Calculate rates for each medium (pick up rate uses bookings made in period)
   Object.values(mediumStats).forEach(medium => {
-    medium.pickUpRate = medium.totalCallsInPeriod > 0 ? (medium.totalPickedUp / medium.totalCallsInPeriod) * 100 : 0;
+    medium.pickUpRate = medium.totalBookedInPeriod > 0 ? (medium.totalPickedUp / medium.totalBookedInPeriod) * 100 : 0;
     medium.showUpRate = medium.totalCallsInPeriod > 0 ? (medium.totalShowedUp / medium.totalCallsInPeriod) * 100 : 0;
     medium.conversionRate = medium.totalShowedUp > 0 ? (medium.totalPurchased / medium.totalShowedUp) * 100 : 0;
   });
@@ -290,6 +302,8 @@ async function fetchUTMStatsData(startDate, endDate) {
     }
     
     campaignStats[campaign].totalBookedInPeriod++;
+    // Track picked up from bookings made in period (for pick up rate calculation)
+    if (booking.picked_up) campaignStats[campaign].totalPickedUp++;
   });
   
   // Process calls that happened in period (by call_date)
@@ -312,9 +326,10 @@ async function fetchUTMStatsData(startDate, endDate) {
     }
     
     campaignStats[campaign].totalCallsInPeriod++;
-    if (call.picked_up) campaignStats[campaign].totalPickedUp++;
+    // Track showed_up and confirmed from calls that happened in period
     if (call.showed_up) campaignStats[campaign].totalShowedUp++;
     if (call.confirmed) campaignStats[campaign].totalConfirmed++;
+    // Note: totalPickedUp is now tracked from bookings made in period, not from calls in period
   });
 
   // Process purchased calls for campaign metrics
@@ -338,9 +353,9 @@ async function fetchUTMStatsData(startDate, endDate) {
     campaignStats[campaign].totalPurchased++;
   });
 
-  // Calculate rates for each campaign (using calls in period)
+  // Calculate rates for each campaign (pick up rate uses bookings made in period)
   Object.values(campaignStats).forEach(campaign => {
-    campaign.pickUpRate = campaign.totalCallsInPeriod > 0 ? (campaign.totalPickedUp / campaign.totalCallsInPeriod) * 100 : 0;
+    campaign.pickUpRate = campaign.totalBookedInPeriod > 0 ? (campaign.totalPickedUp / campaign.totalBookedInPeriod) * 100 : 0;
     campaign.showUpRate = campaign.totalCallsInPeriod > 0 ? (campaign.totalShowedUp / campaign.totalCallsInPeriod) * 100 : 0;
     campaign.conversionRate = campaign.totalShowedUp > 0 ? (campaign.totalPurchased / campaign.totalShowedUp) * 100 : 0;
   });
@@ -350,6 +365,28 @@ async function fetchUTMStatsData(startDate, endDate) {
   const sortedMediums = Object.values(mediumStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
   const sortedCampaigns = Object.values(campaignStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
 
+  // Calculate totals from breakdown to ensure they match
+  // Sum up calls from breakdown tables to get accurate totals
+  const totalCallsFromBreakdown = sortedSources.reduce((sum, s) => sum + s.totalCallsInPeriod, 0);
+  const totalBookedFromBreakdown = sortedSources.reduce((sum, s) => sum + s.totalBookedInPeriod, 0);
+  const totalPickedUpFromBreakdown = sortedSources.reduce((sum, s) => sum + s.totalPickedUp, 0);
+  const totalShowedUpFromBreakdown = sortedSources.reduce((sum, s) => sum + s.totalShowedUp, 0);
+  const totalConfirmedFromBreakdown = sortedSources.reduce((sum, s) => sum + s.totalConfirmed, 0);
+  const totalPurchasedFromBreakdown = sortedSources.reduce((sum, s) => sum + s.totalPurchased, 0);
+  
+  // Use breakdown totals to ensure consistency
+  const totalCalls = totalCallsFromBreakdown;
+  const totalBooked = totalBookedFromBreakdown;
+  const totalPickedUp = totalPickedUpFromBreakdown;
+  const totalShowedUp = totalShowedUpFromBreakdown;
+  const totalConfirmed = totalConfirmedFromBreakdown;
+  const totalPurchased = totalPurchasedFromBreakdown;
+  
+  // Verify totals match breakdown - sum up calls from breakdown tables
+  const totalCallsFromSourceBreakdown = sortedSources.reduce((sum, s) => sum + s.totalCallsInPeriod, 0);
+  const totalCallsFromMediumBreakdown = sortedMediums.reduce((sum, m) => sum + m.totalCallsInPeriod, 0);
+  const totalCallsFromCampaignBreakdown = sortedCampaigns.reduce((sum, c) => sum + c.totalCallsInPeriod, 0);
+  
   // Debug: Log all unique campaign values found in calls
   const allCampaignValues = new Set();
   filteredCalls.forEach(call => {
@@ -365,14 +402,19 @@ async function fetchUTMStatsData(startDate, endDate) {
     totalCampaigns: sortedCampaigns.length,
     campaigns: sortedCampaigns.map(c => ({ name: c.campaign, bookedInPeriod: c.totalBookedInPeriod, callsInPeriod: c.totalCallsInPeriod, purchased: c.totalPurchased })),
     allUniqueCampaignValues: Array.from(allCampaignValues),
-    totalCalls: filteredCalls.length,
+    totalCallsRaw: _totalBookedRaw,
+    totalCallsFromBreakdown,
+    totalCallsFromSourceBreakdown,
+    totalCallsFromMediumBreakdown,
+    totalCallsFromCampaignBreakdown,
     totalBookingsMade: filteredBookingsMade.length,
-    totalPurchasedCalls: purchasedCalls.length
+    totalPurchasedCalls: purchasedCalls.length,
+    discrepancy: _totalBookedRaw - totalCallsFromSourceBreakdown
   });
 
   return {
-    totalBooked: filteredBookingsMade.length, // Bookings made in period
-    totalCalls: filteredCalls.length, // Calls that happened in period
+    totalBooked, // Bookings made in period (from breakdown)
+    totalCalls, // Calls that happened in period (from breakdown)
     totalPickedUp,
     totalShowedUp,
     totalConfirmed,
@@ -435,11 +477,12 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       purchased_at: outcomeLog.purchase_date,
       purchased: true
     }))
-    // Filter out ads source_type
+    // Only include organic calls (exclude ads)
     .filter(call => {
       const source = call.source_type || '';
       const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
-      return !isAds;
+      const isOrganic = !isAds; // Only organic calls
+      return isOrganic;
     });
 
   return purchases;
@@ -795,7 +838,7 @@ export default function UTMStatsDashboard() {
           {/* Header */}
           <div className="mb-8">
             <div className="flex justify-between items-center mb-4">
-              <h1 className="text-3xl font-bold text-gray-900">UTM Performance Dashboard</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Organic Performance Dashboard</h1>
               <div className="flex gap-2 items-center">
                 <PeriodSelector 
                   value={comparisonView} 
@@ -969,7 +1012,7 @@ export default function UTMStatsDashboard() {
                     {pickUpRate.toFixed(1)}%
                   </div>
                   <div className="text-sm text-gray-500 mt-2">
-                    {totalPickedUp} / {totalCalls} calls
+                    {totalPickedUp} / {totalBooked} calls
                   </div>
                 </div>
 
