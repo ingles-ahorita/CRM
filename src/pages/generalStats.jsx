@@ -40,6 +40,7 @@ async function fetchStatsData(startDate, endDate) {
   }
 
   // Fetch 2: Get all purchases from outcome_log in the date range for analysis
+  // IMPORTANT: Purchases are filtered by purchase_date from outcome_log, not call_date from calls table
   // Use the same function as purchase log view to ensure consistency
   const purchasedCalls = await fetchPurchasesForDateRange(startDate, endDate);
   
@@ -124,12 +125,19 @@ const totalPurchased = purchasedCalls.length;
   });
 
   // Add purchases from purchased calls
+  // IMPORTANT: Initialize closerStats for closers who have purchases but no showed up calls
   purchasedCalls.forEach(call => {
     if (call.closers) {
       const closerId = call.closers.id;
-      if (closerStats[closerId]) {
-        closerStats[closerId].purchased++;
+      if (!closerStats[closerId]) {
+        closerStats[closerId] = {
+          id: closerId,
+          name: call.closers.name,
+          showedUp: 0,
+          purchased: 0
+        };
       }
+      closerStats[closerId].purchased++;
     }
   });
 
@@ -559,7 +567,10 @@ async function fetchDailyStats(numDays = 30) {
 }
 
 // Fetch purchases for date range
+// IMPORTANT: This function filters purchases by purchase_date from outcome_log table
+// All purchase counts in general stats use this function to ensure consistency
 async function fetchPurchasesForDateRange(startDate, endDate) {
+  console.log('fetchPurchasesForDateRange', startDate, endDate);
   const startDateObj = new Date(startDate);
   const endDateObj = new Date(endDate);
   endDateObj.setHours(23, 59, 59, 999);
@@ -585,6 +596,8 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
 
   const { data: outcomeLogs, error } = await query;
 
+  console.log('outcomeLogs', outcomeLogs);
+
   if (error) {
     console.error('Error fetching purchases:', error);
     return [];
@@ -598,13 +611,15 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       outcome_log_id: outcomeLog.id,
       purchase_date: outcomeLog.purchase_date,
       outcome: outcomeLog.outcome,
-      commission: outcomeLog.commission,
+      commission: outcomeLog.paid_second_installment ? outcomeLog.commission * 2 : outcomeLog.commission,
       offer_id: outcomeLog.offer_id,
       offer_name: outcomeLog.offers?.name || null,
       discount: outcomeLog.discount,
       purchased_at: outcomeLog.purchase_date,
       purchased: true
     }));
+
+
 
   return purchases;
 }

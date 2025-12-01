@@ -38,7 +38,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
     const fetchOffers = async () => {
       const { data, error } = await supabase
         .from('offers')
-        .select('id, name, base_commission')
+        .select('id, name, base_commission, PIF_commission')
         .eq('active', true)
         .order('name');
       
@@ -105,37 +105,44 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
     const formData = new FormData(e.target);
     
     const setterPayload = {
-  commitment_level: parseInt(formData.get('commitment_level')) || null,
   practice_daily: formData.get('practice_daily') === 'on',
   motivation: formData.get('motivation'),
-  decision_maker_present: formData.get('decision_maker_present') === 'on',
-  prepared: formData.get('prepared') === 'on',
   show_up_confirmed: formData.get('show_up_confirmed') === 'on',
   watched_masterclass: formData.get('watched_masterclass') === 'on',
   age: parseInt(formData.get('age')) || null,
+  current_job: formData.get('current_job'),
+  open_to_invest: formData.get('open_to_invest') === 'on',
   notes: formData.get('notes')
 };
 
 
 
 // Calculate commission: base_commission - (percentage of discount)
+// Or PIF_commission if PIF checkbox is checked
 // Only calculate when outcome is 'yes' and an offer is selected
 const outcomeValue = formData.get('outcome') || '';
 const discountValue = formData.get('discount') || '';
 const offerId = formData.get('offer_id') || null;
+const pifChecked = formData.get('pif') === 'on';
 let commission = null;
 
 if (outcomeValue === 'yes' && offerId) {
   const selectedOfferObj = offers.find(o => o.id === offerId);
-  if (selectedOfferObj && selectedOfferObj.base_commission) {
-    if (discountValue) {
-      // Discount is always a percentage
-      const discountStr = discountValue.toString().trim();
-      // let discountPercent = parseFloat(discountStr.replace('%', '')) || 0;
-      commission = selectedOfferObj.base_commission - (selectedOfferObj.base_commission * discountValue / 100);
-    } else {
-      // No discount, use full base_commission
-      commission = selectedOfferObj.base_commission;
+  if (selectedOfferObj) {
+    // If PIF checkbox is checked, use PIF_commission
+    if (pifChecked && selectedOfferObj.PIF_commission) {
+      commission = selectedOfferObj.PIF_commission;
+    } else if (selectedOfferObj.base_commission) {
+      // Otherwise use base_commission with discount
+      if (discountValue) {
+        // Discount is always a percentage
+        const discountStr = discountValue.toString().trim();
+        // let discountPercent = parseFloat(discountStr.replace('%', '')) || 0;
+        commission = selectedOfferObj.base_commission - (selectedOfferObj.base_commission * discountValue / 100);
+      } else {
+        // No discount, use full base_commission
+        commission = selectedOfferObj.base_commission;
+      }
     }
   }
 }
@@ -145,6 +152,8 @@ const purchasedDateValue = formData.get('purchase_date') || null;
 const purchasedDate = purchasedDateValue 
   ? new Date(purchasedDateValue).toISOString() 
   : null;
+
+const paidSecondInstallment = formData.get('paid_second_installment') === 'on';
 
 const closerPayload = {
   outcome: formData.get('outcome') || null,
@@ -159,7 +168,9 @@ const closerPayload = {
   notes: formData.get('notes'),
   closer_id: lead.closer_id || null,
   setter_id: lead.setter_id || null,
-  call_id: callId || null
+  call_id: callId || null,
+  PIF: pifChecked,
+  paid_second_installment: paidSecondInstallment
 };
 
 
@@ -360,12 +371,6 @@ if (noteId) {
 <form id="setter-note-form" onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '40px', paddingRight: '40px' }}>
   
   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-    <label style={labelStyle}>🔥 Commitment level (1–10):</label>
-    <input name="commitment_level" type="number" min="1" max="10" 
-           defaultValue={noteData?.commitment_level || ''} style={{...inputStyle, width: '60px', minWidth: '60px', textAlign: 'center'}} />
-  </div>
-
-  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
     <label style={labelStyle}>👤 Age:</label>
     <input name="age" type="number" min="1" max="120" 
            defaultValue={noteData?.age || ''} style={{...inputStyle, width: '60px', minWidth: '60px', textAlign: 'center'}} />
@@ -376,20 +381,6 @@ if (noteId) {
            defaultChecked={noteData?.practice_daily || false}
            style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
     <label style={labelStyle}>⏱️ Practice daily (min. 30m)</label>
-  </div>
-
-  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-    <input name="decision_maker_present" type="checkbox" 
-           defaultChecked={noteData?.decision_maker_present || false}
-           style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-    <label style={labelStyle}>👥 Decision maker present?</label>
-  </div>
-
-  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-    <input name="prepared" type="checkbox" 
-           defaultChecked={noteData?.prepared || false}
-           style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-    <label style={labelStyle}>✅ Prepared for the call?</label>
   </div>
 
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -406,8 +397,22 @@ if (noteId) {
     <label style={labelStyle}>🎥 Watched masterclass?</label>
   </div>
 
+  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <input name="open_to_invest" type="checkbox" 
+           defaultChecked={noteData?.open_to_invest || false}
+           style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
+    <label style={labelStyle}>💰 Open to invest?</label>
+  </div>
+
   <div style={{ gridColumn: '1 / -1' }}>
-    <label style={labelStyle}>🎯 Motivation (why):</label>
+    <label style={labelStyle}>💼 Current job:</label>
+    <input name="current_job" type="text" 
+           defaultValue={noteData?.current_job || ''} 
+           style={{...inputStyle, width: '100%'}} />
+  </div>
+
+  <div style={{ gridColumn: '1 / -1' }}>
+    <label style={labelStyle}>🎯 Important reason to learn english:</label>
     <textarea name="motivation" rows="2" 
               defaultValue={noteData?.motivation || ''} 
               style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
@@ -553,6 +558,26 @@ if (noteId) {
                   pointerEvents: 'none'
                 }}>%</span>
               </div>
+            </div>
+
+            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input 
+                name="pif" 
+                type="checkbox" 
+                defaultChecked={noteData?.PIF || noteData?.pif || false}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
+              />
+              <label style={labelStyle}>💳 PIF (Pay In Full)</label>
+            </div>
+
+            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input 
+                name="paid_second_installment" 
+                type="checkbox" 
+                defaultChecked={noteData?.paid_second_installment || false}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
+              />
+              <label style={labelStyle}>💰 Paid Second Installment</label>
             </div>
           </>
         )}
@@ -769,21 +794,6 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                   📞 Setter Notes
                 </h3>
 
-                <div>
-                  <div style={labelStyle}>🔥 Commitment Level</div>
-                  <div style={valueStyle}>
-                    <span style={{ 
-                      backgroundColor: '#001749ff', 
-                      color: 'white', 
-                      padding: '4px 12px', 
-                      borderRadius: '20px',
-                      fontWeight: '600'
-                    }}>
-                      {setterNote.commitment_level || 'N/A'}/10
-                    </span>
-                  </div>
-                </div>
-
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
                   <span style={checkmarkStyle(setterNote.practice_daily)}>
                     {setterNote.practice_daily ? '✓' : ''}
@@ -793,24 +803,10 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
 
                 {setterNote.motivation && (
                   <div>
-                    <div style={labelStyle}>🎯 Motivation</div>
+                    <div style={labelStyle}>🎯 Important reason to learn english</div>
                     <div style={valueStyle}>{setterNote.motivation}</div>
                   </div>
                 )}
-
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={checkmarkStyle(setterNote.decision_maker_present)}>
-                    {setterNote.decision_maker_present ? '✓' : ''}
-                  </span>
-                  <span style={{ fontSize: '15px' }}>👥 Decision maker present</span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={checkmarkStyle(setterNote.prepared)}>
-                    {setterNote.prepared ? '✓' : ''}
-                  </span>
-                  <span style={{ fontSize: '15px' }}>✅ Prepared for call</span>
-                </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
                   <span style={checkmarkStyle(setterNote.show_up_confirmed)}>
@@ -832,6 +828,20 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                     <div style={valueStyle}>{setterNote.age}</div>
                   </div>
                 )}
+
+                {setterNote.current_job && (
+                  <div>
+                    <div style={labelStyle}>💼 Current Job</div>
+                    <div style={valueStyle}>{setterNote.current_job}</div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={checkmarkStyle(setterNote.open_to_invest)}>
+                    {setterNote.open_to_invest ? '✓' : ''}
+                  </span>
+                  <span style={{ fontSize: '15px' }}>💰 Open to invest</span>
+                </div>
 
                 {setterNote.notes && (
                   <div>
