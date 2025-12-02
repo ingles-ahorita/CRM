@@ -58,7 +58,7 @@ const ComparisonTable = ({
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Bookings
               </th>
-              {(periodLabel === 'Day' || periodLabel === 'Week') && (
+              {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
                 <>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Organic Bookings
@@ -71,7 +71,7 @@ const ComparisonTable = ({
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Calls
               </th>
-              {(periodLabel === 'Day' || periodLabel === 'Week') && (
+              {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
                 <>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Organic Calls
@@ -145,7 +145,7 @@ const ComparisonTable = ({
                       {item.bookinsMadeinPeriod}
                     </div>
                   </td>
-                  {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                  {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
                     <>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-green-600">
@@ -164,7 +164,7 @@ const ComparisonTable = ({
                       {item.totalBooked}
                     </div>
                   </td>
-                  {(periodLabel === 'Day' || periodLabel === 'Week') && (
+                  {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
                     <>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-green-600">

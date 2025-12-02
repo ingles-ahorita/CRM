@@ -14,6 +14,7 @@ import SchedulePage from './pages/schedules/SchedulePage';
 import TestSetterSchedule from './pages/TestSetterSchedule';
 import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
+import UTMStatsDashboard from './pages/UTMStats';
 import './App.css';
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
       <Route path="/stats/:setter" element={<FortnightDashboard/>} />
       <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
+      <Route path="/utm-stats" element={<UTMStatsDashboard/>}/>
       <Route path="/shifts" element={
         <ProtectedRoute>
           <ShiftsPage />
