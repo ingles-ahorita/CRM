@@ -14,7 +14,7 @@ import SchedulePage from './pages/schedules/SchedulePage';
 import TestSetterSchedule from './pages/TestSetterSchedule';
 import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
-import UTMStatsDashboard from './pages/UTMStats';
+import UTMStatsDashboard from './pages/utmStats';
 import './App.css';
 
 export default function App() {
