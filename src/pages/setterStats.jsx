@@ -215,16 +215,18 @@ async function fetchFortnightStats(setter = null) {
 
 function calculateFortnightData(calls, purchases = []) {
   const grouped = {};
+  // Use UTC for today's date to ensure consistency across timezones
   const today = new Date();
-  today.setHours(0, 0, 0, 0); // Reset time to start of day
+  today.setUTCHours(0, 0, 0, 0); // Reset time to start of day in UTC
 
   function getFortnight(dateValue){
     if (!dateValue) return null;
 
+    // Parse date as UTC to ensure consistent results across timezones
     const date = new Date(dateValue);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = date.getDate();
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = date.getUTCDate();
 
     const fortnight = day <= 15 ? 'A' : 'B';
     const key = `${year}-${month}-${fortnight}`;
@@ -267,8 +269,13 @@ function calculateFortnightData(calls, purchases = []) {
       if (fortnight) {
         fortnight.confirmed++;
         // Only count confirmed calls that have already happened for show-up rate calculation
-        if (call.call_date && new Date(call.call_date) < today) {
-          fortnight.confirmedPast++;
+        // Compare dates in UTC to ensure consistency
+        if (call.call_date) {
+          const callDate = new Date(call.call_date);
+          callDate.setUTCHours(0, 0, 0, 0);
+          if (callDate < today) {
+            fortnight.confirmedPast++;
+          }
         }
       }
     }

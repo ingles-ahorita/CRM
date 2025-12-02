@@ -317,7 +317,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                 className="lead-transfer-info"
                 onClick={() => fetchTransferNote(lead.id)}
               >
-                From {setterMap[lead.first_setter_id] || 'N/A'}
+                From {setterMap[lead.first_setter_id] || 'N/As'}
               </span>
             )}
 
