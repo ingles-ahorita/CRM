@@ -846,6 +846,8 @@ export default function StatsDashboard() {
   const [purchasesLoading, setPurchasesLoading] = useState(false);
   const [setterMap, setSetterMap] = useState({});
   const [closerMap, setCloserMap] = useState({});
+  const [purchaseSetterFilter, setPurchaseSetterFilter] = useState('all');
+  const [purchaseCloserFilter, setPurchaseCloserFilter] = useState('all');
 
   const parseDateLocal = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
@@ -955,25 +957,32 @@ export default function StatsDashboard() {
     }
   }, [comparisonView, selectedDays]);
 
+  const [settersList, setSettersList] = useState([]);
+  const [closersList, setClosersList] = useState([]);
+
   // Fetch setters and closers maps
   useEffect(() => {
     const fetchMaps = async () => {
       const { data: settersData } = await supabase
         .from('setters')
-        .select('id, name');
+        .select('id, name')
+        .order('name');
       if (settersData) {
         const setterMapObj = {};
         settersData.forEach(s => { setterMapObj[s.id] = s.name; });
         setSetterMap(setterMapObj);
+        setSettersList(settersData);
       }
 
       const { data: closersData } = await supabase
         .from('closers')
-        .select('id, name');
+        .select('id, name')
+        .order('name');
       if (closersData) {
         const closerMapObj = {};
         closersData.forEach(c => { closerMapObj[c.id] = c.name; });
         setCloserMap(closerMapObj);
+        setClosersList(closersData);
       }
     };
     fetchMaps();
@@ -1225,12 +1234,60 @@ export default function StatsDashboard() {
         {comparisonView === 'none' && viewMode === 'purchases' && (
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Purchase Log
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                {purchases.length} purchase{purchases.length !== 1 ? 's' : ''} found
-              </p>
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    Purchase Log
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {purchases.filter(p => {
+                      const matchesSetter = purchaseSetterFilter === 'all' || p.setter_id === purchaseSetterFilter;
+                      const matchesCloser = purchaseCloserFilter === 'all' || p.closer_id === purchaseCloserFilter;
+                      return matchesSetter && matchesCloser;
+                    }).length} purchase{purchases.filter(p => {
+                      const matchesSetter = purchaseSetterFilter === 'all' || p.setter_id === purchaseSetterFilter;
+                      const matchesCloser = purchaseCloserFilter === 'all' || p.closer_id === purchaseCloserFilter;
+                      return matchesSetter && matchesCloser;
+                    }).length !== 1 ? 's' : ''} found
+                  </p>
+                </div>
+                <div className="flex gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Filter by Setter
+                    </label>
+                    <select
+                      value={purchaseSetterFilter}
+                      onChange={(e) => setPurchaseSetterFilter(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-700 text-sm"
+                    >
+                      <option value="all">All Setters</option>
+                      {settersList.map(setter => (
+                        <option key={setter.id} value={setter.id}>
+                          {setter.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Filter by Closer
+                    </label>
+                    <select
+                      value={purchaseCloserFilter}
+                      onChange={(e) => setPurchaseCloserFilter(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-700 text-sm"
+                    >
+                      <option value="all">All Closers</option>
+                      {closersList.map(closer => (
+                        <option key={closer.id} value={closer.id}>
+                          {closer.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
             </div>
             {purchasesLoading ? (
               <div className="p-8 text-center text-gray-500">Loading purchases...</div>
@@ -1263,14 +1320,20 @@ export default function StatsDashboard() {
                   <div style={{ textAlign: 'center' }}>Commission</div>
                   <div style={{ textAlign: 'center' }}>Notes</div>
                 </div>
-                {purchases.map(lead => (
-                  <PurchaseItem
-                    key={lead.id}
-                    lead={lead}
-                    setterMap={setterMap}
-                    closerMap={closerMap}
-                  />
-                ))}
+                {purchases
+                  .filter(purchase => {
+                    const matchesSetter = purchaseSetterFilter === 'all' || purchase.setter_id === purchaseSetterFilter;
+                    const matchesCloser = purchaseCloserFilter === 'all' || purchase.closer_id === purchaseCloserFilter;
+                    return matchesSetter && matchesCloser;
+                  })
+                  .map(lead => (
+                    <PurchaseItem
+                      key={lead.id}
+                      lead={lead}
+                      setterMap={setterMap}
+                      closerMap={closerMap}
+                    />
+                  ))}
               </div>
             )}
           </div>

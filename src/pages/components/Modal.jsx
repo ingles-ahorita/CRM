@@ -2,6 +2,7 @@ import { useState } from 'react';
 import './Modal.css';
 import { supabase } from '../../lib/supabaseClient';
 import { useEffect } from 'react';
+import * as DateHelpers from '../../utils/dateHelpers';
 
 export function Modal({ isOpen, onClose, children, className = "" }) {
   if (!isOpen) return null;
@@ -363,9 +364,16 @@ if (noteId) {
           <span style={{ color: '#6b7280', fontSize: '14px' }}>Loading note...</span>
         </div>
       ) : ( <>
-      <h2 style={{ fontSize: '30px', marginBottom: '26px' }}>
-        {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
-      </h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '26px', paddingRight: '40px' }}>
+        <h2 style={{ fontSize: '30px', margin: 0 }}>
+          {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
+        </h2>
+        {lead.timezone && (
+          <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
+            Timezone: {lead.timezone} (UTC{DateHelpers.getUTCOffset(lead.timezone)})
+          </span>
+        )}
+      </div>
 
 <div style={{ marginBottom: '20px' }}>
 <form id="setter-note-form" onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '40px', paddingRight: '40px' }}>
@@ -490,9 +498,16 @@ if (noteId) {
     </div>
   ) : (
     <>
-      <h2 style={{ fontSize: '30px', marginBottom: '26px' }}>
-        {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
-      </h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '26px', paddingRight: '40px' }}>
+        <h2 style={{ fontSize: '30px', margin: 0 }}>
+          {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
+        </h2>
+        {lead.timezone && (
+          <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
+            Timezone: {lead.timezone} (UTC{DateHelpers.getUTCOffset(lead.timezone)})
+          </span>
+        )}
+      </div>
 
       <div style={{ marginBottom: '20px', maxHeight: (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') ? '60vh' : 'none', overflowY: (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') ? 'auto' : 'visible', paddingRight: (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') ? '10px' : '0' }}>
       <form id="closer-note-form" onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '40px', paddingRight: '40px' }}>
@@ -790,9 +805,16 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
             {/* Setter Notes Section */}
             {setterNote ? (
               <div style={sectionStyle}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#001749ff' }}>
-                  📞 Setter Notes
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingRight: '40px' }}>
+                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#001749ff' }}>
+                    📞 Setter Notes
+                  </h3>
+                  {lead.timezone && (
+                    <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
+                      Timezone: {lead.timezone} ({DateHelpers.getUTCOffset(lead.timezone)})
+                    </span>
+                  )}
+                </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
                   <span style={checkmarkStyle(setterNote.practice_daily)}>
@@ -859,9 +881,16 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
             {/* Closer Notes Section */}
             {closerNote ? (
               <div style={sectionStyle}>
-                <h3 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '16px', color: '#001749ff' }}>
-                  💼 Closer Notes
-                </h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingRight: '40px' }}>
+                  <h3 style={{ fontSize: '20px', fontWeight: '600', color: '#001749ff' }}>
+                    💼 Closer Notes
+                  </h3>
+                  {lead.timezone && (
+                    <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
+                      Timezone: {lead.timezone} ({DateHelpers.getUTCOffset(lead.timezone)})
+                    </span>
+                  )}
+                </div>
 
                 {closerNote.outcome && (
                   <div>
