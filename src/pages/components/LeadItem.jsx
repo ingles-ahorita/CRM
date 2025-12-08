@@ -128,7 +128,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           {(() => {
             const leadSource = lead.leads?.source || 'organic';
             const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
-            const callCampaign = lead.campaign || lead.call_campaign || lead.leads?.campaign;
+            const callCampaign = lead.utm_campaign;
             return (
               <>
                 <span style={{ fontSize: '16px', lineHeight: '1.5' }}>{isAds ? '💰' : '🌱'}</span>
@@ -1010,7 +1010,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         {(() => {
           const leadSource = lead.leads?.source || 'organic';
           const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
-          const callCampaign = lead.campaign || lead.call_campaign || lead.leads?.campaign;
+          const callCampaign = lead.utm_campaign;
           return (
             <>
               <span style={{ fontSize: '14px', lineHeight: '1.2' }}>{isAds ? '💰' : '🌱'}</span>
