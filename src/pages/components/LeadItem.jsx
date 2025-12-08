@@ -128,9 +128,13 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           {(() => {
             const leadSource = lead.leads?.source || 'organic';
             const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+            const callCampaign = lead.campaign || lead.call_campaign || lead.leads?.campaign;
             return (
               <>
                 <span style={{ fontSize: '16px', lineHeight: '1.5' }}>{isAds ? '💰' : '🌱'}</span>
+                {callCampaign === 'dm-setter' && (
+                  <span style={{ fontSize: '16px', lineHeight: '1.5' }}>💬</span>
+                )}
                 {lead.is_reschedule && (
                   <span style={{ fontSize: '16px', lineHeight: '1.5' }}>🔁</span>
                 )}
@@ -1006,9 +1010,13 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         {(() => {
           const leadSource = lead.leads?.source || 'organic';
           const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+          const callCampaign = lead.campaign || lead.call_campaign || lead.leads?.campaign;
           return (
             <>
               <span style={{ fontSize: '14px', lineHeight: '1.2' }}>{isAds ? '💰' : '🌱'}</span>
+              {callCampaign === 'dm-setter' && (
+                <span style={{ fontSize: '14px', lineHeight: '1.2' }}>💬</span>
+              )}
               {lead.is_reschedule && (
                 <span style={{ fontSize: '14px', lineHeight: '1.2' }}>🔄</span>
               )}
