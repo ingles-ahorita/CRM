@@ -255,3 +255,65 @@ export const updateManychatCallFields = async (subscriberId, callData) => {
     throw error;
   }
 };
+
+/**
+ * Create a new user in ManyChat
+ * This function will be called when a lead is confirmed
+ * @param {Object} leadData - Lead data object containing user information
+ * @param {string} leadData.name - User full name (will be split into first_name and last_name)
+ * @param {string} leadData.phone - Phone number (will be sent as whatsapp_phone)
+ * @param {string} leadData.apiKey - ManyChat API key from the closer
+ * @returns {Promise<Object>} Response from ManyChat API with subscriber ID
+ */
+export const createManychatUser = async (leadData) => {
+  console.log('Creating ManyChat user for lead:', leadData);
+  
+  // Step 1 - Validate required fields (name and phone)
+  if (!leadData.name || !leadData.phone) {
+    throw new Error('Name and phone are required to create ManyChat user');
+  }
+
+  // Step 2 - Split name into first_name and last_name
+  const nameParts = leadData.name.trim().split(/\s+/);
+  const first_name = nameParts[0] || '';
+  const last_name = nameParts.slice(1).join(' ') || '';
+
+  // Step 3 - Prepare user data payload (only name and whatsapp_phone)
+  const payload = {
+    first_name: first_name,
+    last_name: last_name,
+    whatsapp_phone: leadData.phone
+  };
+
+  console.log('Sending payload to ManyChat:', payload);
+  
+  try {
+    // Step 4 - Call ManyChat API to create user
+    const response = await fetch('/api/manychat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'create-user',
+        apiKey: leadData.apiKey,
+        ...payload
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create ManyChat user');
+    }
+
+    // Step 5 - Handle response and return subscriber ID
+    const data = await response.json();
+    console.log('✅ ManyChat user created:', data);
+    return data;
+    
+  } catch (error) {
+    // Step 6 - Error handling
+    console.error('❌ Error creating ManyChat user:', error);
+    throw error;
+  }
+};

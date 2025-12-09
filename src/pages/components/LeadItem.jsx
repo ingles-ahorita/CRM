@@ -8,7 +8,7 @@ import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
 import * as ManychatService from '../../utils/manychatService';
-import { buildCallDataFromLead, updateManychatCallFields } from '../../utils/manychatService';
+import { buildCallDataFromLead, updateManychatCallFields, createManychatUser } from '../../utils/manychatService';
 
 const formatStatusValue = (value) => {
   if (value === true) return 'true';
@@ -195,7 +195,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                 setShowConfirmCancelModal(true);
               } else {
                 // For other values (yes/null), update directly
-                updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id);
+                updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id, lead);
               }
             }}
             label="Confirmed"
@@ -588,7 +588,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   );
 }
 
-  const updateStatus = async (id, field, value, setterF, mcID) => {
+  const updateStatus = async (id, field, value, setterF, mcID, leadData) => {
 
     console.log('Updating', field, 'to', value, 'for lead ID:', id);
     setterF(value); // Update local state immediately for responsiveness
@@ -610,6 +610,21 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     const { error } = await supabase.from('calls').update({ [field]: formattedValue }).eq('id', id);
 
     const { error: mcError } = await ManychatService.updateManychatField(mcID, field, formattedValue);
+
+    // When confirmed is set to true, create user in ManyChat
+    if (field === 'confirmed' && formattedValue === true) {
+      try {
+        await createManychatUser({
+          name: leadData.name,
+          phone: leadData.phone,
+          apiKey: leadData.closers?.mc_api_key
+        });
+        console.log('✅ ManyChat user creation triggered for confirmed lead');
+      } catch (error) {
+        console.error('❌ Error creating ManyChat user:', error);
+        // Don't block the update if user creation fails
+      }
+    }
 
     if (error) {
       console.error('Error updating lead:', error);

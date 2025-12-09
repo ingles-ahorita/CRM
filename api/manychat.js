@@ -6,7 +6,48 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { subscriberId, fieldId, value, updates } = req.body;
+  const { subscriberId, fieldId, value, updates, first_name, last_name, whatsapp_phone, action, apiKey } = req.body;
+
+  // Handle create user action
+  if (action === 'create-user') {
+    // Validate required fields
+    if (!first_name || !whatsapp_phone) {
+      return res.status(400).json({ error: 'Missing required fields: first_name and whatsapp_phone' });
+    }
+
+    // Use provided API key or fallback to default
+    const manychatApiKey = apiKey || API_KEY;
+
+    // Prepare payload for ManyChat API
+    const payload = {
+      first_name: first_name,
+      last_name: last_name || '',
+      whatsapp_phone: whatsapp_phone
+    };
+
+    try {
+      const response = await fetch(`${BASE_URL}/createSubscriber`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${manychatApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Manychat error: ${error}`);
+      }
+
+      const data = await response.json();
+      return res.status(200).json({ success: true, data });
+
+    } catch (error) {
+      console.error('Manychat create user error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
 
   // Support multiple fields update (new format)
   if (updates && Array.isArray(updates)) {

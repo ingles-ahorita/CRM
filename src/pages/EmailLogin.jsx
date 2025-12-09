@@ -108,11 +108,16 @@ const handleSubmit = async (e) => {
   // Check closers table
   const { data: closer } = await supabase
     .from('closers')
-    .select('id, name, email, password')
+    .select('id, name, email, password, active')
     .eq('email', emailLower)
     .single();
 
   if (closer) {
+    if (!closer.active) {
+      setError('Account is not active.');
+      setLoading(false);
+      return;
+    }
     // Verify password
     // Note: If passwords are hashed in DB, use a hashing library like bcrypt
     if (closer.password && closer.password !== password) {
@@ -139,11 +144,16 @@ const handleSubmit = async (e) => {
   // Check setters table
   const { data: setter } = await supabase
     .from('setters')
-    .select('id, name, email, password')
+    .select('id, name, email, password, active')
     .eq('email', emailLower)
     .single();
 
   if (setter) {
+    if (!setter.active) {
+      setError('Account is not active.');
+      setLoading(false);
+      return;
+    }
     // Verify password
     // Note: If passwords are hashed in DB, use a hashing library like bcrypt
     if (setter.password && setter.password !== password) {

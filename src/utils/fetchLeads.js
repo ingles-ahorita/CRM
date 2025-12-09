@@ -34,7 +34,7 @@ let query = supabase
   .from('calls')
   .select(`
     *,
-    closers (id, name),
+    closers (id, name, mc_api_key),
     setters (id, name),
     leads (phone, source, medium, mc_id),
     ${outcomeLogSelect}
