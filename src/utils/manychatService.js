@@ -314,7 +314,7 @@ export const createManychatUser = async (leadData) => {
     // Step 6 - Set custom fields by name if provided
     if (leadData.fieldsToSet && Array.isArray(leadData.fieldsToSet) && leadData.fieldsToSet.length > 0) {
       // Extract subscriber_id from response (adjust based on actual response structure)
-      const subscriberId = data.data?.subscriber_id || data.data?.id || data.subscriber_id;
+      const subscriberId = data.data?.id;
       
       if (subscriberId) {
         try {
