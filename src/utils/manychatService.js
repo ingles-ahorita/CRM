@@ -263,6 +263,7 @@ export const updateManychatCallFields = async (subscriberId, callData) => {
  * @param {string} leadData.name - User full name (will be split into first_name and last_name)
  * @param {string} leadData.phone - Phone number (will be sent as whatsapp_phone)
  * @param {string} leadData.apiKey - ManyChat API key from the closer
+ * @param {Array} leadData.fieldsToSet - Array of objects with {name: string, value: any} to set after creation
  * @returns {Promise<Object>} Response from ManyChat API with subscriber ID
  */
 export const createManychatUser = async (leadData) => {
@@ -306,14 +307,81 @@ export const createManychatUser = async (leadData) => {
       throw new Error(error.error || 'Failed to create ManyChat user');
     }
 
-    // Step 5 - Handle response and return subscriber ID
+    // Step 5 - Handle response and get subscriber ID
     const data = await response.json();
     console.log('✅ ManyChat user created:', data);
+    
+    // Step 6 - Set custom fields by name if provided
+    if (leadData.fieldsToSet && Array.isArray(leadData.fieldsToSet) && leadData.fieldsToSet.length > 0) {
+      // Extract subscriber_id from response (adjust based on actual response structure)
+      const subscriberId = data.data?.subscriber_id || data.data?.id || data.subscriber_id;
+      
+      if (subscriberId) {
+        try {
+          await setManychatFieldsByName(subscriberId, leadData.fieldsToSet, leadData.apiKey);
+          console.log('✅ ManyChat custom fields set successfully');
+        } catch (fieldError) {
+          console.error('⚠️ User created but failed to set custom fields:', fieldError);
+          // Don't throw - user was created successfully
+        }
+      } else {
+        console.warn('⚠️ Could not extract subscriber_id from response to set custom fields');
+      }
+    }
+    
     return data;
     
   } catch (error) {
-    // Step 6 - Error handling
+    // Step 7 - Error handling
     console.error('❌ Error creating ManyChat user:', error);
+    throw error;
+  }
+};
+
+/**
+ * Set multiple custom fields in ManyChat by field name
+ * @param {string} subscriberId - The ManyChat subscriber ID
+ * @param {Array} fields - Array of objects with {name: string, value: any}
+ * @param {string} apiKey - ManyChat API key
+ * @returns {Promise<Object>} Response from ManyChat API
+ */
+export const setManychatFieldsByName = async (subscriberId, fields, apiKey) => {
+  console.log('Setting ManyChat fields by name:', { subscriberId, fields });
+  
+  if (!subscriberId || !fields || !Array.isArray(fields)) {
+    throw new Error('subscriberId and fields array are required');
+  }
+
+  if (fields.length === 0) {
+    console.log('⏩ No fields to update');
+    return { success: true, results: [] };
+  }
+
+  try {
+    const response = await fetch('/api/manychat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'set-fields-by-name',
+        subscriberId: subscriberId,
+        fieldsByName: fields,
+        apiKey: apiKey
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to set ManyChat fields');
+    }
+
+    const data = await response.json();
+    console.log('✅ ManyChat fields set:', data);
+    return data;
+    
+  } catch (error) {
+    console.error('❌ Error setting ManyChat fields:', error);
     throw error;
   }
 };

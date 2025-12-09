@@ -6,7 +6,63 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { subscriberId, fieldId, value, updates, first_name, last_name, whatsapp_phone, action, apiKey } = req.body;
+  const { subscriberId, fieldId, value, updates, first_name, last_name, whatsapp_phone, action, apiKey, fieldsByName } = req.body;
+
+  // Handle set custom fields by name action
+  if (action === 'set-fields-by-name') {
+    // Validate required fields
+    if (!subscriberId || !fieldsByName || !Array.isArray(fieldsByName)) {
+      return res.status(400).json({ error: 'Missing required fields: subscriberId and fieldsByName (array)' });
+    }
+
+    // Use provided API key or fallback to default
+    const manychatApiKey = apiKey || API_KEY;
+
+    const results = [];
+    const errors = [];
+
+    // Loop through each field and set it
+    for (const field of fieldsByName) {
+      if (!field.name || field.value === undefined) {
+        errors.push({ field: field.name || 'unknown', error: 'Missing field name or value' });
+        continue;
+      }
+
+      try {
+        const payload = {
+          subscriber_id: subscriberId,
+          field_name: field.name,
+          field_value: field.value
+        };
+
+        const response = await fetch(`${BASE_URL}/setCustomFieldByName`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${manychatApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const error = await response.text();
+          errors.push({ field: field.name, error: error });
+        } else {
+          const data = await response.json();
+          results.push({ field: field.name, success: true, data });
+        }
+      } catch (error) {
+        errors.push({ field: field.name, error: error.message });
+      }
+    }
+
+    // Return results and any errors
+    return res.status(200).json({ 
+      success: errors.length === 0, 
+      results,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  }
 
   // Handle create user action
   if (action === 'create-user') {

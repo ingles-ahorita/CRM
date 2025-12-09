@@ -618,7 +618,13 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
         await createManychatUser({
           name: leadData.name,
           phone: leadData.phone,
-          apiKey: leadData.closers?.mc_api_key
+          apiKey: leadData.closers?.mc_api_key,
+          fieldsToSet: [
+            { name: 'SETTER', value: leadData.setters?.name },
+            { name: 'CLOSER', value: leadData.closers?.name },
+            { name: 'CALL LINK', value: leadData.call_link },
+            { name: 'CALL TIME (LEAD TZ)', value: leadData,call_date }
+          ]
         });
         console.log('✅ ManyChat user creation triggered for confirmed lead');
       } catch (error) {
