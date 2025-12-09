@@ -8,7 +8,7 @@ import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
 import * as ManychatService from '../../utils/manychatService';
-import { buildCallDataFromLead, updateManychatCallFields, createManychatUser } from '../../utils/manychatService';
+import { buildCallDataFromLead, updateManychatCallFields, sendToCloserMC } from '../../utils/manychatService';
 
 const formatStatusValue = (value) => {
   if (value === true) return 'true';
@@ -615,7 +615,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     if (field === 'confirmed' && formattedValue === true) {
       console.log('Creating ManyChat user for confirmed lead:', leadData);
       try {
-        await createManychatUser({
+        await sendToCloserMC({
           name: leadData.name,
           phone: leadData.phone,
           apiKey: leadData.closers?.mc_api_key,
@@ -623,7 +623,16 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             { name: 'SETTER', value: leadData.setters?.name },
             { name: 'CLOSER', value: leadData.closers?.name },
             { name: 'CALL LINK', value: leadData.call_link },
-            { name: 'CALL TIME (LEAD TZ)', value: leadData.call_date + " " + leadData.timezone }
+            { 
+              name: 'CALL TIME (LEAD TZ)', 
+              value: leadData.call_date && leadData.timezone
+                ? new Date(leadData.call_date).toLocaleTimeString('en-US', {
+                    timeZone: leadData.timezone,
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })
+                : (leadData.call_date || '') + " (Tu hora local)"
+            }
           ]
         });
         console.log('✅ ManyChat user creation triggered for confirmed lead');

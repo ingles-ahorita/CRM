@@ -266,7 +266,7 @@ export const updateManychatCallFields = async (subscriberId, callData) => {
  * @param {Array} leadData.fieldsToSet - Array of objects with {name: string, value: any} to set after creation
  * @returns {Promise<Object>} Response from ManyChat API with subscriber ID
  */
-export const createManychatUser = async (leadData) => {
+export const sendToCloserMC = async (leadData) => {
   console.log('Creating ManyChat user for lead:', leadData);
   
   // Step 1 - Validate required fields (name and phone)

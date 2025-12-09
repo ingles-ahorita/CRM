@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     }
 
     // Use provided API key or fallback to default
-    const manychatApiKey = apiKey || API_KEY;
+    const manychatApiKey = apiKey;
 
     // Prepare payload for ManyChat API
     const payload = {
@@ -82,6 +82,7 @@ export default async function handler(req, res) {
     };
 
     try {
+      // Try to create the user
       const response = await fetch(`${BASE_URL}/createSubscriber`, {
         method: 'POST',
         headers: {
@@ -92,12 +93,36 @@ export default async function handler(req, res) {
       });
 
       if (!response.ok) {
+        // If creation fails, try to find user by whatsapp_phone
+        console.log('User creation failed, attempting to find by whatsapp_phone:', whatsapp_phone);
+        
+        try {
+          const findResponse = await fetch(`${BASE_URL}/findBySystemField?phone=${encodeURIComponent(whatsapp_phone)}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${manychatApiKey}`,
+              'Content-Type': 'application/json',
+            }
+          });
+
+          if (findResponse.ok) {
+            const findData = await findResponse.json();
+            if (findData.status === 'success' && findData.data) {
+              console.log('✅ Found existing user by whatsapp_phone:', findData.data.id);
+              return res.status(200).json({ success: true, data: findData.data, found: true });
+            }
+          }
+        } catch (findError) {
+          console.error('Error finding user by phone:', findError);
+        }
+
+        // If we get here, both create and find failed
         const error = await response.text();
         throw new Error(`Manychat error: ${error}`);
       }
 
       const data = await response.json();
-      return res.status(200).json({ success: true, data });
+      return res.status(200).json({ success: true, data, found: false });
 
     } catch (error) {
       console.error('Manychat create user error:', error);
