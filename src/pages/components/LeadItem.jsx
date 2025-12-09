@@ -623,7 +623,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             { name: 'SETTER', value: leadData.setters?.name },
             { name: 'CLOSER', value: leadData.closers?.name },
             { name: 'CALL LINK', value: leadData.call_link },
-            { name: 'CALL TIME (LEAD TZ)', value: leadData,call_date }
+            { name: 'CALL TIME (LEAD TZ)', value: leadData.call_date + " " + leadData.timezone }
           ]
         });
         console.log('✅ ManyChat user creation triggered for confirmed lead');
