@@ -613,6 +613,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
     // When confirmed is set to true, create user in ManyChat
     if (field === 'confirmed' && formattedValue === true) {
+      console.log('Creating ManyChat user for confirmed lead:', leadData);
       try {
         await createManychatUser({
           name: leadData.name,
