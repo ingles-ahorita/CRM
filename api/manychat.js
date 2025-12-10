@@ -2,6 +2,16 @@ const API_KEY = '1237190:108ada6f750c8dba23c7702931473162';
 const BASE_URL = 'https://api.manychat.com/fb/subscriber';
 
 export default async function handler(req, res) {
+  // Set CORS headers for local development
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

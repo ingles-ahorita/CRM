@@ -313,16 +313,19 @@ export const sendToCloserMC = async (leadData) => {
     // Store the subscriber ID in the field 'closer_mc_id' in the database if possible
     const subscriberId = data?.data?.data?.id;
     if (subscriberId && leadData.id) {
+      console.log('Storing subscriber ID in DB:', subscriberId, 'for lead_id:', leadData.id);
       try {
-        await supabase
+        const { error: dbError } = await supabase
           .from('calls')
           .update({ closer_mc_id: subscriberId })
-          .eq('id', leadData.id);
-        console.log('✅ closer_mc_id updated in DB:', subscriberId, 'for lead_id:', leadData.lead_id);
-        console.log('✅ Confirmation: subscriberId successfully stored in closer_mc_id');
+          .eq('id', leadData.id)
+          .select();
+        if (dbError) {
+          console.error('❌ Failed to update closer_mc_id in DB:', dbError);
+        } else {
+          console.log('✅ closer_mc_id updated in DB:', subscriberId, 'for lead_id:', leadData.id);
+        }
       } catch (dbError) {
-        console.error('❌ Failed to update closer_mc_id in DB:', dbError);
-      }
     }
     console.log('✅ ManyChat user created:', data);
     

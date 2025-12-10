@@ -9,8 +9,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
-        // For Vercel serverless functions, you might need to run them locally
-        // Or use a different approach for local dev
+        secure: false,
+        // When running locally:
+        // 1. Run `vercel dev` in one terminal (serves API on port 3000)
+        // 2. Run `npm run dev` in another terminal (serves frontend with proxy)
       }
     }
   }
