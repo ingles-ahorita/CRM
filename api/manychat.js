@@ -175,6 +175,7 @@ export default async function handler(req, res) {
 
       const data = JSON.parse(responseText);
       console.log('✅ ManyChat user created successfully');
+      console.log('📦 ManyChat API response structure:', JSON.stringify(data, null, 2));
       return res.status(200).json({ success: true, data, found: false });
 
     } catch (error) {

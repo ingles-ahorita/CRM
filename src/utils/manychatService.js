@@ -329,9 +329,27 @@ export const sendToCloserMC = async (leadData) => {
 
     // Step 5 - Handle response and get subscriber ID
     const data = await response.json();
+    console.log('📥 Full API response:', JSON.stringify(data, null, 2));
 
-    // Store the subscriber ID in the field 'closer_mc_id' in the database if possible
-    const subscriberId = data?.data?.data?.id;
+    // Extract subscriber ID from response - ManyChat API structure: { success: true, data: { data: { id: ... } } }
+    // Or if user was found: { success: true, data: { id: ... }, found: true }
+    let subscriberId = null;
+    
+    if (data.found && data.data?.id) {
+      // User was found (not created)
+      subscriberId = data.data.id;
+      console.log('✅ Subscriber ID from found user:', subscriberId);
+    } else if (data.data?.data?.id) {
+      // User was created - nested structure
+      subscriberId = data.data.data.id;
+      console.log('✅ Subscriber ID from created user:', subscriberId);
+    } else if (data.data?.id) {
+      // Alternative structure
+      subscriberId = data.data.id;
+      console.log('✅ Subscriber ID from alternative structure:', subscriberId);
+    } else {
+      console.warn('⚠️ Could not extract subscriber ID from response:', data);
+    }
     if (subscriberId && leadData.id) {
       console.log('Storing subscriber ID in DB:', subscriberId, 'for lead_id:', leadData.id);
       try {
@@ -347,32 +365,9 @@ export const sendToCloserMC = async (leadData) => {
     }
     console.log('✅ ManyChat user created:', data);
     
-    // Step 6 - Set custom fields by name if provided
+    // Step 6 - Set custom fields by name if provided (use subscriberId directly, no DB fetch needed)
     if (leadData.fieldsToSet && Array.isArray(leadData.fieldsToSet) && leadData.fieldsToSet.length > 0) {
-      // Extract subscriber_id from response (adjust based on actual response structure)   
-      // Always attempt to set custom fields: fetch closer_mc_id from the database using calls.id (NOT by lead_id, but just id)
-      let finalSubscriberId = null;
-      if (leadData.id) {
-        try {
-          const { data: dbRow, error: dbError } = await supabase
-            .from('calls')
-            .select('closer_mc_id')
-            .eq('id', leadData.id)
-            .maybeSingle();
-
-          if (dbError) {
-            console.warn('⚠️ Could not fetch closer_mc_id from calls by id:', leadData.id, dbError);
-          } else if (dbRow && dbRow.closer_mc_id) {
-            finalSubscriberId = dbRow.closer_mc_id;
-            console.log('🔄 Loaded closer_mc_id from calls.id:', finalSubscriberId);
-          } else {
-            console.warn('⚠️ No closer_mc_id found for calls.id:', leadData.id);
-          }
-        } catch (lookupError) {
-          console.warn('⚠️ Exception while loading closer_mc_id from calls by id:', leadData.id, lookupError);
-        }
-      }
-      if (finalSubscriberId) {
+      if (subscriberId) {
         try {
           await setManychatFieldsByName(subscriberId, leadData.fieldsToSet, leadData.apiKey);
           console.log('✅ ManyChat custom fields set successfully');
@@ -381,7 +376,7 @@ export const sendToCloserMC = async (leadData) => {
           // Don't throw - user was created successfully
         }
       } else {
-        console.warn('⚠️ Could not extract subscriber_id from response to set custom fields');
+        console.warn('⚠️ Could not extract subscriber_id to set custom fields. Response:', data);
       }
     }
     
