@@ -623,8 +623,15 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             { name: 'SETTER', value: leadData.setters?.name },
             { name: 'CLOSER', value: leadData.closers?.name },
             { name: 'CALL LINK', value: leadData.call_link },
-            { 
-              name: 'CALL TIME (LEAD TZ)', 
+            { name: 'DATE (LEAD TZ)', value: leadData.call_date && leadData.timezone
+              ? new Date(leadData.call_date).toLocaleDateString('en-US', {
+                  timeZone: leadData.timezone,
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit'
+                })
+              : (leadData.call_date || '') + " (Tu fecha local)" },
+            { name: 'CALL TIME (LEAD TZ)', 
               value: leadData.call_date && leadData.timezone
                 ? new Date(leadData.call_date).toLocaleTimeString('en-US', {
                     timeZone: leadData.timezone,
