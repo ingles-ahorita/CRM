@@ -311,12 +311,12 @@ export const sendToCloserMC = async (leadData) => {
     const data = await response.json();
     // Store the subscriber ID in the field 'closer_mc_id' in the database if possible
     const subscriberId = data?.data?.data?.id;
-    if (subscriberId && leadData.lead_id) {
+    if (subscriberId && leadData.id) {
       try {
         await supabase
           .from('calls')
           .update({ closer_mc_id: subscriberId })
-          .eq('id', leadData.lead_id);
+          .eq('id', leadData.id);
         console.log('✅ closer_mc_id updated in DB:', subscriberId, 'for lead_id:', leadData.lead_id);
         console.log('✅ Confirmation: subscriberId successfully stored in closer_mc_id');
       } catch (dbError) {

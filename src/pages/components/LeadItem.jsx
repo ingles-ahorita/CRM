@@ -616,7 +616,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
       console.log('Creating ManyChat user for confirmed lead:', leadData);
       try {
         await sendToCloserMC({
-          id: leadData.id,
+          id: id,
           name: leadData.name,
           phone: leadData.phone,
           apiKey: leadData.closers?.mc_api_key,
