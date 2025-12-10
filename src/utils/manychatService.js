@@ -1,3 +1,4 @@
+import { supabase } from '../lib/supabaseClient';
 // manychatService.js
 
 const FIELD_MAP = {
