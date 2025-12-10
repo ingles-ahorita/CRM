@@ -369,7 +369,20 @@ export const sendToCloserMC = async (leadData) => {
     if (leadData.fieldsToSet && Array.isArray(leadData.fieldsToSet) && leadData.fieldsToSet.length > 0) {
       if (subscriberId) {
         try {
-          await setManychatFieldsByName(subscriberId, leadData.fieldsToSet, leadData.apiKey);
+          // Fetch subscriberId from the DB (calls table) using leadData.id just in case it was updated elsewhere
+          const { data: dbLead, error: dbError } = await supabase
+            .from('calls')
+            .select('closer_mc_id')
+            .eq('id', leadData.id)
+            .single();
+
+          if (dbError) {
+            console.error('❌ Failed to retrieve closer_mc_id from DB:', dbError);
+            throw dbError;
+          }
+
+          const dbSubscriberId = dbLead?.closer_mc_id || subscriberId;
+          await setManychatFieldsByName(dbSubscriberId, leadData.fieldsToSet, leadData.apiKey);
           console.log('✅ ManyChat custom fields set successfully');
         } catch (fieldError) {
           console.error('⚠️ User created but failed to set custom fields:', fieldError);
