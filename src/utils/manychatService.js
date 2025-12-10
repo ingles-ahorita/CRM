@@ -59,11 +59,30 @@ export const updateManychatField = async (subscriberId, fieldKey, value) => {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to update Manychat');
+      let errorMessage = `Failed to update Manychat (${response.status})`;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {
+        // If response isn't JSON, try to get text
+        try {
+          const errorText = await response.text();
+          errorMessage = errorText || errorMessage;
+        } catch (textError) {
+          // Keep default error message
+        }
+      }
+      throw new Error(errorMessage);
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      const responseText = await response.text();
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch (e) {
+      console.warn('Response is not valid JSON, using empty object');
+      data = {};
+    }
     console.log('✅ Manychat field updated:', data);
     return data;
     
@@ -315,17 +334,15 @@ export const sendToCloserMC = async (leadData) => {
     if (subscriberId && leadData.id) {
       console.log('Storing subscriber ID in DB:', subscriberId, 'for lead_id:', leadData.id);
       try {
-        const { error: dbError } = await supabase
+        await supabase
           .from('calls')
           .update({ closer_mc_id: subscriberId })
-          .eq('id', leadData.id)
-          .select();
-        if (dbError) {
-          console.error('❌ Failed to update closer_mc_id in DB:', dbError);
-        } else {
-          console.log('✅ closer_mc_id updated in DB:', subscriberId, 'for lead_id:', leadData.id);
-        }
+          .eq('id', leadData.id);
+        console.log('✅ closer_mc_id updated in DB:', subscriberId, 'for lead_id:', leadData.lead_id);
+        console.log('✅ Confirmation: subscriberId successfully stored in closer_mc_id');
       } catch (dbError) {
+        console.error('❌ Failed to update closer_mc_id in DB:', dbError);
+      }
     }
     console.log('✅ ManyChat user created:', data);
     

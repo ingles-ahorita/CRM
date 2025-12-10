@@ -2,21 +2,30 @@ const API_KEY = '1237190:108ada6f750c8dba23c7702931473162';
 const BASE_URL = 'https://api.manychat.com/fb/subscriber';
 
 export default async function handler(req, res) {
-  // Set CORS headers for local development
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  try {
+    // Set CORS headers for local development
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+    // Log all requests for debugging
+    console.log('📨 API Request received:', {
+      method: req.method,
+      url: req.url,
+      body: req.body,
+      headers: req.headers
+    });
 
-  const { subscriberId, fieldId, value, updates, first_name, last_name, whatsapp_phone, action, apiKey, fieldsByName } = req.body;
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    const { subscriberId, fieldId, value, updates, first_name, last_name, whatsapp_phone, action, apiKey, fieldsByName } = req.body;
 
   // Handle set custom fields by name action
   if (action === 'set-fields-by-name') {
@@ -82,7 +91,12 @@ export default async function handler(req, res) {
     }
 
     // Use provided API key or fallback to default
-    const manychatApiKey = apiKey;
+    const manychatApiKey = apiKey || API_KEY;
+    
+    if (!manychatApiKey) {
+      console.error('❌ No API key provided and no default API key');
+      return res.status(400).json({ error: 'Missing API key' });
+    }
 
     // Prepare payload for ManyChat API
     const payload = {
@@ -90,6 +104,12 @@ export default async function handler(req, res) {
       last_name: last_name || '',
       whatsapp_phone: whatsapp_phone
     };
+
+    console.log('📤 Calling ManyChat API:', {
+      url: `${BASE_URL}/createSubscriber`,
+      payload: payload,
+      hasApiKey: !!manychatApiKey
+    });
 
     try {
       // Try to create the user
@@ -102,12 +122,22 @@ export default async function handler(req, res) {
         body: JSON.stringify(payload)
       });
 
+      const responseText = await response.text();
+      console.log('📥 ManyChat API response:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: responseText
+      });
+
       if (!response.ok) {
         // If creation fails, try to find user by whatsapp_phone
-        console.log('User creation failed, attempting to find by whatsapp_phone:', whatsapp_phone);
+        console.log('⚠️ User creation failed, attempting to find by whatsapp_phone:', whatsapp_phone);
         
         try {
-          const findResponse = await fetch(`${BASE_URL}/findBySystemField?phone=${encodeURIComponent(whatsapp_phone)}`, {
+          const findUrl = `${BASE_URL}/findBySystemField?phone=${encodeURIComponent(whatsapp_phone)}`;
+          console.log('🔍 Searching for user:', findUrl);
+          
+          const findResponse = await fetch(findUrl, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${manychatApiKey}`,
@@ -115,28 +145,48 @@ export default async function handler(req, res) {
             }
           });
 
+          const findResponseText = await findResponse.text();
+          console.log('🔍 Find response:', {
+            status: findResponse.status,
+            body: findResponseText
+          });
+
           if (findResponse.ok) {
-            const findData = await findResponse.json();
+            const findData = JSON.parse(findResponseText);
             if (findData.status === 'success' && findData.data) {
               console.log('✅ Found existing user by whatsapp_phone:', findData.data.id);
               return res.status(200).json({ success: true, data: findData.data, found: true });
             }
           }
         } catch (findError) {
-          console.error('Error finding user by phone:', findError);
+          console.error('❌ Error finding user by phone:', findError);
         }
 
         // If we get here, both create and find failed
-        const error = await response.text();
-        throw new Error(`Manychat error: ${error}`);
+        let errorMessage = responseText;
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.error || errorData.message || responseText;
+        } catch (e) {
+          // Keep original text if not JSON
+        }
+        throw new Error(`Manychat API error (${response.status}): ${errorMessage}`);
       }
 
-      const data = await response.json();
+      const data = JSON.parse(responseText);
+      console.log('✅ ManyChat user created successfully');
       return res.status(200).json({ success: true, data, found: false });
 
     } catch (error) {
-      console.error('Manychat create user error:', error);
-      return res.status(500).json({ error: error.message });
+      console.error('❌ Manychat create user error:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      return res.status(500).json({ 
+        error: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   }
 
@@ -203,6 +253,8 @@ export default async function handler(req, res) {
     };
 
     try {
+      console.log('📤 Calling ManyChat setCustomFields (single):', { payload, apiKey: API_KEY ? 'present' : 'missing' });
+      
       const response = await fetch(`${BASE_URL}/setCustomFields`, {
         method: 'POST',
         headers: {
@@ -212,17 +264,35 @@ export default async function handler(req, res) {
         body: JSON.stringify(payload)
       });
 
+      const responseText = await response.text();
+      console.log('📥 ManyChat setCustomFields (single) response:', {
+        status: response.status,
+        body: responseText
+      });
+
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Manychat error: ${error}`);
+        throw new Error(`Manychat error (${response.status}): ${responseText}`);
       }
 
-      const data = await response.json();
+      const data = responseText ? JSON.parse(responseText) : {};
       return res.status(200).json({ success: true, data });
 
     } catch (error) {
-      console.error('Manychat update error:', error);
+      console.error('❌ Manychat update error:', error);
       return res.status(500).json({ error: error.message });
     }
+  }
+
+    // If no action matches, return error
+    console.warn('⚠️ No matching action handler:', { action, hasSubscriberId: !!subscriberId });
+    return res.status(400).json({ error: 'Invalid action or missing required parameters' });
+    
+  } catch (error) {
+    // Global error handler - ensure we always return valid JSON
+    console.error('❌ Unhandled error in API handler:', error);
+    return res.status(500).json({ 
+      error: error.message || 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }
