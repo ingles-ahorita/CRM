@@ -183,6 +183,7 @@ export default async function handler(req, res) {
 
       const findData = JSON.parse(findResponseText);
       console.log('🔍 Find data parsed:', findData);
+      debug.steps.push({ step: 3, findData });
       const subscriberId = findData.data?.id || findData.id;
       console.log('✅ Subscriber ID extracted:', subscriberId);
       
