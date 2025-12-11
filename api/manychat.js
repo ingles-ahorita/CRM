@@ -89,8 +89,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing required fields: first_name, whatsapp_phone, and apiKey' });
     }
 
+    const debug = { steps: [] };
+    
     try {
       // Step 1: Try to create the user
+      debug.steps.push({ step: 1, action: 'createSubscriber', phone: whatsapp_phone });
+      console.log('📤 Step 1: Creating subscriber with phone:', whatsapp_phone);
+      
       const createResponse = await fetch(`${BASE_URL}/createSubscriber`, {
         method: 'POST',
         headers: {
@@ -104,14 +109,24 @@ export default async function handler(req, res) {
         })
       });
 
+      const createResponseText = await createResponse.text();
+      console.log('📥 Create response:', {
+        status: createResponse.status,
+        statusText: createResponse.statusText,
+        body: createResponseText
+      });
+      debug.steps.push({ step: 1, status: createResponse.status, response: createResponseText });
+
       if (createResponse.ok) {
-        const createData = await createResponse.json();
+        const createData = JSON.parse(createResponseText);
         const subscriberId = createData.data?.id || createData.id;
-        return res.status(200).json({ success: true, subscriberId, found: false });
+        console.log('✅ User created, subscriberId:', subscriberId);
+        return res.status(200).json({ success: true, subscriberId, found: false, debug });
       }
 
       // Step 2: If creation fails, user already exists - get custom fields to find phone field ID
-      console.log('⚠️ User creation failed, user likely exists. Finding by phone...');
+      console.log('⚠️ Step 2: User creation failed, getting custom fields...');
+      debug.steps.push({ step: 2, action: 'getCustomFields' });
       
       const customFieldsResponse = await fetch('https://api.manychat.com/fb/page/getCustomFields', {
         method: 'GET',
@@ -121,19 +136,33 @@ export default async function handler(req, res) {
         }
       });
 
+      const customFieldsText = await customFieldsResponse.text();
+      console.log('📥 Custom fields response:', {
+        status: customFieldsResponse.status,
+        body: customFieldsText
+      });
+      debug.steps.push({ step: 2, status: customFieldsResponse.status, response: customFieldsText });
+
       if (!customFieldsResponse.ok) {
         throw new Error(`Failed to get custom fields: ${customFieldsResponse.status}`);
       }
 
-      const customFieldsData = await customFieldsResponse.json();
+      const customFieldsData = JSON.parse(customFieldsText);
+      console.log('📋 Custom fields data:', customFieldsData);
       const phoneField = customFieldsData.data?.find(field => field.name === 'phone');
+      console.log('📞 Phone field found:', phoneField);
+      debug.steps.push({ step: 2, phoneField });
       
       if (!phoneField || !phoneField.id) {
         throw new Error('Phone field not found in custom fields');
       }
 
       // Step 3: Find subscriber by phone using the phone field ID
-      const findResponse = await fetch(`${BASE_URL}/findByCustomField?field_id=${phoneField.id}&field_value=${encodeURIComponent(whatsapp_phone)}`, {
+      const findUrl = `${BASE_URL}/findByCustomField?field_id=${phoneField.id}&field_value=${encodeURIComponent(whatsapp_phone)}`;
+      console.log('🔍 Step 3: Finding subscriber by phone field:', findUrl);
+      debug.steps.push({ step: 3, action: 'findByCustomField', url: findUrl });
+      
+      const findResponse = await fetch(findUrl, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -141,23 +170,32 @@ export default async function handler(req, res) {
         }
       });
 
+      const findResponseText = await findResponse.text();
+      console.log('📥 Find response:', {
+        status: findResponse.status,
+        body: findResponseText
+      });
+      debug.steps.push({ step: 3, status: findResponse.status, response: findResponseText });
+
       if (!findResponse.ok) {
-        throw new Error(`Failed to find subscriber: ${findResponse.status}`);
+        throw new Error(`Failed to find subscriber: ${findResponse.status} - ${findResponseText}`);
       }
 
-      const findData = await findResponse.json();
-      console.log('🔍 Find data:', findData);
+      const findData = JSON.parse(findResponseText);
+      console.log('🔍 Find data parsed:', findData);
       const subscriberId = findData.data?.id || findData.id;
+      console.log('✅ Subscriber ID extracted:', subscriberId);
       
       if (!subscriberId) {
         throw new Error('Subscriber ID not found in response');
       }
 
-      return res.status(200).json({ success: true, subscriberId, found: true });
+      return res.status(200).json({ success: true, subscriberId, found: true, debug });
 
     } catch (error) {
       console.error('❌ Manychat create user error:', error);
-      return res.status(500).json({ error: error.message });
+      debug.steps.push({ error: error.message, stack: error.stack });
+      return res.status(500).json({ error: error.message, debug });
     }
   }
 

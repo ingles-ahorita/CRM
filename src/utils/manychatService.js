@@ -310,6 +310,7 @@ export const sendToCloserMC = async (leadData) => {
   
   try {
     // Step 4 - Try to create user (or find if exists)
+    console.log('📤 Creating ManyChat user...');
     const response = await fetch('/api/manychat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -324,14 +325,26 @@ export const sendToCloserMC = async (leadData) => {
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('❌ API Error:', error);
       throw new Error(error.error || 'Failed to create/find ManyChat user');
     }
 
     // Step 5 - Get subscriber ID from response
     const result = await response.json();
+    console.log('📥 Full API Response:', result);
+    
+    // Log debug info from server if available (shows all fetch steps)
+    if (result.debug) {
+      console.log('🔍 Server Debug Info (from api/manychat.js):', result.debug);
+      result.debug.steps.forEach((step, index) => {
+        console.log(`  Step ${step.step || index + 1}:`, step);
+      });
+    }
+    
     const subscriberId = result.subscriberId;
     
     if (!subscriberId) {
+      console.error('❌ No subscriber ID in response:', result);
       throw new Error('Subscriber ID not returned from API');
     }
 
