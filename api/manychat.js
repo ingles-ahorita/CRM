@@ -146,6 +146,7 @@ export default async function handler(req, res) {
       }
 
       const findData = await findResponse.json();
+      console.log('🔍 Find data:', findData);
       const subscriberId = findData.data?.id || findData.id;
       
       if (!subscriberId) {
