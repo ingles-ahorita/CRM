@@ -644,6 +644,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           ]
         });
         console.log('✅ ManyChat user creation triggered for confirmed lead');
+        alert('Lead confirmed and sent to closer');
       } catch (error) {
         console.error('❌ Error creating ManyChat user:', error);
         // Don't block the update if user creation fails

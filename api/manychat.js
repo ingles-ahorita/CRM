@@ -184,12 +184,27 @@ export default async function handler(req, res) {
       const findData = JSON.parse(findResponseText);
       console.log('🔍 Find data parsed:', findData);
       debug.steps.push({ step: 3, findData });
-      const subscriberId = findData.data?.id || findData.id;
+      const subscriberId = findData.data[0]?.id;
       console.log('✅ Subscriber ID extracted:', subscriberId);
       
       if (!subscriberId) {
         throw new Error('Subscriber ID not found in response');
       }
+
+      // Use subscriber/updateSubscriber to update first and last name
+      await fetch(`${BASE_URL}/updateSubscriber`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          subscriber_id: subscriberId,
+          first_name: first_name || req.body.first_name || '',
+          last_name: last_name || req.body.last_name || ''
+        })
+      });
+
 
       return res.status(200).json({ success: true, subscriberId, found: true, debug });
 

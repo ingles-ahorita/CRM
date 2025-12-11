@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "dev:api": "node server.js",
+    "dev:api:watch": "npx nodemon server.js",
     "dev:all": "concurrently \"npm run dev:api\" \"npm run dev\"",
+    "dev:all:watch": "concurrently \"npm run dev:api:watch\" \"npm run dev\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
