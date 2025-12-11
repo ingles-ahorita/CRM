@@ -85,109 +85,78 @@ export default async function handler(req, res) {
 
   // Handle create user action
   if (action === 'create-user') {
-    // Validate required fields
-    if (!first_name || !whatsapp_phone) {
-      return res.status(400).json({ error: 'Missing required fields: first_name and whatsapp_phone' });
+    if (!first_name || !whatsapp_phone || !apiKey) {
+      return res.status(400).json({ error: 'Missing required fields: first_name, whatsapp_phone, and apiKey' });
     }
-
-    // Use provided API key or fallback to default
-    const manychatApiKey = apiKey || API_KEY;
-    
-    if (!manychatApiKey) {
-      console.error('❌ No API key provided and no default API key');
-      return res.status(400).json({ error: 'Missing API key' });
-    }
-
-    // Prepare payload for ManyChat API
-    const payload = {
-      first_name: first_name,
-      last_name: last_name || '',
-      whatsapp_phone: whatsapp_phone
-    };
-
-    console.log('📤 Calling ManyChat API:', {
-      url: `${BASE_URL}/createSubscriber`,
-      payload: payload,
-      hasApiKey: !!manychatApiKey
-    });
 
     try {
-      // Try to create the user
-      const response = await fetch(`${BASE_URL}/createSubscriber`, {
+      // Step 1: Try to create the user
+      const createResponse = await fetch(`${BASE_URL}/createSubscriber`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${manychatApiKey}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          first_name,
+          last_name: last_name || '',
+          whatsapp_phone
+        })
       });
 
-      const responseText = await response.text();
-      console.log('📥 ManyChat API response:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: responseText
-      });
-
-      if (!response.ok) {
-        // If creation fails, try to find user by whatsapp_phone
-        console.log('⚠️ User creation failed, attempting to find by whatsapp_phone:', whatsapp_phone);
-        
-        try {
-          const findUrl = `${BASE_URL}/findBySystemField?phone=${encodeURIComponent(whatsapp_phone)}`;
-          console.log('🔍 Searching for user:', findUrl);
-          
-          const findResponse = await fetch(findUrl, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${manychatApiKey}`,
-              'Content-Type': 'application/json',
-            }
-          });
-
-          const findResponseText = await findResponse.text();
-          console.log('🔍 Find response:', {
-            status: findResponse.status,
-            body: findResponseText
-          });
-
-          if (findResponse.ok) {
-            const findData = JSON.parse(findResponseText);
-            if (findData.status === 'success' && findData.data) {
-              console.log('✅ Found existing user by whatsapp_phone:', findData.data.id);
-              return res.status(200).json({ success: true, data: findData.data, found: true });
-            }
-          }
-        } catch (findError) {
-          console.error('❌ Error finding user by phone:', findError);
-        }
-
-        // If we get here, both create and find failed
-        let errorMessage = responseText;
-        try {
-          const errorData = JSON.parse(responseText);
-          errorMessage = errorData.error || errorData.message || responseText;
-        } catch (e) {
-          // Keep original text if not JSON
-        }
-        throw new Error(`Manychat API error (${response.status}): ${errorMessage}`);
+      if (createResponse.ok) {
+        const createData = await createResponse.json();
+        const subscriberId = createData.data?.id || createData.id;
+        return res.status(200).json({ success: true, subscriberId, found: false });
       }
 
-      const data = JSON.parse(responseText);
-      console.log('✅ ManyChat user created successfully');
-      console.log('📦 ManyChat API response structure:', JSON.stringify(data, null, 2));
-      return res.status(200).json({ success: true, data, found: false });
+      // Step 2: If creation fails, user already exists - get custom fields to find phone field ID
+      console.log('⚠️ User creation failed, user likely exists. Finding by phone...');
+      
+      const customFieldsResponse = await fetch('https://api.manychat.com/fb/page/getCustomFields', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!customFieldsResponse.ok) {
+        throw new Error(`Failed to get custom fields: ${customFieldsResponse.status}`);
+      }
+
+      const customFieldsData = await customFieldsResponse.json();
+      const phoneField = customFieldsData.data?.find(field => field.name === 'phone');
+      
+      if (!phoneField || !phoneField.id) {
+        throw new Error('Phone field not found in custom fields');
+      }
+
+      // Step 3: Find subscriber by phone using the phone field ID
+      const findResponse = await fetch(`${BASE_URL}/findByCustomField?field_id=${phoneField.id}&field_value=${encodeURIComponent(whatsapp_phone)}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!findResponse.ok) {
+        throw new Error(`Failed to find subscriber: ${findResponse.status}`);
+      }
+
+      const findData = await findResponse.json();
+      const subscriberId = findData.data?.id || findData.id;
+      
+      if (!subscriberId) {
+        throw new Error('Subscriber ID not found in response');
+      }
+
+      return res.status(200).json({ success: true, subscriberId, found: true });
 
     } catch (error) {
-      console.error('❌ Manychat create user error:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      });
-      return res.status(500).json({ 
-        error: error.message,
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
+      console.error('❌ Manychat create user error:', error);
+      return res.status(500).json({ error: error.message });
     }
   }
 

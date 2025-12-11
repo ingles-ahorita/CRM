@@ -309,91 +309,46 @@ export const sendToCloserMC = async (leadData) => {
   console.log('Sending payload to ManyChat:', payload);
   
   try {
-    // Step 4 - Call ManyChat API to create user
+    // Step 4 - Try to create user (or find if exists)
     const response = await fetch('/api/manychat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'create-user',
         apiKey: leadData.apiKey,
-        ...payload
+        first_name,
+        last_name,
+        whatsapp_phone: leadData.phone
       })
     });
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to create ManyChat user');
+      throw new Error(error.error || 'Failed to create/find ManyChat user');
     }
 
-    // Step 5 - Handle response and get subscriber ID
-    const data = await response.json();
-    console.log('📥 Full API response:', JSON.stringify(data, null, 2));
-
-    // Extract subscriber ID from response - ManyChat API structure: { success: true, data: { data: { id: ... } } }
-    // Or if user was found: { success: true, data: { id: ... }, found: true }
-    let subscriberId = null;
+    // Step 5 - Get subscriber ID from response
+    const result = await response.json();
+    const subscriberId = result.subscriberId;
     
-    if (data.found && data.data?.id) {
-      // User was found (not created)
-      subscriberId = data.data.id;
-      console.log('✅ Subscriber ID from found user:', subscriberId);
-    } else if (data.data?.data?.id) {
-      // User was created - nested structure
-      subscriberId = data.data.data.id;
-      console.log('✅ Subscriber ID from created user:', subscriberId);
-    } else if (data.data?.id) {
-      // Alternative structure
-      subscriberId = data.data.id;
-      console.log('✅ Subscriber ID from alternative structure:', subscriberId);
-    } else {
-      console.warn('⚠️ Could not extract subscriber ID from response:', data);
+    if (!subscriberId) {
+      throw new Error('Subscriber ID not returned from API');
     }
-    if (subscriberId && leadData.id) {
-      console.log('Storing subscriber ID in DB:', subscriberId, 'for lead_id:', leadData.id);
+
+    console.log(`✅ ManyChat user ${result.found ? 'found' : 'created'}:`, subscriberId);
+
+    
+    // Step 6 - Set custom fields if provided
+    if (leadData.fieldsToSet?.length > 0) {
       try {
-        await supabase
-          .from('calls')
-          .update({ closer_mc_id: subscriberId })
-          .eq('id', leadData.id);
-        console.log('✅ closer_mc_id updated in DB:', subscriberId, 'for lead_id:', leadData.id);
-        console.log('✅ Confirmation: subscriberId successfully stored in closer_mc_id');
-      } catch (dbError) {
-        console.error('❌ Failed to update closer_mc_id in DB:', dbError);
-      }
-    }
-    console.log('✅ ManyChat user created:', data);
-    
-    // Step 6 - Set custom fields by name if provided (use subscriberId directly, no DB fetch needed)
-    if (leadData.fieldsToSet && Array.isArray(leadData.fieldsToSet) && leadData.fieldsToSet.length > 0) {
-      if (subscriberId) {
-        try {
-          // Fetch subscriberId from the DB (calls table) using leadData.id just in case it was updated elsewhere
-          const { data: dbLead, error: dbError } = await supabase
-            .from('calls')
-            .select('closer_mc_id')
-            .eq('id', leadData.id)
-            .single();
-
-          if (dbError) {
-            console.error('❌ Failed to retrieve closer_mc_id from DB:', dbError);
-            throw dbError;
-          }
-
-          const dbSubscriberId = dbLead?.closer_mc_id || subscriberId;
-          await setManychatFieldsByName(dbSubscriberId, leadData.fieldsToSet, leadData.apiKey);
-          console.log('✅ ManyChat custom fields set successfully');
-        } catch (fieldError) {
-          console.error('⚠️ User created but failed to set custom fields:', fieldError);
-          // Don't throw - user was created successfully
-        }
-      } else {
-        console.warn('⚠️ Could not extract subscriber_id to set custom fields. Response:', data);
+        await setManychatFieldsByName(subscriberId, leadData.fieldsToSet, leadData.apiKey);
+        console.log('✅ Custom fields set successfully');
+      } catch (fieldError) {
+        console.error('⚠️ Failed to set custom fields:', fieldError);
       }
     }
     
-    return data;
+    return { success: true, subscriberId };
     
   } catch (error) {
     // Step 7 - Error handling
