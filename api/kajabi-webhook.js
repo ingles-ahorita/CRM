@@ -20,10 +20,30 @@ const supabase = createClient(
 const ACADEMIC_APP_URL = 'https://academic.inglesahorita.com';
 
 // Function to store payload - MUST succeed or retry
+// Accepts ANY data structure - object, null, string, etc.
 async function storePayload(payload) {
   if (!supabaseStorage) {
     console.error('⚠️ SUPABASE_SERVICE_ROLE_KEY not set - cannot store payload');
     return null;
+  }
+
+  // Normalize payload - ensure it's always an object/JSON-serializable
+  // Store whatever we received, even if it's null, undefined, or malformed
+  let payloadToStore = payload;
+  
+  // If payload is null/undefined, store an empty object with a note
+  if (payload == null) {
+    payloadToStore = { _note: 'Received null or undefined payload', timestamp: new Date().toISOString() };
+  }
+  
+  // If payload is not an object, wrap it
+  if (typeof payload !== 'object' || Array.isArray(payload)) {
+    payloadToStore = { 
+      _raw_payload: payload,
+      _payload_type: typeof payload,
+      _is_array: Array.isArray(payload),
+      timestamp: new Date().toISOString()
+    };
   }
 
   // Retry logic: try up to 3 times
@@ -33,7 +53,7 @@ async function storePayload(payload) {
       const { data: storedPayload, error: storeError } = await supabaseStorage
         .from('webhook_inbounds')
         .insert({
-          payload: payload,
+          payload: payloadToStore,
           created_at: new Date().toISOString()
         })
         .select('id')
@@ -82,17 +102,39 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const payload = req.body;
-  
-  console.log('📨 Kajabi webhook received:', JSON.stringify(payload, null, 2));
+  // CRITICAL: Store ANY request payload, regardless of structure or content
+  // Capture everything: body, headers, method, URL, etc.
+  const requestData = {
+    method: req.method,
+    url: req.url,
+    headers: req.headers,
+    body: req.body || null,
+    query: req.query || {},
+    timestamp: new Date().toISOString()
+  };
 
-  // CRITICAL: ALWAYS store the inbound request FIRST, no matter what happens later
-  // This happens before ANY other processing
-  const storedPayloadId = await storePayload(payload);
+  // Try to stringify for logging, but don't fail if it can't
+  try {
+    console.log('📨 Inbound request received:', JSON.stringify(requestData, null, 2));
+  } catch (logError) {
+    console.log('📨 Inbound request received (could not stringify):', {
+      method: req.method,
+      url: req.url,
+      hasBody: !!req.body,
+      bodyType: typeof req.body
+    });
+  }
+
+  // ALWAYS store the inbound request FIRST, no matter what
+  // Store the entire request data, not just the body
+  const storedPayloadId = await storePayload(requestData);
   
   if (!storedPayloadId) {
-    console.error('⚠️ WARNING: Payload storage failed, but continuing with processing...');
+    console.error('⚠️ WARNING: Payload storage failed after retries');
   }
+
+  // Now extract payload for processing (if it exists)
+  const payload = req.body || {};
 
   try {
     // Extract customer information from Kajabi payload
