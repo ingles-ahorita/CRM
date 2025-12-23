@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-// CRM app Supabase URL
+// CRM app Supabase URL - use same env var names as rest of CRM app
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
 
 // Supabase client with service role key - ALWAYS use this for storing payloads (bypasses RLS)
@@ -113,11 +113,16 @@ export default async function handler(req, res) {
   }
 
   if (!SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('❌❌❌ CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set!');
+    console.error('❌❌❌ CRITICAL: Service role key is not set!');
+    console.error('❌ Checked VITE_SUPABASE_SERVICE_ROLE_KEY:', !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
+    console.error('❌ Checked SUPABASE_SERVICE_ROLE_KEY:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
     return res.status(500).json({ 
-      error: 'CRITICAL: SUPABASE_SERVICE_ROLE_KEY environment variable is not set',
+      error: 'CRITICAL: Service role key environment variable is not set',
       message: 'Cannot store webhook payload - Service role key missing',
-      supabase_url: SUPABASE_URL
+      supabase_url: SUPABASE_URL,
+      checked_vars: ['VITE_SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_ROLE_KEY'],
+      vite_key_exists: !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
+      standard_key_exists: !!process.env.SUPABASE_SERVICE_ROLE_KEY
     });
   }
 
