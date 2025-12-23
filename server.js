@@ -14,7 +14,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -37,6 +37,7 @@ async function loadHandlers() {
   cancelCalendlyHandler = await loadHandler('./api/cancel-calendly.js', 'cancel-calendly');
   currentSetterHandler = await loadHandler('./api/current-setter.js', 'current-setter');
   calendlyWebhookHandler = await loadHandler('./api/calendly-webhook.js', 'calendly-webhook');
+  kajabiWebhookHandler = await loadHandler('./api/kajabi-webhook.js', 'kajabi-webhook');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -103,6 +104,11 @@ app.post('/api/calendly-webhook', async (req, res) => {
   return adaptVercelHandler(calendlyWebhookHandler)(req, res);
 });
 
+app.post('/api/kajabi-webhook', async (req, res) => {
+  if (!kajabiWebhookHandler) await loadHandlers();
+  return adaptVercelHandler(kajabiWebhookHandler)(req, res);
+});
+
 // Catch-all for unregistered API routes
 app.use('/api/*', (req, res) => {
   console.warn(`⚠️ Unregistered API route: ${req.method} ${req.path}`);
@@ -132,6 +138,7 @@ loadHandlers().then(() => {
     console.log(`   - POST http://localhost:${PORT}/api/cancel-calendly`);
     console.log(`   - GET  http://localhost:${PORT}/api/current-setter`);
     console.log(`   - POST http://localhost:${PORT}/api/calendly-webhook`);
+    console.log(`   - POST http://localhost:${PORT}/api/kajabi-webhook`);
     console.log(`   - GET  http://localhost:${PORT}/api/test (test endpoint)`);
     console.log(`\n💡 Make sure Vite dev server (port 5173) proxies /api/* to this server`);
   });
