@@ -25,23 +25,34 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const payload = req.body;
+  
+  console.log('Kajabi webhook received:', JSON.stringify(payload, null, 2));
+
+  // ALWAYS store the inbound request first, no matter what happens later
+  let storedPayloadId = null;
   try {
-    const payload = req.body;
-    
-    console.log('Kajabi webhook received:', JSON.stringify(payload, null, 2));
+    const { data: storedPayload, error: storeError } = await supabase
+      .from('webhook_inbounds')
+      .insert({
+        payload: payload
+      })
+      .select('id')
+      .single();
 
-    // Store the entire payload in webhook_inbounds table for monitoring
-    try {
-      await supabase
-        .from('webhook_inbounds')
-        .insert({
-          payload: payload
-        });
-    } catch (logError) {
-      console.error('Error storing webhook payload:', logError);
-      // Continue processing even if logging fails
+    if (storeError) {
+      console.error('Error storing webhook payload:', storeError);
+      // Log error but continue - we want to process even if storage fails
+    } else {
+      storedPayloadId = storedPayload?.id;
+      console.log('Payload stored successfully in webhook_inbounds:', storedPayloadId);
     }
+  } catch (logError) {
+    console.error('Unexpected error storing webhook payload:', logError);
+    // Continue processing even if storage fails
+  }
 
+  try {
     // Extract customer information from Kajabi payload
     // Structure: { id, event, payload: { member_email, member_name, offer_id, ... } }
     if (!payload.payload || !payload.payload.member_email) {
