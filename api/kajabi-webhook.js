@@ -68,13 +68,14 @@ async function storePayload(rawPayload) {
 
       if (storeError) {
         lastError = storeError;
-        console.error(`❌ Attempt ${attempt}/3: Error storing webhook payload:`, JSON.stringify(storeError, null, 2));
-        console.error(`❌ Error details:`, {
-          message: storeError.message,
-          details: storeError.details,
-          hint: storeError.hint,
-          code: storeError.code
-        });
+        console.error(`❌❌❌ Attempt ${attempt}/3: SUPABASE ERROR storing webhook payload:`);
+        console.error(`❌ Error message:`, storeError.message);
+        console.error(`❌ Error code:`, storeError.code);
+        console.error(`❌ Error details:`, storeError.details);
+        console.error(`❌ Error hint:`, storeError.hint);
+        console.error(`❌ Full error object:`, JSON.stringify(storeError, null, 2));
+        console.error(`❌ Table: webhook_inbounds`);
+        console.error(`❌ Supabase URL:`, SUPABASE_URL);
         if (attempt < 3) {
           // Wait 500ms before retry
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -102,6 +103,34 @@ async function storePayload(rawPayload) {
 }
 
 export default async function handler(req, res) {
+  // CRITICAL: Check Supabase configuration FIRST
+  if (!SUPABASE_URL) {
+    console.error('❌❌❌ CRITICAL: SUPABASE_URL is not set!');
+    return res.status(500).json({ 
+      error: 'CRITICAL: SUPABASE_URL environment variable is not set',
+      message: 'Cannot store webhook payload - Supabase URL missing'
+    });
+  }
+
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('❌❌❌ CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set!');
+    return res.status(500).json({ 
+      error: 'CRITICAL: SUPABASE_SERVICE_ROLE_KEY environment variable is not set',
+      message: 'Cannot store webhook payload - Service role key missing',
+      supabase_url: SUPABASE_URL
+    });
+  }
+
+  if (!supabaseStorage) {
+    console.error('❌❌❌ CRITICAL: supabaseStorage client is not initialized!');
+    return res.status(500).json({ 
+      error: 'CRITICAL: Supabase storage client failed to initialize',
+      message: 'Cannot store webhook payload - Storage client not available',
+      supabase_url: SUPABASE_URL,
+      service_role_key_set: !!SUPABASE_SERVICE_ROLE_KEY
+    });
+  }
+
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -133,16 +162,29 @@ export default async function handler(req, res) {
 
   // Store the RAW body exactly as received - structure doesn't matter
   // THIS MUST HAPPEN BEFORE ANYTHING ELSE
+  // IF STORAGE FAILS, RETURN ERROR IMMEDIATELY - THIS IS THE FIRST ERROR YOU SHOULD SEE
   console.log('📨 CALLING storePayload NOW...');
   const storedPayloadId = await storePayload(rawBody);
   
   if (!storedPayloadId) {
-    console.error('❌❌❌ CRITICAL WARNING: Raw payload storage FAILED after retries');
+    console.error('❌❌❌ CRITICAL ERROR: Raw payload storage FAILED after retries');
     console.error('❌ This should NEVER happen - storage must succeed!');
-  } else {
-    console.log('✅✅✅ Raw payload stored successfully with ID:', storedPayloadId);
-    console.log('✅ Proceeding with processing logic...');
+    console.error('❌ SUPABASE_URL:', SUPABASE_URL);
+    console.error('❌ SUPABASE_SERVICE_ROLE_KEY exists:', !!SUPABASE_SERVICE_ROLE_KEY);
+    console.error('❌ supabaseStorage client exists:', !!supabaseStorage);
+    
+    // RETURN ERROR IMMEDIATELY - STORAGE FAILURE IS THE FIRST ERROR
+    return res.status(500).json({ 
+      error: 'CRITICAL: Failed to store webhook payload in database',
+      message: 'Payload storage failed after 3 retry attempts. Check logs for details.',
+      supabase_url: SUPABASE_URL,
+      service_role_key_set: !!SUPABASE_SERVICE_ROLE_KEY,
+      storage_client_initialized: !!supabaseStorage
+    });
   }
+  
+  console.log('✅✅✅ Raw payload stored successfully with ID:', storedPayloadId);
+  console.log('✅ Proceeding with processing logic...');
 
   // Now extract payload for processing (if it exists)
   const payload = req.body || {};
