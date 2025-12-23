@@ -1,13 +1,70 @@
 import { createClient } from '@supabase/supabase-js';
 
-// CRM app Supabase client (for offers table)
+// CRM app Supabase URL
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+
+// Supabase client with service role key - ALWAYS use this for storing payloads (bypasses RLS)
+const supabaseStorage = SUPABASE_SERVICE_ROLE_KEY 
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+  : null;
+
+// CRM app Supabase client (for offers table - can use anon key)
 const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY || SUPABASE_SERVICE_ROLE_KEY
 );
 
 // Academic app API URL
 const ACADEMIC_APP_URL = 'https://academic.inglesahorita.com';
+
+// Function to store payload - MUST succeed or retry
+async function storePayload(payload) {
+  if (!supabaseStorage) {
+    console.error('⚠️ SUPABASE_SERVICE_ROLE_KEY not set - cannot store payload');
+    return null;
+  }
+
+  // Retry logic: try up to 3 times
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const { data: storedPayload, error: storeError } = await supabaseStorage
+        .from('webhook_inbounds')
+        .insert({
+          payload: payload,
+          created_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+
+      if (storeError) {
+        lastError = storeError;
+        console.error(`Attempt ${attempt}/3: Error storing webhook payload:`, storeError);
+        if (attempt < 3) {
+          // Wait 500ms before retry
+          await new Promise(resolve => setTimeout(resolve, 500));
+          continue;
+        }
+      } else {
+        console.log('✅ Payload stored successfully in webhook_inbounds:', storedPayload?.id);
+        return storedPayload?.id;
+      }
+    } catch (error) {
+      lastError = error;
+      console.error(`Attempt ${attempt}/3: Unexpected error storing webhook payload:`, error);
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        continue;
+      }
+    }
+  }
+
+  // If all retries failed, log critical error but don't throw
+  console.error('❌ CRITICAL: Failed to store payload after 3 attempts:', lastError);
+  return null;
+}
 
 export default async function handler(req, res) {
   // Set CORS headers
@@ -27,29 +84,14 @@ export default async function handler(req, res) {
 
   const payload = req.body;
   
-  console.log('Kajabi webhook received:', JSON.stringify(payload, null, 2));
+  console.log('📨 Kajabi webhook received:', JSON.stringify(payload, null, 2));
 
-  // ALWAYS store the inbound request first, no matter what happens later
-  let storedPayloadId = null;
-  try {
-    const { data: storedPayload, error: storeError } = await supabase
-      .from('webhook_inbounds')
-      .insert({
-        payload: payload
-      })
-      .select('id')
-      .single();
-
-    if (storeError) {
-      console.error('Error storing webhook payload:', storeError);
-      // Log error but continue - we want to process even if storage fails
-    } else {
-      storedPayloadId = storedPayload?.id;
-      console.log('Payload stored successfully in webhook_inbounds:', storedPayloadId);
-    }
-  } catch (logError) {
-    console.error('Unexpected error storing webhook payload:', logError);
-    // Continue processing even if storage fails
+  // CRITICAL: ALWAYS store the inbound request FIRST, no matter what happens later
+  // This happens before ANY other processing
+  const storedPayloadId = await storePayload(payload);
+  
+  if (!storedPayloadId) {
+    console.error('⚠️ WARNING: Payload storage failed, but continuing with processing...');
   }
 
   try {
