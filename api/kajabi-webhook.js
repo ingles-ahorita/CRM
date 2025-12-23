@@ -19,33 +19,18 @@ const supabase = createClient(
 // Academic app API URL
 const ACADEMIC_APP_URL = 'https://academic.inglesahorita.com';
 
-// Function to store payload - MUST succeed or retry
-// Accepts ANY data structure - object, null, string, etc.
-async function storePayload(payload) {
+// Function to store RAW payload - stores exactly what was received, no transformation
+// NEVER fails due to structure - stores whatever is passed, even null/undefined
+async function storePayload(rawPayload) {
   if (!supabaseStorage) {
     console.error('⚠️ SUPABASE_SERVICE_ROLE_KEY not set - cannot store payload');
     return null;
   }
 
-  // Normalize payload - ensure it's always an object/JSON-serializable
-  // Store whatever we received, even if it's null, undefined, or malformed
-  let payloadToStore = payload;
+  // Store the raw payload exactly as received - no transformation, no wrapping
+  // If it's null, store null. If it's an object, store the object. If it's a string, store the string.
+  // The database JSONB field will handle it.
   
-  // If payload is null/undefined, store an empty object with a note
-  if (payload == null) {
-    payloadToStore = { _note: 'Received null or undefined payload', timestamp: new Date().toISOString() };
-  }
-  
-  // If payload is not an object, wrap it
-  if (typeof payload !== 'object' || Array.isArray(payload)) {
-    payloadToStore = { 
-      _raw_payload: payload,
-      _payload_type: typeof payload,
-      _is_array: Array.isArray(payload),
-      timestamp: new Date().toISOString()
-    };
-  }
-
   // Retry logic: try up to 3 times
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -53,7 +38,7 @@ async function storePayload(payload) {
       const { data: storedPayload, error: storeError } = await supabaseStorage
         .from('webhook_inbounds')
         .insert({
-          payload: payloadToStore,
+          payload: rawPayload, // Store raw, exactly as received
           created_at: new Date().toISOString()
         })
         .select('id')
@@ -68,7 +53,7 @@ async function storePayload(payload) {
           continue;
         }
       } else {
-        console.log('✅ Payload stored successfully in webhook_inbounds:', storedPayload?.id);
+        console.log('✅ Raw payload stored successfully in webhook_inbounds:', storedPayload?.id);
         return storedPayload?.id;
       }
     } catch (error) {
@@ -102,35 +87,24 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // CRITICAL: Store ANY request payload, regardless of structure or content
-  // Capture everything: body, headers, method, URL, etc.
-  const requestData = {
-    method: req.method,
-    url: req.url,
-    headers: req.headers,
-    body: req.body || null,
-    query: req.query || {},
-    timestamp: new Date().toISOString()
-  };
+  // CRITICAL: Store RAW request body FIRST, no matter what
+  // Store exactly what was received - no transformation, no wrapping
+  // This happens BEFORE any processing or validation
+  const rawBody = req.body; // Could be null, undefined, object, string, anything
+  
+  console.log('📨 Inbound request received - storing raw body:', {
+    hasBody: rawBody != null,
+    bodyType: typeof rawBody,
+    isArray: Array.isArray(rawBody)
+  });
 
-  // Try to stringify for logging, but don't fail if it can't
-  try {
-    console.log('📨 Inbound request received:', JSON.stringify(requestData, null, 2));
-  } catch (logError) {
-    console.log('📨 Inbound request received (could not stringify):', {
-      method: req.method,
-      url: req.url,
-      hasBody: !!req.body,
-      bodyType: typeof req.body
-    });
-  }
-
-  // ALWAYS store the inbound request FIRST, no matter what
-  // Store the entire request data, not just the body
-  const storedPayloadId = await storePayload(requestData);
+  // Store the RAW body exactly as received - structure doesn't matter
+  const storedPayloadId = await storePayload(rawBody);
   
   if (!storedPayloadId) {
-    console.error('⚠️ WARNING: Payload storage failed after retries');
+    console.error('⚠️ WARNING: Raw payload storage failed after retries');
+  } else {
+    console.log('✅ Raw payload stored, proceeding with processing logic...');
   }
 
   // Now extract payload for processing (if it exists)
