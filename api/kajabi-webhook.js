@@ -2,18 +2,18 @@ import { createClient } from '@supabase/supabase-js';
 
 // CRM app Supabase URL - use same env var names as rest of CRM app
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
 
-// Supabase client with service role key - ALWAYS use this for storing payloads (bypasses RLS)
-const supabaseStorage = SUPABASE_SERVICE_ROLE_KEY 
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+// Supabase client for storing payloads - use anon key (same as rest of CRM app)
+// RLS policies should allow inserts to webhook_inbounds table
+const supabaseStorage = SUPABASE_URL && SUPABASE_ANON_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 // CRM app Supabase client (for offers table - can use anon key)
 const supabase = createClient(
   SUPABASE_URL,
-  SUPABASE_ANON_KEY || SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_ANON_KEY
 );
 
 // Academic app API URL
@@ -24,15 +24,15 @@ const ACADEMIC_APP_URL = 'https://academic.inglesahorita.com';
 async function storePayload(rawPayload) {
   console.log('🔵 STORE PAYLOAD CALLED');
   console.log('🔵 Supabase URL:', SUPABASE_URL);
-  console.log('🔵 Service Role Key exists:', !!SUPABASE_SERVICE_ROLE_KEY);
+  console.log('🔵 Anon Key exists:', !!SUPABASE_ANON_KEY);
   console.log('🔵 supabaseStorage client exists:', !!supabaseStorage);
   console.log('🔵 Raw payload type:', typeof rawPayload);
   console.log('🔵 Raw payload:', JSON.stringify(rawPayload, null, 2));
 
   if (!supabaseStorage) {
-    console.error('❌ CRITICAL: SUPABASE_SERVICE_ROLE_KEY not set - cannot store payload');
+    console.error('❌ CRITICAL: Supabase storage client not initialized - cannot store payload');
     console.error('❌ SUPABASE_URL:', SUPABASE_URL);
-    console.error('❌ SUPABASE_SERVICE_ROLE_KEY:', SUPABASE_SERVICE_ROLE_KEY ? 'EXISTS' : 'MISSING');
+    console.error('❌ SUPABASE_ANON_KEY:', SUPABASE_ANON_KEY ? 'EXISTS' : 'MISSING');
     return null;
   }
 
@@ -112,17 +112,20 @@ export default async function handler(req, res) {
     });
   }
 
-  if (!SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('❌❌❌ CRITICAL: Service role key is not set!');
-    console.error('❌ Checked VITE_SUPABASE_SERVICE_ROLE_KEY:', !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
-    console.error('❌ Checked SUPABASE_SERVICE_ROLE_KEY:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (!SUPABASE_URL) {
+    console.error('❌❌❌ CRITICAL: SUPABASE_URL is not set!');
     return res.status(500).json({ 
-      error: 'CRITICAL: Service role key environment variable is not set',
-      message: 'Cannot store webhook payload - Service role key missing',
-      supabase_url: SUPABASE_URL,
-      checked_vars: ['VITE_SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SERVICE_ROLE_KEY'],
-      vite_key_exists: !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
-      standard_key_exists: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+      error: 'CRITICAL: SUPABASE_URL environment variable is not set',
+      message: 'Cannot store webhook payload - Supabase URL missing'
+    });
+  }
+
+  if (!SUPABASE_ANON_KEY) {
+    console.error('❌❌❌ CRITICAL: SUPABASE_ANON_KEY is not set!');
+    return res.status(500).json({ 
+      error: 'CRITICAL: SUPABASE_ANON_KEY environment variable is not set',
+      message: 'Cannot store webhook payload - Anon key missing',
+      supabase_url: SUPABASE_URL
     });
   }
 
@@ -132,7 +135,7 @@ export default async function handler(req, res) {
       error: 'CRITICAL: Supabase storage client failed to initialize',
       message: 'Cannot store webhook payload - Storage client not available',
       supabase_url: SUPABASE_URL,
-      service_role_key_set: !!SUPABASE_SERVICE_ROLE_KEY
+      anon_key_set: !!SUPABASE_ANON_KEY
     });
   }
 
@@ -175,7 +178,7 @@ export default async function handler(req, res) {
     console.error('❌❌❌ CRITICAL ERROR: Raw payload storage FAILED after retries');
     console.error('❌ This should NEVER happen - storage must succeed!');
     console.error('❌ SUPABASE_URL:', SUPABASE_URL);
-    console.error('❌ SUPABASE_SERVICE_ROLE_KEY exists:', !!SUPABASE_SERVICE_ROLE_KEY);
+    console.error('❌ SUPABASE_ANON_KEY exists:', !!SUPABASE_ANON_KEY);
     console.error('❌ supabaseStorage client exists:', !!supabaseStorage);
     
     // RETURN ERROR IMMEDIATELY - STORAGE FAILURE IS THE FIRST ERROR
@@ -183,7 +186,7 @@ export default async function handler(req, res) {
       error: 'CRITICAL: Failed to store webhook payload in database',
       message: 'Payload storage failed after 3 retry attempts. Check logs for details.',
       supabase_url: SUPABASE_URL,
-      service_role_key_set: !!SUPABASE_SERVICE_ROLE_KEY,
+      anon_key_set: !!SUPABASE_ANON_KEY,
       storage_client_initialized: !!supabaseStorage
     });
   }
