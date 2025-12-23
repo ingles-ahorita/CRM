@@ -342,13 +342,19 @@ const updateHeaderState = (updates) => {
     onClick={() => toggleFilter('transferred')}
   />
 
-<FilterButton
+  <FilterButton
     label="Purchased"
     active={filters.purchased}
     onClick={() => {
       toggleFilter('purchased');
       updateHeaderState({ sortBy: sortBy === 'purchased_at' ? 'book_date' : 'purchased_at' });
     }}
+  />
+
+  <FilterButton
+    label="Lock In"
+    active={filters.lockIn}
+    onClick={() => toggleFilter('lockIn')}
   />
 
   <FilterButton

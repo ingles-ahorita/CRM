@@ -57,6 +57,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [showConfirmCancelModal, setShowConfirmCancelModal] = useState(false);
   const [pendingConfirmedValue, setPendingConfirmedValue] = useState(null);
+  const [showPhoneChoiceModal, setShowPhoneChoiceModal] = useState(false);
+  const [pendingPhoneNumber, setPendingPhoneNumber] = useState(null);
   const { setter: currentSetter } = useParams();  
   const navigate = useNavigate();
 
@@ -167,14 +169,34 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             <div className="lead-contact-info">
               <Phone size={12} />
               <span>
-                <a
-                  href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || lead.leads?.mc_id || ''}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: (lead.manychat_user_id || lead.leads?.mc_id) ? '#6b7280' : 'red' }}
-                >
-                  {lead.phone || 'No phone'}
-                </a>
+                {mode === 'closer' ? (
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (lead.phone) {
+                        setPendingPhoneNumber(lead.phone);
+                        setShowPhoneChoiceModal(true);
+                      }
+                    }}
+                    style={{ 
+                      cursor: 'pointer', 
+                      color: (lead.manychat_user_id || lead.leads?.mc_id) ? '#6b7280' : 'red',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    {lead.phone || 'No phone'}
+                  </a>
+                ) : (
+                  <a
+                    href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || lead.leads?.mc_id || ''}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: (lead.manychat_user_id || lead.leads?.mc_id) ? '#6b7280' : 'red' }}
+                  >
+                    {lead.phone || 'No phone'}
+                  </a>
+                )}
               </span>
             </div>
         </div>
@@ -209,7 +231,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           />
           <StatusDropdown
             value={purchase}
-
+            outcomeLog={lead.outcome_log}
             onClick={() => {
               if (mode === 'closer' || mode === 'admin') {
                 setModeState('closer');
@@ -422,6 +444,84 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               </div>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* Phone Choice Modal for Closer Mode */}
+      <Modal isOpen={showPhoneChoiceModal} onClose={() => {
+        setShowPhoneChoiceModal(false);
+        setPendingPhoneNumber(null);
+      }}>
+        <div style={{ padding: '24px', maxWidth: '400px' }}>
+          <h2 style={{ 
+            marginBottom: '16px', 
+            fontSize: '20px', 
+            fontWeight: '600',
+            color: '#111827'
+          }}>
+            Choose Contact Method
+          </h2>
+          <p style={{ 
+            marginBottom: '24px', 
+            fontSize: '14px', 
+            color: '#6b7280',
+            lineHeight: '1.5'
+          }}>
+            How would you like to contact {lead.name || 'this lead'}?
+          </p>
+          <div style={{ 
+            display: 'flex', 
+            gap: '12px', 
+            justifyContent: 'flex-end' 
+          }}>
+            <button
+              onClick={() => {
+                const manychatId = lead.manychat_user_id || lead.leads?.mc_id || '';
+                if (manychatId) {
+                  window.open(`https://app.manychat.com/fb1237190/chat/${manychatId}`, '_blank');
+                }
+                setShowPhoneChoiceModal(false);
+                setPendingPhoneNumber(null);
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              ManyChat
+            </button>
+            <button
+              onClick={() => {
+                if (pendingPhoneNumber) {
+                  // Clean phone number and create WhatsApp link
+                  const cleanPhone = pendingPhoneNumber.replace(/\D/g, '');
+                  window.open(`https://wa.me/${cleanPhone}`, '_blank');
+                }
+                setShowPhoneChoiceModal(false);
+                setPendingPhoneNumber(null);
+              }}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#25D366',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                outline: 'none'
+              }}
+            >
+              WhatsApp
+            </button>
+          </div>
         </div>
       </Modal>
 
@@ -659,10 +759,19 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 
 
-  const StatusDropdown = ({ value, onChange, label, disabled = false, onClick = null}) => {
+  const StatusDropdown = ({ value, onChange, label, disabled = false, onClick = null, outcomeLog = null}) => {
 
     // Get background color based on value
     const getBackgroundColor = () => {
+      // Special case: if this is the Purchased dropdown and value is true, check for lock_in
+      if (
+        label === 'Purchased' && 
+        ((Array.isArray(outcomeLog) && outcomeLog.some(ol => ol?.outcome === 'lock_in')) ||
+         (!Array.isArray(outcomeLog) && outcomeLog?.outcome === 'lock_in'))
+      ) {
+        return '#e9d5ff'; // light purple background
+      }
+      
       if (value === true || value === 'true') return '#cfffc5ff'; // green for true
       if (value === false || value === 'false') return '#ff9494ff'; // red for false
       if (value === null || value === '' || value === undefined || value === 'null') return '#f9ffa6ff'; // yellow for null/empty
@@ -1180,7 +1289,12 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
         <StatusBadge value={lead.picked_up} label="P" title="Picked Up" />
         <StatusBadge value={lead.confirmed} label="C" title="Confirmed" />
         <StatusBadge value={lead.showed_up} label="S" title="Showed Up" />
-        <StatusBadge value={lead.purchased} label="$" title="Purchased" />
+        <StatusBadge 
+          value={lead.purchased} 
+          label="$" 
+          title="Purchased" 
+          outcomeLog={lead.outcome_log}
+        />
       </div>
 
       {/* Response Time */}
@@ -1314,11 +1428,28 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
 }
 
 // Helper component for status badges
-function StatusBadge({ value, label, title }) {
+function StatusBadge({ value, label, title, outcomeLog }) {
   const getColor = () => {
-    if (value === true) return '#10b981'; // green
-    if (value === false) return '#ef4444'; // red
-    return '#f59e0b'; // yellow for null/TBD
+    // Only apply lock_in color for label === '$' and lock_in outcome
+    if (
+      label === '$' &&
+      (
+        (Array.isArray(outcomeLog) && outcomeLog.some(ol => ol?.outcome === 'lock_in')) ||
+        (!Array.isArray(outcomeLog) && outcomeLog?.outcome === 'lock_in')
+      )
+    ) {
+      return '#9333ea'; // purple
+    }
+    // fallback: use green for any truthy value, red for falsey value (as before)
+    if (value) {
+      return '#10b981'; // green
+    }
+    // Show red only if value is exactly false (not null/undefined/'null' etc)
+    if (value === false || value === 'false') {
+      return '#ef4444'; // red
+    }
+    // Default color (yellow)
+    return '#f59e0b';
   };
 
   return (

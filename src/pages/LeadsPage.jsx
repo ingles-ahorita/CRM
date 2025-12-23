@@ -48,6 +48,7 @@ const [headerState, setHeaderState] = useState({
     rescheduled: searchParams.get('rescheduled') === 'true',      // Read from URL
     transferred: searchParams.get('transferred') === 'true',      // Read from URL
     purchased: searchParams.get('purchased') === 'true',          // Read from URL
+    lockIn: searchParams.get('lockIn') === 'true',                // Read from URL
     noManychatId: searchParams.get('noManychatId') === 'true'     // Read from URL
   },
   onEndShift: () => setIsEndShiftModalOpen(true)

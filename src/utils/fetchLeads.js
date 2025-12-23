@@ -187,6 +187,17 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
     leadsWithCallTime = leadsWithCallTime.filter(lead => lead.first_setter_id !== lead.setter_id);
   }
 
+  // Filter for Lock In (calls with outcome = 'lock_in')
+  if (filters?.lockIn) {
+    leadsWithCallTime = leadsWithCallTime.filter(lead => {
+      // Check if any outcome_log entry has outcome = 'lock_in'
+      if (Array.isArray(lead.outcome_log)) {
+        return lead.outcome_log.some(ol => ol.outcome === 'lock_in');
+      }
+      return lead.outcome_log?.outcome === 'lock_in';
+    });
+  }
+
   // Filter for leads with no ManyChat ID
   if (filters?.noManychatId) {
     leadsWithCallTime = leadsWithCallTime.filter(lead => {

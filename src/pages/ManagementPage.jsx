@@ -43,7 +43,8 @@ export default function ManagementPage() {
       noPickUp: searchParams.get('noPickUp') === 'true',
       rescheduled: searchParams.get('rescheduled') === 'true',
       transferred: searchParams.get('transferred') === 'true',
-      purchased: searchParams.get('purchased') === 'true'
+      purchased: searchParams.get('purchased') === 'true',
+      lockIn: searchParams.get('lockIn') === 'true'
     },
     onEndShift: () => setIsEndShiftModalOpen(true)
   });
