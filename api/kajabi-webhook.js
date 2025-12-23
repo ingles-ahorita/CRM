@@ -114,10 +114,19 @@ export default async function handler(req, res) {
     // Get offer_id from payload
     const offerId = payload.payload.offer_id;
     
-    if (!offerId) {
-      console.error('Missing offer_id in payload');
+    console.log('Extracted offer_id:', offerId, 'Type:', typeof offerId);
+    
+    // Check if offer_id exists (null/undefined check, but allow 0 as valid)
+    if (offerId == null || offerId === '') {
+      console.error('Missing offer_id in payload. Payload structure:', {
+        hasPayload: !!payload.payload,
+        payloadKeys: payload.payload ? Object.keys(payload.payload) : [],
+        offerId: offerId
+      });
       return res.status(400).json({ 
-        error: 'Missing offer_id in payload'
+        error: 'Missing offer_id in payload',
+        received_offer_id: offerId,
+        payload_structure: payload.payload ? Object.keys(payload.payload) : []
       });
     }
 
