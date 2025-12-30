@@ -338,9 +338,9 @@ export default function OffersPage() {
                     )}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
-                    {offer.weekly_classes !== null && offer.weekly_classes !== undefined 
-                      ? offer.weekly_classes 
-                      : 'unlimited'}
+                    {offer.weekly_classes === null 
+                      ? 'unlimited'
+                      : offer.weekly_classes}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                     <button
