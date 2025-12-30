@@ -265,7 +265,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const weeklyClasses = offer.weekly_classes || 0;
+    const weeklyClasses = offer.weekly_classes == null ? null : offer.weekly_classes;
 
     console.log(`Found offer: kajabi_id=${offerId}, weekly_classes=${weeklyClasses}`);
 
