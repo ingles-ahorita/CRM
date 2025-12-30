@@ -10,8 +10,12 @@ export default function OffersPage() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [selectedKajabiId, setSelectedKajabiId] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
+    price: '',
+    installments: '',
     base_commission: '',
     PIF_commission: '',
     kajabi_id: '',
@@ -29,7 +33,7 @@ export default function OffersPage() {
       const { data, error } = await supabase
         .from('offers')
         .select('*')
-        .order('name');
+        .order('created_at', { ascending: true });
 
       if (error) throw error;
       setOffers(data || []);
@@ -46,6 +50,8 @@ export default function OffersPage() {
       setEditingOffer(offer);
       setFormData({
         name: offer.name || '',
+        price: offer.price || '',
+        installments: offer.installments !== null && offer.installments !== undefined ? String(offer.installments) : '',
         base_commission: offer.base_commission || '',
         PIF_commission: offer.PIF_commission || '',
         kajabi_id: offer.kajabi_id || '',
@@ -56,6 +62,8 @@ export default function OffersPage() {
       setEditingOffer(null);
       setFormData({
         name: '',
+        price: '',
+        installments: '',
         base_commission: '',
         PIF_commission: '',
         kajabi_id: '',
@@ -71,6 +79,8 @@ export default function OffersPage() {
     setEditingOffer(null);
     setFormData({
       name: '',
+      price: '',
+      installments: '',
       base_commission: '',
       PIF_commission: '',
       kajabi_id: '',
@@ -85,6 +95,8 @@ export default function OffersPage() {
     try {
       const payload = {
         name: formData.name.trim(),
+        price: formData.price ? parseFloat(formData.price) : null,
+        installments: formData.installments ? parseInt(formData.installments) : null,
         base_commission: formData.base_commission ? parseFloat(formData.base_commission) : null,
         PIF_commission: formData.PIF_commission ? parseFloat(formData.PIF_commission) : null,
         kajabi_id: formData.kajabi_id ? formData.kajabi_id.trim() : null,
@@ -147,6 +159,24 @@ export default function OffersPage() {
     }
   };
 
+  const handleKajabiIdClick = (e, kajabiId) => {
+    e.preventDefault();
+    setSelectedKajabiId(kajabiId);
+    setIsDialogOpen(true);
+  };
+
+  const handleNavigateToKajabi = (type) => {
+    if (!selectedKajabiId) return;
+    
+    const url = type === 'offer' 
+      ? `https://app.kajabi.com/admin/offers/${selectedKajabiId}/edit`
+      : `https://app.kajabi.com/admin/offers/${selectedKajabiId}/checkout/edit`;
+    
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setIsDialogOpen(false);
+    setSelectedKajabiId(null);
+  };
+
   // Group offers by active status
   const activeOffers = offers.filter(offer => offer.active === true);
   const inactiveOffers = offers.filter(offer => offer.active !== true);
@@ -187,6 +217,20 @@ export default function OffersPage() {
                   fontWeight: '600',
                   color: '#374151'
                 }}>Name</th>
+                <th style={{ 
+                  padding: '12px 16px', 
+                  textAlign: 'left', 
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#374151'
+                }}>Price</th>
+                <th style={{ 
+                  padding: '12px 16px', 
+                  textAlign: 'left', 
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#374151'
+                }}>Installments</th>
                 <th style={{ 
                   padding: '12px 16px', 
                   textAlign: 'left', 
@@ -250,6 +294,16 @@ export default function OffersPage() {
                     {offer.name}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
+                    {offer.price !== null && offer.price !== undefined 
+                      ? `$${offer.price.toFixed(2)}` 
+                      : '-'}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
+                    {offer.installments !== null && offer.installments !== undefined 
+                      ? (offer.installments === 0 ? 'SINGLE' : offer.installments)
+                      : '-'}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
                     {offer.base_commission !== null && offer.base_commission !== undefined 
                       ? `$${offer.base_commission.toFixed(2)}` 
                       : '-'}
@@ -260,12 +314,33 @@ export default function OffersPage() {
                       : '-'}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
-                    {offer.kajabi_id || '-'}
+                    {offer.kajabi_id ? (
+                      <a
+                        href="#"
+                        onClick={(e) => handleKajabiIdClick(e, offer.kajabi_id)}
+                        style={{
+                          color: '#3b82f6',
+                          textDecoration: 'none',
+                          fontWeight: '500',
+                          cursor: 'pointer'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.textDecoration = 'underline';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.textDecoration = 'none';
+                        }}
+                      >
+                        {offer.kajabi_id}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
                     {offer.weekly_classes !== null && offer.weekly_classes !== undefined 
                       ? offer.weekly_classes 
-                      : '-'}
+                      : 'unlimited'}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                     <button
@@ -540,6 +615,82 @@ export default function OffersPage() {
                     fontWeight: '600',
                     color: '#374151'
                   }}>
+                    Price ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = '#3b82f6';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = '#d1d5db';
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '8px', 
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#374151'
+                  }}>
+                    Installments
+                  </label>
+                  <select
+                    value={formData.installments}
+                    onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: '6px',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                      backgroundColor: 'white',
+                      cursor: 'pointer'
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = '#3b82f6';
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = '#d1d5db';
+                    }}
+                  >
+                    <option value="">Select installments...</option>
+                    <option value="0">SINGLE</option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    marginBottom: '8px', 
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#374151'
+                  }}>
                     Base Commission ($)
                   </label>
                   <input
@@ -738,6 +889,133 @@ export default function OffersPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Dialog for Kajabi Navigation */}
+        {isDialogOpen && (
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1001
+            }}
+            onClick={() => {
+              setIsDialogOpen(false);
+              setSelectedKajabiId(null);
+            }}
+          >
+            <div 
+              style={{
+                backgroundColor: 'white',
+                borderRadius: '8px',
+                padding: '24px',
+                width: '90%',
+                maxWidth: '400px',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.2)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 style={{ 
+                fontSize: '20px', 
+                fontWeight: 'bold', 
+                color: '#111827',
+                marginBottom: '16px'
+              }}>
+                Navigate to Kajabi
+              </h3>
+              <p style={{
+                fontSize: '14px',
+                color: '#6b7280',
+                marginBottom: '24px'
+              }}>
+                Choose where you want to go:
+              </p>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <button
+                  onClick={() => handleNavigateToKajabi('offer')}
+                  style={{
+                    padding: '12px 20px',
+                    backgroundColor: '#3b82f6',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#2563eb';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#3b82f6';
+                  }}
+                >
+                  Edit Offer
+                </button>
+                <button
+                  onClick={() => handleNavigateToKajabi('checkout')}
+                  style={{
+                    padding: '12px 20px',
+                    backgroundColor: '#10b981',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#059669';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#10b981';
+                  }}
+                >
+                  Edit Checkout Page
+                </button>
+                <button
+                  onClick={() => {
+                    setIsDialogOpen(false);
+                    setSelectedKajabiId(null);
+                  }}
+                  style={{
+                    padding: '12px 20px',
+                    backgroundColor: '#f3f4f6',
+                    color: '#374151',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#e5e7eb';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}

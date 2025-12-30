@@ -34,3 +34,4 @@ echo "3. Check students table in Academic DB for created student"
 echo "4. Verify offer_id matches kajabi_id in offers table"
 
 
+
