@@ -33,3 +33,4 @@ echo "2. Check webhook_inbounds table in CRM DB for stored payload"
 echo "3. Check students table in Academic DB for created student"
 echo "4. Verify offer_id matches kajabi_id in offers table"
 
+

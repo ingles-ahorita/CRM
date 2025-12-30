@@ -15,6 +15,7 @@ import TestSetterSchedule from './pages/TestSetterSchedule';
 import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
 import UTMStatsDashboard from './pages/utmStats';
+import OffersPage from './pages/OffersPage';
 import './App.css';
 
 export default function App() {
@@ -58,6 +59,11 @@ export default function App() {
       <Route path="/test-setter" element={
         <ProtectedRoute>
           <TestSetterSchedule />
+        </ProtectedRoute>
+      } />
+      <Route path="/offers" element={
+        <ProtectedRoute>
+          <OffersPage />
         </ProtectedRoute>
       } />
 
