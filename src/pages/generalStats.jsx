@@ -153,13 +153,34 @@ const totalPurchased = purchasedCalls.length;
           totalBooked: 0,
           totalPickedUp: 0,
           totalShowedUp: 0,
-          totalConfirmed: 0
+          totalConfirmed: 0,
+          totalPurchased: 0
         };
       }
       setterStats[setterId].totalBooked++;
       if (call.picked_up === true) setterStats[setterId].totalPickedUp++;
       if (call.showed_up === true) setterStats[setterId].totalShowedUp++;
       if (call.confirmed === true) setterStats[setterId].totalConfirmed++;
+    }
+  });
+
+  // Add purchases from purchased calls
+  // IMPORTANT: Initialize setterStats for setters who have purchases but no booked calls
+  purchasedCalls.forEach(call => {
+    if (call.setters) {
+      const setterId = call.setters.id;
+      if (!setterStats[setterId]) {
+        setterStats[setterId] = {
+          id: setterId,
+          name: call.setters.name,
+          totalBooked: 0,
+          totalPickedUp: 0,
+          totalShowedUp: 0,
+          totalConfirmed: 0,
+          totalPurchased: 0
+        };
+      }
+      setterStats[setterId].totalPurchased++;
     }
   });
 
@@ -589,7 +610,7 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
         name
       )
     `)
-    .eq('outcome', 'yes')
+    .in('outcome', ['yes', 'refund'])
     .gte('purchase_date', startDateObj.toISOString())
     .lte('purchase_date', endDateObj.toISOString())
     .order('purchase_date', { ascending: false });
@@ -603,9 +624,25 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
     return [];
   }
 
-  // Transform outcome_log entries to match the expected lead format
-  const purchases = (outcomeLogs || [])
-    .filter(outcomeLog => outcomeLog.calls && outcomeLog.calls.id)
+  // First, deduplicate outcome_log entries by call_id BEFORE transforming
+  // If multiple outcome_log entries exist for the same call_id, keep only the most recent one
+  const outcomeLogsByCallId = new Map();
+  
+  (outcomeLogs || []).forEach(outcomeLog => {
+    // Must have a valid call
+    if (!outcomeLog.calls || !outcomeLog.calls.id) return;
+    
+    const callId = outcomeLog.calls.id;
+    const existing = outcomeLogsByCallId.get(callId);
+    
+    // If no existing entry, or this outcome_log_id is newer, keep this one
+    if (!existing || outcomeLog.id > existing.id) {
+      outcomeLogsByCallId.set(callId, outcomeLog);
+    }
+  });
+  
+  // Transform the deduplicated outcome_log entries to match the expected lead format
+  const purchases = Array.from(outcomeLogsByCallId.values())
     .map(outcomeLog => ({
       ...outcomeLog.calls,
       outcome_log_id: outcomeLog.id,
@@ -618,8 +655,6 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       purchased_at: outcomeLog.purchase_date,
       purchased: true
     }));
-
-
 
   return purchases;
 }
@@ -753,12 +788,25 @@ function PurchaseItem({ lead, setterMap = {}, closerMap = {} }) {
       </div>
 
       {/* Offer Name */}
-      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
         {lead.offer_name || 'N/A'}
+        {lead.outcome === 'refund' && (
+          <span style={{
+            backgroundColor: '#ef4444',
+            color: 'white',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase'
+          }}>
+            REFUND
+          </span>
+        )}
       </div>
 
       {/* Commission */}
-      <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600', textAlign: 'center' }}>
+      <div style={{ fontSize: '13px', color: lead.outcome === 'refund' ? '#ef4444' : '#10b981', fontWeight: '600', textAlign: 'center' }}>
         {lead.commission ? `$${lead.commission.toFixed(2)}` : 'N/A'}
       </div>
 
@@ -1241,12 +1289,12 @@ export default function StatsDashboard() {
                   </h2>
                   <p className="text-sm text-gray-500 mt-1">
                     {purchases.filter(p => {
-                      const matchesSetter = purchaseSetterFilter === 'all' || p.setter_id === purchaseSetterFilter;
-                      const matchesCloser = purchaseCloserFilter === 'all' || p.closer_id === purchaseCloserFilter;
+                      const matchesSetter = purchaseSetterFilter === 'all' || String(p.setter_id) === String(purchaseSetterFilter);
+                      const matchesCloser = purchaseCloserFilter === 'all' || String(p.closer_id) === String(purchaseCloserFilter);
                       return matchesSetter && matchesCloser;
                     }).length} purchase{purchases.filter(p => {
-                      const matchesSetter = purchaseSetterFilter === 'all' || p.setter_id === purchaseSetterFilter;
-                      const matchesCloser = purchaseCloserFilter === 'all' || p.closer_id === purchaseCloserFilter;
+                      const matchesSetter = purchaseSetterFilter === 'all' || String(p.setter_id) === String(purchaseSetterFilter);
+                      const matchesCloser = purchaseCloserFilter === 'all' || String(p.closer_id) === String(purchaseCloserFilter);
                       return matchesSetter && matchesCloser;
                     }).length !== 1 ? 's' : ''} found
                   </p>
@@ -1322,8 +1370,8 @@ export default function StatsDashboard() {
                 </div>
                 {purchases
                   .filter(purchase => {
-                    const matchesSetter = purchaseSetterFilter === 'all' || purchase.setter_id === purchaseSetterFilter;
-                    const matchesCloser = purchaseCloserFilter === 'all' || purchase.closer_id === purchaseCloserFilter;
+                    const matchesSetter = purchaseSetterFilter === 'all' || String(purchase.setter_id) === String(purchaseSetterFilter);
+                    const matchesCloser = purchaseCloserFilter === 'all' || String(purchase.closer_id) === String(purchaseCloserFilter);
                     return matchesSetter && matchesCloser;
                   })
                   .map(lead => (
@@ -1785,6 +1833,9 @@ export default function StatsDashboard() {
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Show Up Rate
                     </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Purchases
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1829,6 +1880,9 @@ export default function StatsDashboard() {
                               {setter.showUpRate.toFixed(1)}%
                             </span>
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm font-semibold text-gray-900">{setter.totalPurchased || 0}</div>
                         </td>
                       </tr>
                     );

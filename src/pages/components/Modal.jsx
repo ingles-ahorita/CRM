@@ -177,18 +177,48 @@ const closerPayload = {
 
 const notePayload = mode === 'closer' ? closerPayload : setterPayload;
 
+// For outcome_log (closer mode), check if an outcome_log already exists for this call_id
+// to prevent duplicates
+let existingOutcomeLogId = null;
+if (mode === 'closer' && callId && !noteId) {
+  const { data: existingLog } = await supabase
+    .from('outcome_log')
+    .select('id')
+    .eq('call_id', callId)
+    .maybeSingle();
+  
+  if (existingLog) {
+    existingOutcomeLogId = existingLog.id;
+  }
+}
 
+// Use existing outcome_log ID if found, otherwise use noteId
+const idToUse = existingOutcomeLogId || noteId;
 
-if (noteId) {
-    // UPDATE: note exists
+if (idToUse) {
+    // UPDATE: note exists (either by noteId or existing outcome_log for call_id)
     const { error } = await supabase
       .from(table)
       .update(notePayload)
-      .eq('id', noteId);
+      .eq('id', idToUse);
     
     if (error) {
       console.error('Error updating note:', error);
       return;
+    }
+
+    // If we found an existing outcome_log that wasn't linked, link it now
+    if (mode === 'closer' && existingOutcomeLogId && !noteId) {
+      const { error: linkError } = await supabase
+        .from('calls')
+        .update({ closer_note_id: existingOutcomeLogId })
+        .eq('id', callId);
+      
+      if (linkError) {
+        console.error('Error linking outcome_log to call:', linkError);
+      } else {
+        lead.closer_note_id = existingOutcomeLogId;
+      }
     }
 
     // Update purchase status based on outcome (for closer mode only)

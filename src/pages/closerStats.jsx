@@ -418,32 +418,20 @@ async function fetchPurchases(closer = null, month = null) {
 
   // Parse month (format: YYYY-MM)
   const [year, monthNum] = month.split('-');
-  const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
-  const endDate = new Date(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999);
+  // Create dates at start and end of month in UTC to avoid timezone issues
+  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
+  
+  console.log('Date range filter:', {
+    month,
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString()
+  });
 
-  // First, get calls filtered by closer if specified
-  let callsQuery = supabase
-    .from('calls')
-    .select('id')
-    .not('id', 'is', null);
+  // Format dates for Supabase query (ensure they're in ISO format)
+  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
+  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
   
-  if (closer) {
-    callsQuery = callsQuery.eq('closer_id', closer);
-  }
-  
-  const { data: callsData, error: callsError } = await callsQuery;
-  
-  if (callsError) {
-    console.error('Error fetching calls:', callsError);
-    return [];
-  }
-  
-  const callIds = callsData?.map(c => c.id) || [];
-  
-  if (closer && callIds.length === 0) {
-    return [];
-  }
-
   // Now query outcome_log with proper filtering
   let query = supabase
     .from('outcome_log')
@@ -459,14 +447,14 @@ async function fetchPurchases(closer = null, month = null) {
         name
       )
     `)
-    .eq('outcome', 'yes')
-    .gte('purchase_date', startDate.toISOString())
-    .lte('purchase_date', endDate.toISOString())
+    .in('outcome', ['yes', 'refund'])
+    .gte('purchase_date', startDateISO)
+    .lte('purchase_date', endDateISO)
     .order('purchase_date', { ascending: false });
 
-  // Filter by call IDs if closer is specified
-  if (closer && callIds.length > 0) {
-    query = query.in('call_id', callIds);
+  // Filter by closer_id directly in the join if closer is specified
+  if (closer) {
+    query = query.eq('calls.closer_id', closer);
   }
 
   const { data: outcomeLogs, error } = await query;
@@ -476,22 +464,30 @@ async function fetchPurchases(closer = null, month = null) {
     return [];
   }
 
-  // Transform outcome_log entries to match the expected lead format
-  // Merge outcome_log data with calls data
-  // Filter out entries where calls is null or missing
-  // Also filter by closer_id if specified (double-check)
-  let purchases = (outcomeLogs || [])
-    .filter(outcomeLog => {
-      // Must have a valid call
-      if (!outcomeLog.calls || !outcomeLog.calls.id) return false;
-      
-      // Double-check closer_id if specified
-      if (closer && outcomeLog.calls.closer_id !== closer) {
-        return false;
-      }
-      
-      return true;
-    })
+  // First, deduplicate outcome_log entries by call_id BEFORE transforming
+  // If multiple outcome_log entries exist for the same call_id, keep only the most recent one
+  const outcomeLogsByCallId = new Map();
+  
+  (outcomeLogs || []).forEach(outcomeLog => {
+    // Must have a valid call
+    if (!outcomeLog.calls || !outcomeLog.calls.id) return;
+    
+    // Double-check closer_id if specified
+    if (closer && outcomeLog.calls.closer_id !== closer) {
+      return;
+    }
+    
+    const callId = outcomeLog.calls.id;
+    const existing = outcomeLogsByCallId.get(callId);
+    
+    // If no existing entry, or this outcome_log_id is newer, keep this one
+    if (!existing || outcomeLog.id > existing.id) {
+      outcomeLogsByCallId.set(callId, outcomeLog);
+    }
+  });
+  
+  // Now transform the deduplicated outcome_log entries
+  let purchases = Array.from(outcomeLogsByCallId.values())
     .map(outcomeLog => ({
       ...outcomeLog.calls,
       // Add outcome_log fields that might be useful
@@ -507,22 +503,24 @@ async function fetchPurchases(closer = null, month = null) {
       purchased: true
     }));
 
-  // Deduplicate by call_id - each call should only appear once in the purchase log
-  // If a call has multiple outcome_log entries, keep the most recent one (by outcome_log_id)
-  const seenCallIds = new Map();
-  
-  purchases.forEach(purchase => {
-    const callId = purchase.id; // This is the call_id from the calls table
-    const existing = seenCallIds.get(callId);
+  // Filter by date range and closer - ensure all purchases are within the selected month and belong to the correct closer
+  purchases = purchases.filter(purchase => {
+    // Must have purchase_date
+    if (!purchase.purchase_date) return false;
     
-    // If no existing entry, or this outcome_log_id is newer, keep this one
-    if (!existing || purchase.outcome_log_id > existing.outcome_log_id) {
-      seenCallIds.set(callId, purchase);
+    // Filter by closer_id if specified
+    if (closer && purchase.closer_id !== closer) {
+      return false;
     }
+    
+    // Filter by date range
+    const purchaseDate = new Date(purchase.purchase_date);
+    const purchaseDateOnly = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth(), purchaseDate.getDate());
+    const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    
+    return purchaseDateOnly >= startDateOnly && purchaseDateOnly <= endDateOnly;
   });
-  
-  // Convert map values back to array
-  purchases = Array.from(seenCallIds.values());
   
   // Sort by purchase_date descending
   purchases.sort((a, b) => {
@@ -643,12 +641,25 @@ function PurchaseItem({ lead, setterMap = {} }) {
       </div>
 
       {/* Offer Name */}
-      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
         {lead.offer_name || 'N/A'}
+        {lead.outcome === 'refund' && (
+          <span style={{
+            backgroundColor: '#ef4444',
+            color: 'white',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '10px',
+            fontWeight: '600',
+            textTransform: 'uppercase'
+          }}>
+            REFUND
+          </span>
+        )}
       </div>
 
       {/* Commission */}
-      <div style={{ fontSize: '13px', color: '#10b981', fontWeight: '600', textAlign: 'center' }}>
+      <div style={{ fontSize: '13px', color: lead.outcome === 'refund' ? '#ef4444' : '#10b981', fontWeight: '600', textAlign: 'center' }}>
         {lead.commission ? `$${lead.commission.toFixed(2)}` : 'N/A'}
       </div>
 
