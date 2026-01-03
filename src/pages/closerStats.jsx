@@ -421,6 +421,30 @@ async function fetchPurchases(closer = null, month = null) {
   const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
   const endDate = new Date(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999);
 
+  // First, get calls filtered by closer if specified
+  let callsQuery = supabase
+    .from('calls')
+    .select('id')
+    .not('id', 'is', null);
+  
+  if (closer) {
+    callsQuery = callsQuery.eq('closer_id', closer);
+  }
+  
+  const { data: callsData, error: callsError } = await callsQuery;
+  
+  if (callsError) {
+    console.error('Error fetching calls:', callsError);
+    return [];
+  }
+  
+  const callIds = callsData?.map(c => c.id) || [];
+  
+  if (closer && callIds.length === 0) {
+    return [];
+  }
+
+  // Now query outcome_log with proper filtering
   let query = supabase
     .from('outcome_log')
     .select(`
@@ -440,9 +464,9 @@ async function fetchPurchases(closer = null, month = null) {
     .lte('purchase_date', endDate.toISOString())
     .order('purchase_date', { ascending: false });
 
-  // Filter by closer via the calls relationship
-  if (closer) {
-    query = query.eq('calls.closer_id', closer);
+  // Filter by call IDs if closer is specified
+  if (closer && callIds.length > 0) {
+    query = query.in('call_id', callIds);
   }
 
   const { data: outcomeLogs, error } = await query;
@@ -455,22 +479,43 @@ async function fetchPurchases(closer = null, month = null) {
   // Transform outcome_log entries to match the expected lead format
   // Merge outcome_log data with calls data
   // Filter out entries where calls is null or missing
-  const purchases = (outcomeLogs || [])
-    .filter(outcomeLog => outcomeLog.calls && outcomeLog.calls.id)
+  // Also filter by closer_id if specified (double-check)
+  let purchases = (outcomeLogs || [])
+    .filter(outcomeLog => {
+      // Must have a valid call
+      if (!outcomeLog.calls || !outcomeLog.calls.id) return false;
+      
+      // Double-check closer_id if specified
+      if (closer && outcomeLog.calls.closer_id !== closer) {
+        return false;
+      }
+      
+      return true;
+    })
     .map(outcomeLog => ({
-    ...outcomeLog.calls,
-    // Add outcome_log fields that might be useful
-    outcome_log_id: outcomeLog.id,
-    purchase_date: outcomeLog.purchase_date,
-    outcome: outcomeLog.outcome,
-    commission: outcomeLog.commission,
-    offer_id: outcomeLog.offer_id,
-    offer_name: outcomeLog.offers?.name || null,
-    discount: outcomeLog.discount,
-    // Keep purchased_at for backward compatibility, but use purchase_date
-    purchased_at: outcomeLog.purchase_date,
-    purchased: true
-  }));
+      ...outcomeLog.calls,
+      // Add outcome_log fields that might be useful
+      outcome_log_id: outcomeLog.id,
+      purchase_date: outcomeLog.purchase_date,
+      outcome: outcomeLog.outcome,
+      commission: outcomeLog.commission,
+      offer_id: outcomeLog.offer_id,
+      offer_name: outcomeLog.offers?.name || null,
+      discount: outcomeLog.discount,
+      // Keep purchased_at for backward compatibility, but use purchase_date
+      purchased_at: outcomeLog.purchase_date,
+      purchased: true
+    }));
+
+  // Deduplicate by call_id (keep the most recent outcome_log entry per call)
+  const seenCallIds = new Set();
+  purchases = purchases.filter(purchase => {
+    if (seenCallIds.has(purchase.id)) {
+      return false;
+    }
+    seenCallIds.add(purchase.id);
+    return true;
+  });
 
   return purchases;
 }
