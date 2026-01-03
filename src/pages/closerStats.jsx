@@ -507,14 +507,28 @@ async function fetchPurchases(closer = null, month = null) {
       purchased: true
     }));
 
-  // Deduplicate by call_id (keep the most recent outcome_log entry per call)
-  const seenCallIds = new Set();
-  purchases = purchases.filter(purchase => {
-    if (seenCallIds.has(purchase.id)) {
-      return false;
+  // Deduplicate by call_id - each call should only appear once in the purchase log
+  // If a call has multiple outcome_log entries, keep the most recent one (by outcome_log_id)
+  const seenCallIds = new Map();
+  
+  purchases.forEach(purchase => {
+    const callId = purchase.id; // This is the call_id from the calls table
+    const existing = seenCallIds.get(callId);
+    
+    // If no existing entry, or this outcome_log_id is newer, keep this one
+    if (!existing || purchase.outcome_log_id > existing.outcome_log_id) {
+      seenCallIds.set(callId, purchase);
     }
-    seenCallIds.add(purchase.id);
-    return true;
+  });
+  
+  // Convert map values back to array
+  purchases = Array.from(seenCallIds.values());
+  
+  // Sort by purchase_date descending
+  purchases.sort((a, b) => {
+    const dateA = new Date(a.purchase_date);
+    const dateB = new Date(b.purchase_date);
+    return dateB - dateA;
   });
 
   return purchases;
