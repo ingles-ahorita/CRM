@@ -14,7 +14,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -38,6 +38,7 @@ async function loadHandlers() {
   currentSetterHandler = await loadHandler('./api/current-setter.js', 'current-setter');
   calendlyWebhookHandler = await loadHandler('./api/calendly-webhook.js', 'calendly-webhook');
   kajabiWebhookHandler = await loadHandler('./api/kajabi-webhook.js', 'kajabi-webhook');
+  rubenShiftToggleHandler = await loadHandler('./api/ruben-shift-toggle.js', 'ruben-shift-toggle');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -107,6 +108,11 @@ app.post('/api/calendly-webhook', async (req, res) => {
 app.post('/api/kajabi-webhook', async (req, res) => {
   if (!kajabiWebhookHandler) await loadHandlers();
   return adaptVercelHandler(kajabiWebhookHandler)(req, res);
+});
+
+app.post('/api/ruben-shift-toggle', async (req, res) => {
+  if (!rubenShiftToggleHandler) await loadHandlers();
+  return adaptVercelHandler(rubenShiftToggleHandler)(req, res);
 });
 
 // Catch-all for unregistered API routes
