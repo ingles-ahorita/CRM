@@ -11,9 +11,9 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
         const { action } = req.body;
         if (action === 'start') {
-            return await handleStartShift();
+            return await handleStartShift(res, req);
         } else if (action === 'end') {
-            return await handleEndShift();
+            return await handleEndShift(res, req);
         }
     }
     return res.status(405).json({ error: 'Method not allowed' });
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
 
 
-const handleStartShift = async () => {
+const handleStartShift = async (res, req) => {
     try {
       // Check if there's already an open shift
       const { data: existingShift } = await supabase
@@ -48,12 +48,23 @@ const handleStartShift = async () => {
       return res.status(200).json({ success: true, message: 'Shift started successfully!', shift: data });
     } catch (err) {
       console.error('Error starting shift:', err);
-      return res.status(500).json({ success: false, message: 'Failed to start shift. Please try again.' });
+      return res.status(500).json({ success: false, error: 'Failed to start shift. Please try again.' });
     }
   };
 
-  const handleEndShift = async (shiftId) => {
+  const handleEndShift = async (res, req) => {
     try {
+    const { data: currentShift, error: currentShiftError } = await supabase
+        .from('ruben')
+        .select('*')
+        .eq('status', 'open')
+        .order('start_time', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (currentShiftError) throw currentShiftError;
+      if (!currentShift) return res.status(400).json({ success: false, error: 'No active shift found.' });
+
       const { data, error } = await supabase
         .from('ruben')
         .update({
@@ -68,6 +79,6 @@ const handleStartShift = async () => {
       return res.status(200).json({ success: true, message: 'Shift ended successfully!', shift: data });
     } catch (err) {
       console.error('Error ending shift:', err);
-      return res.status(500).json({ success: false, message: 'Failed to end shift. Please try again.' });
+      return res.status(500).json({ success: false, error: 'Failed to end shift. Please try again.' });
     }
   };
