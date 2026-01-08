@@ -550,7 +550,7 @@ async function fetchMonthlyStats() {
     };
   }).filter(Boolean).reverse();
   
-  return monthsData.reverse();
+  return monthsData;
 }
 
 // Fetch daily stats for comparison
