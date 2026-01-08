@@ -467,14 +467,39 @@ async function fetchWeeklyStats() {
 async function fetchMonthlyStats() {
   const now = new Date();
   
-  // Build all month date ranges
+  // Determine start year and month (July = month 6, 0-indexed)
+  let startYear = now.getFullYear();
+  let startMonth = 6; // July (0-indexed, so 6 = July)
+  
+  // If current month is before July, start from July of previous year
+  if (now.getMonth() < 6) {
+    startYear = now.getFullYear() - 1;
+  }
+  
+  // Calculate number of months from July to current month
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  let totalMonths;
+  
+  if (currentYear === startYear) {
+    // Same year: from July (6) to current month
+    totalMonths = currentMonth - 6 + 1;
+  } else {
+    // Different year: from July of startYear to current month of currentYear
+    totalMonths = (12 - 6) + currentMonth + 1; // Months from July to Dec + months from Jan to current
+  }
+  
+  // Build all month date ranges from July to current month
   const monthRanges = [];
-  for (let monthOffset = 0; monthOffset < 4; monthOffset++) {
-    // Start of the month (monthOffset months ago)
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1, 0, 0, 0, 0);
+  for (let i = 0; i < totalMonths; i++) {
+    const year = startYear + Math.floor((startMonth + i) / 12);
+    const month = (startMonth + i) % 12;
+    
+    // Start of the month
+    const monthStart = new Date(year, month, 1, 0, 0, 0, 0);
     
     // End of the month (last millisecond of last day)
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 0, 23, 59, 59, 999);
+    const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
     
     const startDateStr = monthStart.toISOString();
     const endDateStr = monthEnd.toISOString();
@@ -1261,7 +1286,7 @@ export default function StatsDashboard() {
         {comparisonView === 'monthly' && (
           <ComparisonTable
             data={monthlyStats}
-            title="Monthly Comparison (Last 4 Months)"
+            title="Monthly Comparison (Since July)"
             description="Track monthly performance trends"
             periodLabel="Month"
             loading={loadingMonthly}
