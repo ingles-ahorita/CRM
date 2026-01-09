@@ -34,6 +34,9 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const error = await response.text();
+      if (error.includes('Event is already canceled')) {
+        return res.status(200).json({ success: true, data: { message: 'Event is already canceled' } });
+      }
       throw new Error(`Calendly API error: ${response.status} ${error}`);
     }
 
