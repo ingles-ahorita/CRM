@@ -602,6 +602,17 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                       }
                     } catch (calendlyError) {
                       console.error('Error calling Calendly cancellation API:', calendlyError);
+                      // Log error to the database
+                      try {
+                        await supabase.from('function_errors').insert({
+                          function_name: 'cancelCalendlyEvent',
+                          error_message: calendlyError.message || String(calendlyError),
+                          error_details: JSON.stringify(calendlyError.stack || calendlyError),
+                          source: 'LeadItem.jsx/cancel-calendly'
+                        });
+                      } catch (logError) {
+                        console.error('❌ Failed to log error to function_errors:', logError);
+                      }
                       alert('Could not cancel the Calendly event automatically. Please inform support (Ruben) to cancel this event manually.');
                       showToast('Call cancelled but Calendly cancellation failed (please inform support)', 'error');
                     }
