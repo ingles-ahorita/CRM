@@ -602,7 +602,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                       }
                     } catch (calendlyError) {
                       console.error('Error calling Calendly cancellation API:', calendlyError);
-                      showToast('Call cancelled but Calendly cancellation failed', 'error');
+                      alert('Could not cancel the Calendly event automatically. Please inform support (Ruben) to cancel this event manually.');
+                      showToast('Call cancelled but Calendly cancellation failed (please inform support)', 'error');
                     }
                   }
 
@@ -747,6 +748,17 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
         alert('Lead confirmed and sent to closer');
       } catch (error) {
         console.error('❌ Error creating ManyChat user:', error);
+        // Log the error in the function_errors table
+        try {
+          await supabase.from('function_errors').insert({
+            function_name: 'sendToCloserMC',
+            error_message: error.message || String(error),
+            error_details: JSON.stringify(error.stack || error),
+            source: 'LeadItem.jsx/updateStatus'
+          });
+        } catch (logError) {
+          console.error('❌ Failed to log error to function_errors:', logError);
+        }
         // Don't block the update if user creation fails
       }
     }
