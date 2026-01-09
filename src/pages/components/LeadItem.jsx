@@ -1025,6 +1025,32 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, sho
         Send to ManyChat
       </button>
 
+      {lead?.reschedule_link && (
+        <button 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            if (lead.reschedule_link) {
+              window.open(lead.reschedule_link, '_blank', 'noopener,noreferrer');
+            }
+            setMenuOpen(false); 
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: '#6b7280',
+            fontWeight: '300',
+            fontSize: '14px',
+            outline: 'none'
+          }}
+        >
+          Reschedule Call
+        </button>
+      )}
+
       {(mode === 'admin' || mode === 'full') && (
         <button 
           onClick={(e) => { 
