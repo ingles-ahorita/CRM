@@ -585,23 +585,41 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                         body: JSON.stringify({ eventUri: lead.calendly_id })
                       });
 
-                      // If Calendly cancellation succeeded, set calls.cancelled to true in Supabase
                       if (response.ok) {
                         // Update Supabase "calls" table: set cancelled = true for this call
                         await supabase.from('calls').update({ cancelled: true }).eq('id', lead.id);
-                        showToast('Call cancelled successfully!', 'success');
-                      }
-
-                      if (!response.ok) {
-                        const error = await response.json();
-                        console.error('Error canceling Calendly event:', error);
-                        showToast('Call cancelled but Calendly cancellation failed', 'error');
-                      } else {
                         console.log('Calendly event cancelled successfully');
                         showToast('Call and Calendly event cancelled', 'success');
+                      } else {
+                        // Handle HTTP error response
+                        let errorMessage = 'Unknown error';
+                        try {
+                          const error = await response.json();
+                          errorMessage = error.error || error.message || JSON.stringify(error);
+                          console.error('Error canceling Calendly event:', error);
+                        } catch (parseError) {
+                          console.error('Error parsing error response:', parseError);
+                          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                        }
+                        
+                        // Log error to the database
+                        try {
+                          await supabase.from('function_errors').insert({
+                            function_name: 'cancelCalendlyEvent',
+                            error_message: errorMessage,
+                            error_details: JSON.stringify({ status: response.status, statusText: response.statusText }),
+                            source: 'LeadItem.jsx/cancel-calendly'
+                          });
+                        } catch (logError) {
+                          console.error('❌ Failed to log error to function_errors:', logError);
+                        }
+                        
+                        showToast('Call cancelled but Calendly cancellation failed', 'error');
                       }
                     } catch (calendlyError) {
+                      // Handle network errors or other exceptions
                       console.error('Error calling Calendly cancellation API:', calendlyError);
+                      
                       // Log error to the database
                       try {
                         await supabase.from('function_errors').insert({
@@ -613,7 +631,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                       } catch (logError) {
                         console.error('❌ Failed to log error to function_errors:', logError);
                       }
-                      alert('Could not cancel the Calendly event automatically. Please inform support (Ruben) to cancel this event manually.');
+                      
                       showToast('Call cancelled but Calendly cancellation failed (please inform support)', 'error');
                     }
                   }
