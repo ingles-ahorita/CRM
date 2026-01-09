@@ -591,6 +591,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                         console.log('Calendly event cancelled successfully');
                         showToast('Call and Calendly event cancelled', 'success');
                       } else {
+                        alert('Could not cancel the Calendly event automatically. Please inform support (Ruben) to cancel this event manually.');
                         // Handle HTTP error response
                         let errorMessage = 'Unknown error';
                         try {
