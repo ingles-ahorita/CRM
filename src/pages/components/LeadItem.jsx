@@ -590,7 +590,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                         await supabase.from('calls').update({ cancelled: true }).eq('id', lead.id);
                         console.log('Calendly event cancelled successfully');
                         showToast('Call and Calendly event cancelled', 'success');
-                        if (response.data.message === 'Event is already canceled') {
+                        const data = await response.json();
+                        if (data.data.message === 'Event is already canceled') {
                           showToast('Calendly event is already canceled', 'info');
                         }
                       } else {
