@@ -45,21 +45,64 @@ export function useRealtimeLeads(dataState, setDataState, activeTab = 'all', set
     };
   }, [activeTab, setterId, closerId]);
 
-  const handleInsert = (newLead) => {
+  const handleInsert = async (newLead) => {
     // Check if the new lead should be included based on current filters
     if (shouldIncludeLead(newLead)) {
-      setDataState(prevState => ({
-        ...prevState,
-        leads: [newLead, ...prevState.leads]
-      }));
+      // Fetch the full lead with relations since real-time insert doesn't include them
+      try {
+        const { data: fullLead, error } = await supabase
+          .from('calls')
+          .select(`
+            *,
+            closers (id, name, mc_api_key),
+            setters (id, name),
+            leads (phone, name, source, medium, mc_id)
+          `)
+          .eq('id', newLead.id)
+          .single();
+        
+        if (error || !fullLead) {
+          console.error('Error fetching full lead data for insert:', error);
+          // Fallback: add the lead without relations (better than nothing)
+          setDataState(prevState => ({
+            ...prevState,
+            leads: [newLead, ...prevState.leads]
+          }));
+          return;
+        }
+        
+        // Add the lead with full relations
+        setDataState(prevState => ({
+          ...prevState,
+          leads: [fullLead, ...prevState.leads]
+        }));
+      } catch (fetchError) {
+        console.error('Error in handleInsert:', fetchError);
+        // Fallback: add the lead without relations
+        setDataState(prevState => ({
+          ...prevState,
+          leads: [newLead, ...prevState.leads]
+        }));
+      }
     }
   };
 
   const handleUpdate = (oldLead, newLead) => {
     setDataState(prevState => {
-      const updatedLeads = prevState.leads.map(lead => 
-        lead.id === newLead.id ? { ...lead, ...newLead } : lead
-      );
+      const updatedLeads = prevState.leads.map(lead => {
+        if (lead.id === newLead.id) {
+          // Preserve relations - real-time updates from 'calls' table don't include relations
+          return { 
+            ...lead, 
+            ...newLead,
+            // Keep existing relations (they don't change often)
+            closers: lead.closers,
+            setters: lead.setters,
+            leads: lead.leads
+          };
+        }
+        return lead;
+      });
 
       // Check if the lead should still be included after update
       const shouldInclude = shouldIncludeLead(newLead);
