@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { Calendar, Clock, CheckCircle, Circle, Save, X, Edit, Coffee, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, Circle, Save, X, Edit, Coffee, Plus, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 
 export default function RubenShiftsView() {
   const [allShifts, setAllShifts] = useState([]);
@@ -302,6 +302,30 @@ export default function RubenShiftsView() {
     } catch (err) {
       console.error('Error saving shift:', err);
       alert('Failed to save shift. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteShift = async (shiftId) => {
+    if (!window.confirm('Are you sure you want to delete this shift? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const { error } = await supabase
+        .from('ruben')
+        .delete()
+        .eq('id', shiftId);
+
+      if (error) throw error;
+
+      // Update local state
+      setAllShifts(allShifts.filter(s => s.id !== shiftId));
+    } catch (err) {
+      console.error('Error deleting shift:', err);
+      alert('Failed to delete shift. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -885,25 +909,46 @@ export default function RubenShiftsView() {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleEditShift(shift)}
-                            style={{
-                              padding: '6px 12px',
-                              backgroundColor: '#3b82f6',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '14px',
-                              fontWeight: '500',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}
-                          >
-                            <Edit size={14} />
-                            Edit
-                          </button>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={() => handleEditShift(shift)}
+                              style={{
+                                padding: '6px 12px',
+                                backgroundColor: '#3b82f6',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '14px',
+                                fontWeight: '500',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              <Edit size={14} />
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteShift(shift.id)}
+                              disabled={saving}
+                              style={{
+                                padding: '4px 6px',
+                                backgroundColor: saving ? '#9ca3af' : '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                cursor: saving ? 'not-allowed' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              title="Delete shift"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

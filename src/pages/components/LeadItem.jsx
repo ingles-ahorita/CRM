@@ -134,7 +134,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             return (
               <>
                 <span style={{ fontSize: '16px', lineHeight: '1.5' }}>{isAds ? '💰' : '🌱'}</span>
-                {callCampaign === 'dm-setter' && (
+                {(callCampaign === 'dm-setter' || callCampaign === 'ai-setting') && (
                   <span style={{ fontSize: '16px', lineHeight: '1.5' }}>💬</span>
                 )}
                 {lead.is_reschedule && (
@@ -1235,7 +1235,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
           return (
             <>
               <span style={{ fontSize: '14px', lineHeight: '1.2' }}>{isAds ? '💰' : '🌱'}</span>
-              {callCampaign === 'dm-setter' && (
+              {(callCampaign === 'dm-setter' || callCampaign === 'ai-setting') && (
                 <span style={{ fontSize: '14px', lineHeight: '1.2' }}>💬</span>
               )}
               {lead.is_reschedule && (
