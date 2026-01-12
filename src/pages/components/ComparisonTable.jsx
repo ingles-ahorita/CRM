@@ -56,6 +56,19 @@ const ComparisonTable = ({
                 Pick Up Rate
               </th>
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Total Pick Ups
+              </th>
+              {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
+                <>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Organic Pick Up Rate
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ads Pick Up Rate
+                  </th>
+                </>
+              )}
+              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Total Bookings
               </th>
               {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
@@ -88,9 +101,23 @@ const ComparisonTable = ({
                 Show Up Rate
               </th>
               {(periodLabel !== 'Day') && (
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Conversion Rate
-              </th> )}
+                <>
+                  {periodLabel === 'Week' ? (
+                    <>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Organic Conversion Rate
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Ads Conversion Rate
+                      </th>
+                    </>
+                  ) : (
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Conversion Rate
+                    </th>
+                  )}
+                </>
+              )}
               <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Purchased
               </th>
@@ -137,24 +164,49 @@ const ComparisonTable = ({
                   )}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
-                      {item.pickUpRate.toFixed(1)}%
+                      {item.pickUpRate?.toFixed(1) || (item.bookingsMadeinPeriod > 0 
+                        ? ((item.totalPickedUpFromBookings || 0) / item.bookingsMadeinPeriod * 100).toFixed(1)
+                        : '0.0')}%
                     </div>
                   </td>
-                   <td className="px-6 py-4 whitespace-nowrap text-center">
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm text-gray-900">
-                      {item.bookinsMadeinPeriod}
+                      {item.totalPickedUpFromBookings || 0}
                     </div>
                   </td>
                   {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
                     <>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-green-600">
-                          {item.bookingsBySource?.organic || 0}
+                          {item.sourceStats?.organic?.pickUpRate?.toFixed(1) || '0.0'}%
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-blue-600">
-                          {item.bookingsBySource?.ads || 0}
+                          {item.sourceStats?.ads?.pickUpRate?.toFixed(1) || '0.0'}%
+                        </div>
+                      </td>
+                    </>
+                  )}
+                   <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <div className="text-sm text-gray-900">
+                      {item.bookingsMadeinPeriod}
+                    </div>
+                  </td>
+                  {(periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') && (
+                    <>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-green-600">
+                          {typeof item.bookingsBySource?.organic === 'object' 
+                            ? item.bookingsBySource.organic.total || 0
+                            : item.bookingsBySource?.organic || 0}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-blue-600">
+                          {typeof item.bookingsBySource?.ads === 'object'
+                            ? item.bookingsBySource.ads.total || 0
+                            : item.bookingsBySource?.ads || 0}
                         </div>
                       </td>
                     </>
@@ -189,11 +241,29 @@ const ComparisonTable = ({
                     </div>
                   </td>
                   {(periodLabel !== 'Day') && (
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.conversionRateShowedUp.toFixed(1)}%
-                    </div>
-                  </td>)}
+                    <>
+                      {periodLabel === 'Week' ? (
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="text-sm text-green-600">
+                              {item.organicConversionRate?.toFixed(1) || '0.0'}%
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="text-sm text-blue-600">
+                              {item.adsConversionRate?.toFixed(1) || '0.0'}%
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {item.conversionRateShowedUp.toFixed(1)}%
+                          </div>
+                        </td>
+                      )}
+                    </>
+                  )}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <div className="text-sm font-semibold text-green-600">
                       {item.totalPurchased}

@@ -53,8 +53,12 @@ async function fetchStatsData(startDate, endDate) {
   const { data: bookingsData, error: bookingsError } = await supabase
     .from('calls')
     .select(`
+      picked_up,
       book_date,
-      source_type
+      source_type,
+      phone,
+      setters (id, name),
+      leads (phone, medium)
     `)
     .gte('book_date', startDate)
     .lte('book_date', endDate);
@@ -64,26 +68,28 @@ async function fetchStatsData(startDate, endDate) {
     return null;
   }
 
-  const bookinsMadeinPeriod = bookingsData?.length || 0;
+  const bookingsMadeinPeriod = bookingsData?.length || 0;
+  const totalPickedUpFromBookings = bookingsData?.filter(b => b.picked_up === true).length || 0;
   console.log('bookingsData', bookingsData);
   
   // Calculate bookings by source
   const bookingsBySource = {
-    organic: 0,
-    ads: 0
+    organic: { total: 0, pickedUp: 0 },
+    ads: { total: 0, pickedUp: 0 }
   };
   
   bookingsData?.forEach(booking => {
     const source = booking.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
-    if (isAds) {
-      bookingsBySource.ads++;
-    } else {
-      bookingsBySource.organic++;
+    const sourceKey = isAds ? 'ads' : 'organic';
+    
+    bookingsBySource[sourceKey].total++;
+    if (booking.picked_up === true) {
+      bookingsBySource[sourceKey].pickedUp++;
     }
   });
 
-  console.log('bookinsMadeinPeriod', bookinsMadeinPeriod);
+  console.log('bookingsMadeinPeriod', bookingsMadeinPeriod);
 
   // Use booked calls for main analysis
   const calls = bookedCalls;
@@ -143,6 +149,32 @@ const totalPurchased = purchasedCalls.length;
 
   // Group by setter - calculate pick up rate and show up rate
   const setterStats = {};
+  
+  // First, track bookings made in period by setter
+  bookingsData?.forEach(booking => {
+    if (booking.setters) {
+      const setterId = booking.setters.id;
+      if (!setterStats[setterId]) {
+        setterStats[setterId] = {
+          id: setterId,
+          name: booking.setters.name,
+          totalBooked: 0,
+          totalPickedUp: 0,
+          bookingsMadeInPeriod: 0,
+          pickedUpFromBookings: 0,
+          totalShowedUp: 0,
+          totalConfirmed: 0,
+          totalPurchased: 0
+        };
+      }
+      setterStats[setterId].bookingsMadeInPeriod++;
+      if (booking.picked_up === true) {
+        setterStats[setterId].pickedUpFromBookings++;
+      }
+    }
+  });
+  
+  // Then, track calls for show up and confirmed metrics
   filteredCalls.forEach(call => {
     if (call.setters) {
       const setterId = call.setters.id;
@@ -152,6 +184,8 @@ const totalPurchased = purchasedCalls.length;
           name: call.setters.name,
           totalBooked: 0,
           totalPickedUp: 0,
+          bookingsMadeInPeriod: 0,
+          pickedUpFromBookings: 0,
           totalShowedUp: 0,
           totalConfirmed: 0,
           totalPurchased: 0
@@ -186,7 +220,9 @@ const totalPurchased = purchasedCalls.length;
 
   // Calculate rates for each setter
   Object.values(setterStats).forEach(setter => {
-    setter.pickUpRate = setter.totalBooked > 0 ? (setter.totalPickedUp / setter.totalBooked) * 100 : 0;
+    setter.pickUpRate = setter.bookingsMadeInPeriod > 0 
+      ? (setter.pickedUpFromBookings / setter.bookingsMadeInPeriod) * 100 
+      : 0;
     setter.showUpRate = setter.totalConfirmed > 0 ? (setter.totalShowedUp / setter.totalConfirmed) * 100 : 0;
   });
 
@@ -195,7 +231,34 @@ const totalPurchased = purchasedCalls.length;
   console.log('Booked calls for country analysis:', filteredCalls.length);
   console.log('Purchased calls for country analysis:', purchasedCalls.length);
   
-  // Process booked calls for activity metrics (booked, picked up, showed up, confirmed)
+  // First, track bookings made in period by country
+  bookingsData?.forEach(booking => {
+    const phoneNumber = booking.phone;
+    const country = getCountryFromPhone(phoneNumber);
+    
+    if (!countryStats[country]) {
+      countryStats[country] = {
+        country: country,
+        totalBooked: 0,
+        totalPickedUp: 0,
+        bookingsMadeInPeriod: 0,
+        pickedUpFromBookings: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    
+    countryStats[country].bookingsMadeInPeriod++;
+    if (booking.picked_up === true) {
+      countryStats[country].pickedUpFromBookings++;
+    }
+  });
+  
+  // Process booked calls for activity metrics (showed up, confirmed)
   filteredCalls.forEach(call => {
     const phoneNumber = call.phone;
     const country = getCountryFromPhone(phoneNumber);
@@ -205,6 +268,8 @@ const totalPurchased = purchasedCalls.length;
         country: country,
         totalBooked: 0,
         totalPickedUp: 0,
+        bookingsMadeInPeriod: 0,
+        pickedUpFromBookings: 0,
         totalShowedUp: 0,
         totalConfirmed: 0,
         totalPurchased: 0,
@@ -246,7 +311,9 @@ const totalPurchased = purchasedCalls.length;
 
   // Calculate rates for each country
   Object.values(countryStats).forEach(country => {
-    country.pickUpRate = country.totalBooked > 0 ? (country.totalPickedUp / country.totalBooked) * 100 : 0;
+    country.pickUpRate = country.bookingsMadeInPeriod > 0 
+      ? (country.pickedUpFromBookings / country.bookingsMadeInPeriod) * 100 
+      : 0;
     country.showUpRate = country.totalBooked > 0 ? (country.totalShowedUp / country.totalBooked) * 100 : 0;
     country.conversionRate = country.totalShowedUp > 0 ? (country.totalPurchased / country.totalShowedUp) * 100 : 0;
   });
@@ -261,6 +328,8 @@ const totalPurchased = purchasedCalls.length;
     ads: {
       totalBooked: 0,
       totalPickedUp: 0,
+      bookingsMadeInPeriod: 0,
+      pickedUpFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -269,6 +338,8 @@ const totalPurchased = purchasedCalls.length;
     organic: {
       totalBooked: 0,
       totalPickedUp: 0,
+      bookingsMadeInPeriod: 0,
+      pickedUpFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -276,7 +347,13 @@ const totalPurchased = purchasedCalls.length;
     }
   };
 
-  // Process booked calls for source metrics
+  // Populate sourceStats with bookings made in period
+  sourceStats.ads.bookingsMadeInPeriod = bookingsBySource.ads.total;
+  sourceStats.ads.pickedUpFromBookings = bookingsBySource.ads.pickedUp;
+  sourceStats.organic.bookingsMadeInPeriod = bookingsBySource.organic.total;
+  sourceStats.organic.pickedUpFromBookings = bookingsBySource.organic.pickedUp;
+
+  // Process booked calls for source metrics (for show up, confirmed, rescheduled)
   filteredCalls.forEach(call => {
     const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
@@ -300,7 +377,9 @@ const totalPurchased = purchasedCalls.length;
 
   // Calculate rates for each source
   Object.values(sourceStats).forEach(source => {
-    source.pickUpRate = source.totalBooked > 0 ? (source.totalPickedUp / source.totalBooked) * 100 : 0;
+    source.pickUpRate = source.bookingsMadeInPeriod > 0 
+      ? (source.pickedUpFromBookings / source.bookingsMadeInPeriod) * 100 
+      : 0;
     source.showUpRate = source.totalBooked > 0 ? (source.totalShowedUp / source.totalConfirmed) * 100 : 0;
     source.conversionRate = source.totalShowedUp > 0 ? (source.totalPurchased / source.totalShowedUp) * 100 : 0;
   });
@@ -310,6 +389,8 @@ const totalPurchased = purchasedCalls.length;
     tiktok: {
       totalBooked: 0,
       totalPickedUp: 0,
+      bookingsMadeInPeriod: 0,
+      pickedUpFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -318,6 +399,8 @@ const totalPurchased = purchasedCalls.length;
     instagram: {
       totalBooked: 0,
       totalPickedUp: 0,
+      bookingsMadeInPeriod: 0,
+      pickedUpFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -326,6 +409,8 @@ const totalPurchased = purchasedCalls.length;
     other: {
       totalBooked: 0,
       totalPickedUp: 0,
+      bookingsMadeInPeriod: 0,
+      pickedUpFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -333,7 +418,29 @@ const totalPurchased = purchasedCalls.length;
     }
   };
 
-  // Process only ads calls for medium metrics
+  // First, track bookings made in period for ads by medium
+  bookingsData?.forEach(booking => {
+    const source = booking.source_type || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    
+    if (isAds) {
+      const medium = booking.leads?.medium?.toLowerCase();
+      let mediumKey = 'other';
+      
+      if (medium === 'tiktok') {
+        mediumKey = 'tiktok';
+      } else if (medium === 'instagram') {
+        mediumKey = 'instagram';
+      }
+      
+      mediumStats[mediumKey].bookingsMadeInPeriod++;
+      if (booking.picked_up === true) {
+        mediumStats[mediumKey].pickedUpFromBookings++;
+      }
+    }
+  });
+
+  // Process only ads calls for medium metrics (for show up, confirmed, rescheduled)
   filteredCalls.forEach(call => {
     const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
@@ -377,16 +484,19 @@ const totalPurchased = purchasedCalls.length;
 
   // Calculate rates for each medium
   Object.values(mediumStats).forEach(medium => {
-    medium.pickUpRate = medium.totalBooked > 0 ? (medium.totalPickedUp / medium.totalBooked) * 100 : 0;
+    medium.pickUpRate = medium.bookingsMadeInPeriod > 0 
+      ? (medium.pickedUpFromBookings / medium.bookingsMadeInPeriod) * 100 
+      : 0;
     medium.showUpRate = medium.totalBooked > 0 ? (medium.totalShowedUp / medium.totalConfirmed) * 100 : 0;
     medium.conversionRate = medium.totalShowedUp > 0 ? (medium.totalPurchased / medium.totalShowedUp) * 100 : 0;
   });
 
   return {
-    bookinsMadeinPeriod,
+    bookingsMadeinPeriod,
     bookingsBySource,
     totalBooked,
     totalPickedUp,
+    totalPickedUpFromBookings,
     totalShowedUp,
     totalConfirmed,
     totalPurchased,
@@ -440,11 +550,15 @@ async function fetchWeeklyStats() {
     const { startDateStr, endDateStr } = weekRanges[i];
     
     if (weekStats) {
-      const pickUpRate = weekStats.totalBooked > 0 ? (weekStats.totalPickedUp / weekStats.totalBooked) * 100 : 0;
+      const pickUpRate = weekStats.bookingsMadeinPeriod > 0 ? (weekStats.totalPickedUpFromBookings / weekStats.bookingsMadeinPeriod) * 100 : 0;
       const showUpRateConfirmed = weekStats.totalConfirmed > 0 ? (weekStats.totalShowedUp / weekStats.totalConfirmed) * 100 : 0;
       const showUpRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalShowedUp / weekStats.totalBooked) * 100 : 0;
       const conversionRateShowedUp = weekStats.totalShowedUp > 0 ? (weekStats.totalPurchased / weekStats.totalShowedUp) * 100 : 0;
       const conversionRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalPurchased / weekStats.totalBooked) * 100 : 0;
+      
+      // Extract conversion rates for organic and ads
+      const organicConversionRate = weekStats.sourceStats?.organic?.conversionRate || 0;
+      const adsConversionRate = weekStats.sourceStats?.ads?.conversionRate || 0;
       
       weeksData.unshift({
         weekStart: startDateStr,
@@ -455,7 +569,9 @@ async function fetchWeeklyStats() {
         showUpRateConfirmed,
         showUpRateBooked,
         conversionRateShowedUp,
-        conversionRateBooked
+        conversionRateBooked,
+        organicConversionRate,
+        adsConversionRate
       });
     }
   }
@@ -521,8 +637,8 @@ async function fetchMonthlyStats() {
     
     if (!monthStats) return null;
     
-    const pickUpRate = monthStats.totalBooked > 0 
-      ? (monthStats.totalPickedUp / monthStats.totalBooked) * 100 
+    const pickUpRate = monthStats.bookingsMadeinPeriod > 0 
+      ? (monthStats.totalPickedUpFromBookings / monthStats.bookingsMadeinPeriod) * 100 
       : 0;
     const showUpRateConfirmed = monthStats.totalConfirmed > 0 
       ? (monthStats.totalShowedUp / monthStats.totalConfirmed) * 100 
@@ -589,7 +705,7 @@ async function fetchDailyStats(numDays = 30) {
     const { startDateStr, endDateStr, dayLabel } = dayRanges[i];
     
     if (dayStats) {
-      const pickUpRate = dayStats.totalBooked > 0 ? (dayStats.totalPickedUp / dayStats.totalBooked) * 100 : 0;
+      const pickUpRate = dayStats.bookingsMadeinPeriod > 0 ? (dayStats.totalPickedUpFromBookings / dayStats.bookingsMadeinPeriod) * 100 : 0;
       const showUpRateConfirmed = dayStats.totalConfirmed > 0 ? (dayStats.totalShowedUp / dayStats.totalConfirmed) * 100 : 0;
       const showUpRateBooked = dayStats.totalBooked > 0 ? (dayStats.totalShowedUp / dayStats.totalBooked) * 100 : 0;
       const conversionRateShowedUp = dayStats.totalShowedUp > 0 ? (dayStats.totalPurchased / dayStats.totalShowedUp) * 100 : 0;
@@ -1084,7 +1200,7 @@ export default function StatsDashboard() {
 
   // Calculate metrics only if we have stats and not in comparison view
   let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, conversionRateShowedUp = 0, conversionRateBooked = 0;
-  let totalBooked, totalPickedUp, totalShowedUp, totalConfirmed, totalPurchased, totalRescheduled;
+  let totalBooked, totalPickedUp, totalPickedUpFromBookings, totalShowedUp, totalConfirmed, totalPurchased, totalRescheduled, totalBookedInPeriod;
   
   if (stats && comparisonView === 'none') {
     // Filter by source if not 'all'
@@ -1096,19 +1212,23 @@ export default function StatsDashboard() {
       conversionRateShowedUp = filtered.conversionRate || 0;
       conversionRateBooked = filtered.totalBooked > 0 ? (filtered.totalPurchased / filtered.totalBooked) * 100 : 0;
       totalBooked = filtered.totalBooked;
+      totalBookedInPeriod = filtered.bookingsMadeInPeriod;
       totalPickedUp = filtered.totalPickedUp;
+      totalPickedUpFromBookings = filtered.pickedUpFromBookings;
       totalShowedUp = filtered.totalShowedUp;
       totalConfirmed = filtered.totalConfirmed;
       totalPurchased = filtered.totalPurchased;
       totalRescheduled = 0; // Not tracked by source
     } else {
-      pickUpRate = stats.totalBooked > 0 ? (stats.totalPickedUp / stats.totalBooked) * 100 : 0;
+      pickUpRate = stats.bookingsMadeinPeriod > 0 ? (stats.totalPickedUpFromBookings / stats.bookingsMadeinPeriod) * 100 : 0;
       showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
       showUpRateBooked = stats.totalBooked > 0 ? (stats.totalShowedUp / stats.totalBooked) * 100 : 0;
       conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
       conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
       totalBooked = stats.totalBooked;
+      totalBookedInPeriod = stats.bookingsMadeinPeriod;
       totalPickedUp = stats.totalPickedUp;
+      totalPickedUpFromBookings = stats.totalPickedUpFromBookings;
       totalShowedUp = stats.totalShowedUp;
       totalConfirmed = stats.totalConfirmed;
       totalPurchased = stats.totalPurchased;
@@ -1241,7 +1361,7 @@ export default function StatsDashboard() {
             <div className="flex gap-6 items-end">
               <div className="flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start Date: 
+                    Start Date: {startDate}
                   </label>
                 <input
                   type="date"
@@ -1252,7 +1372,7 @@ export default function StatsDashboard() {
               </div>
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  End Date:
+                  End Date: {endDate}
                 </label>
                 <input
                   type="date"
@@ -1420,13 +1540,13 @@ export default function StatsDashboard() {
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500">Pick Up Rate</h3>
-              <span className="text-xs text-gray-400">Picked Up / Booked</span>
+              <span className="text-xs text-gray-400">Picked Up / Booked in Period</span>
             </div>
             <div className="text-3xl font-bold text-blue-600">
               {pickUpRate.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {totalPickedUp} / {totalBooked} calls
+              {totalPickedUpFromBookings || 0} / {totalBookedInPeriod || 0} bookings
             </div>
             {sourceFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
@@ -1439,8 +1559,8 @@ export default function StatsDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.sourceStats.ads.totalPickedUp}/{stats.sourceStats.ads.totalBooked}</div>
-                  <div>{stats.sourceStats.organic.totalPickedUp}/{stats.sourceStats.organic.totalBooked}</div>
+                  <div>{stats.sourceStats.ads.pickedUpFromBookings}/{stats.sourceStats.ads.bookingsMadeInPeriod}</div>
+                  <div>{stats.sourceStats.organic.pickedUpFromBookings}/{stats.sourceStats.organic.bookingsMadeInPeriod}</div>
                 </div>
               </div>
             )}
@@ -1458,9 +1578,9 @@ export default function StatsDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.mediumStats.tiktok.totalPickedUp}/{stats.mediumStats.tiktok.totalBooked}</div>
-                  <div>{stats.mediumStats.instagram.totalPickedUp}/{stats.mediumStats.instagram.totalBooked}</div>
-                  <div>{stats.mediumStats.other.totalPickedUp}/{stats.mediumStats.other.totalBooked}</div>
+                  <div>{stats.mediumStats.tiktok.pickedUpFromBookings}/{stats.mediumStats.tiktok.bookingsMadeInPeriod}</div>
+                  <div>{stats.mediumStats.instagram.pickedUpFromBookings}/{stats.mediumStats.instagram.bookingsMadeInPeriod}</div>
+                  <div>{stats.mediumStats.other.pickedUpFromBookings}/{stats.mediumStats.other.bookingsMadeInPeriod}</div>
                 </div>
               </div>
             )}
