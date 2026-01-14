@@ -8,6 +8,7 @@ export default async function handler(req, res) {
   }
 
   const { event, payload, download_token } = req.body;
+  console.log('req.body', req.body);
 
   // Handle Zoom webhook validation
   if (event === 'endpoint.url_validation') {
