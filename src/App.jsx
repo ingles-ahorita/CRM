@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import LeadsPage from './pages/LeadsPage';
 import ManagementPage from './pages/ManagementPage';
 import LeadDetailPage from './pages/LeadDetailPage';
@@ -16,9 +17,11 @@ import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
 import UTMStatsDashboard from './pages/utmStats';
 import OffersPage from './pages/OffersPage';
+import UsersPage from './pages/UsersPage';
+import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
-export default function App() {
+function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<EmailLogin />} />   
@@ -66,7 +69,29 @@ export default function App() {
           <OffersPage />
         </ProtectedRoute>
       } />
+      <Route path="/users" element={
+        <ProtectedRoute>
+          <UsersPage />
+        </ProtectedRoute>
+      } />
 
     </Routes>
+  );
+}
+
+export default function App() {
+  const location = useLocation();
+  const isLoginPage = location.pathname === '/' || location.pathname === '/login';
+  
+  // Don't show sidebar on login pages
+  if (isLoginPage) {
+    return <AppRoutes />;
+  }
+  
+  // Wrap all other routes with AdminSidebar
+  return (
+    <AdminSidebar>
+      <AppRoutes />
+    </AdminSidebar>
   );
 }
