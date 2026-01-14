@@ -38,7 +38,20 @@ export default async function handler(req, res) {
     });
   }
 
-  // Handle actual webhook events
+  // Handle phone.recording_completed event
+  if (event === 'phone.recording_completed') {
+    const downloadUrl = payload?.object?.recordings?.download_url;
+    
+    console.log('Phone recording completed - Download URL:', downloadUrl);
+    console.log('Full payload:', JSON.stringify(payload, null, 2));
+
+    return res.status(200).json({ 
+      message: 'Recording completed event processed',
+      received: true
+    });
+  }
+
+  // Handle other webhook events
   console.log('Zoom webhook received:', { event, payload });
 
   return res.status(200).json({ 
