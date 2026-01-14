@@ -44,6 +44,7 @@ export default async function handler(req, res) {
     const downloadUrl = payload?.object?.recordings?.[0]?.download_url;
     
     console.log('Phone recording completed - Download URL:', downloadUrl);
+    console.log('Full payload:', JSON.stringify(payload, null, 2));
 
     return res.status(200).json({ 
       message: 'Recording completed event processed',
