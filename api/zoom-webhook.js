@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { event, payload } = req.body;
+  const { event, payload, download_token } = req.body;
 
   // Handle Zoom webhook validation
   if (event === 'endpoint.url_validation') {
@@ -44,7 +44,8 @@ export default async function handler(req, res) {
     const downloadUrl = payload?.object?.recordings?.[0]?.download_url;
     
     console.log('Phone recording completed - Download URL:', downloadUrl);
-    console.log('Full payload:', JSON.stringify(payload, null, 2));
+    console.log('Download token:', download_token);
+
 
     return res.status(200).json({ 
       message: 'Recording completed event processed',
@@ -60,3 +61,5 @@ export default async function handler(req, res) {
     received: true
   });
 }
+
+
