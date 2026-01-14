@@ -1,5 +1,49 @@
 import crypto from 'crypto';
 
+/**
+ * Get Zoom OAuth access token using client credentials
+ * @returns {Promise<string>} Access token
+ */
+async function getZoomAccessToken() {
+  const zoomAccountId = process.env.ZOOM_ACCOUNT_ID;
+  const zoomClientId = process.env.ZOOM_CLIENT_ID;
+  const zoomClientSecret = process.env.ZOOM_CLIENT_SECRET;
+
+  if (!zoomAccountId || !zoomClientId || !zoomClientSecret) {
+    throw new Error('Zoom credentials not configured. Set ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, and ZOOM_CLIENT_SECRET');
+  }
+
+  // Create Basic Auth header (base64 encode client_id:client_secret)
+  const credentials = Buffer.from(`${zoomClientId}:${zoomClientSecret}`).toString('base64');
+
+  try {
+    const response = await fetch(`https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${zoomAccountId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${credentials}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Zoom token request failed: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.access_token) {
+      throw new Error('No access token in Zoom response');
+    }
+
+    console.log('Zoom access token obtained successfully');
+    return data.access_token;
+  } catch (error) {
+    console.error('Error getting Zoom access token:', error);
+    throw error;
+  }
+}
+
 export default async function handler(req, res) {
   // Zoom recordings webhook endpoint
   
@@ -41,6 +85,8 @@ export default async function handler(req, res) {
 
   // Handle phone.recording_completed event
   if (event === 'phone.recording_completed') {
+    const accessToken = await getZoomAccessToken();
+    console.log('Access token:', accessToken);
     // According to Zoom docs: payload.object.recordings[0].download_url
     const downloadUrl = payload?.object?.recordings?.[0]?.download_url;
     
