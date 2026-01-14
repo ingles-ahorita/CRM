@@ -33,7 +33,8 @@ export default async function handler(req, res) {
 
     // Return the encrypted token for validation
     return res.status(200).json({
-      plainToken: encryptedToken
+      plainToken: encryptedToken,
+      encryptedToken: encryptedToken
     });
   }
 
