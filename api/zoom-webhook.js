@@ -51,38 +51,70 @@ async function getZoomAccessToken() {
 }
 
 /**
- * Download Zoom recording from download URL
+ * Download Zoom recording from download URL with retry logic
  * @param {string} downloadUrl - The Zoom recording download URL
  * @param {string} accessToken - The Zoom OAuth access token
+ * @param {number} maxRetries - Maximum number of retry attempts (default: 5)
+ * @param {number} initialDelay - Initial delay in milliseconds (default: 2000)
  * @returns {Promise<Buffer>} Recording file buffer
  */
-async function downloadZoomRecording(downloadUrl, accessToken) {
-  try {
-    console.log('Downloading recording from:', downloadUrl);
-    
-    const response = await fetch(downloadUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept': 'application/json'
+async function downloadZoomRecording(downloadUrl, accessToken, maxRetries = 5, initialDelay = 2000) {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Downloading recording (attempt ${attempt}/${maxRetries}) from:`, downloadUrl);
+      
+      const response = await fetch(downloadUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': '*/*' // Accept any content type for audio files
+        }
+      });
+
+      if (response.status === 404) {
+        // Recording not ready yet, wait and retry
+        if (attempt < maxRetries) {
+          const delay = initialDelay * Math.pow(2, attempt - 1); // Exponential backoff
+          console.log(`Recording not available yet (404). Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          lastError = new Error(`Recording not available (404). Attempt ${attempt}/${maxRetries}`);
+          continue;
+        } else {
+          throw new Error(`Recording not available after ${maxRetries} attempts. The file may not exist or is still being processed.`);
+        }
       }
-    });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to download recording: ${response.status} ${errorText}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to download recording: ${response.status} ${errorText}`);
+      }
+
+      // Get the file as a buffer
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      
+      console.log(`Recording downloaded successfully. Size: ${buffer.length} bytes`);
+      return buffer;
+    } catch (error) {
+      lastError = error;
+      
+      // If it's a 404 and we have retries left, continue the loop
+      if (error.message.includes('404') && attempt < maxRetries) {
+        continue;
+      }
+      
+      // For other errors or last attempt, throw immediately
+      if (attempt === maxRetries || !error.message.includes('404')) {
+        console.error(`Error downloading Zoom recording (attempt ${attempt}/${maxRetries}):`, error);
+        throw error;
+      }
     }
-
-    // Get the file as a buffer
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    
-    console.log(`Recording downloaded successfully. Size: ${buffer.length} bytes`);
-    return buffer;
-  } catch (error) {
-    console.error('Error downloading Zoom recording:', error);
-    throw error;
   }
+  
+  // Should not reach here, but just in case
+  throw lastError || new Error('Failed to download recording after all retries');
 }
 
 /**
@@ -189,10 +221,16 @@ export default async function handler(req, res) {
   if (event === 'phone.recording_completed') {
     try {
       // According to Zoom docs: payload.object.recordings[0].download_url
-      const downloadUrl = payload?.object?.recordings?.[0]?.download_url;
+      const recording = payload?.object?.recordings?.[0];
+      const downloadUrl = recording?.download_url;
+      const recordingId = recording?.id;
+      const callId = recording?.call_id;
       
-      console.log('Phone recording completed - Download URL:', downloadUrl);
-      console.log('Download token:', download_token);
+      console.log('Phone recording completed event received');
+      console.log('Recording ID:', recordingId);
+      console.log('Call ID:', callId);
+      console.log('Download URL:', downloadUrl);
+      console.log('Full recording object:', JSON.stringify(recording, null, 2));
 
       if (!downloadUrl) {
         console.error('No download URL found in payload');
@@ -202,11 +240,15 @@ export default async function handler(req, res) {
         });
       }
 
+      // Wait a bit before attempting download (recording might need processing time)
+      console.log('Waiting 3 seconds before attempting download...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
       // Get access token (use provided token or fetch new one)
       const accessToken = download_token || await getZoomAccessToken();
-      console.log('Using access token:', accessToken ? 'Token provided' : 'Fetched new token');
+      console.log('Using access token:', download_token ? 'Token provided' : 'Fetched new token');
 
-      // Download the recording
+      // Download the recording with retry logic
       const recordingBuffer = await downloadZoomRecording(downloadUrl, accessToken);
       console.log('Recording downloaded successfully. Buffer size:', recordingBuffer.length);
 
