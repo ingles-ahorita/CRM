@@ -44,8 +44,67 @@ async function getZoomAccessToken() {
   }
 }
 
+/**
+ * Download Zoom recording from download URL
+ * @param {string} downloadUrl - The Zoom recording download URL
+ * @param {string} accessToken - The Zoom OAuth access token
+ * @returns {Promise<Buffer>} Recording file buffer
+ */
+async function downloadZoomRecording(downloadUrl, accessToken) {
+  try {
+    console.log('Downloading recording from:', downloadUrl);
+    
+    const response = await fetch(downloadUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to download recording: ${response.status} ${errorText}`);
+    }
+
+    // Get the file as a buffer
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    console.log(`Recording downloaded successfully. Size: ${buffer.length} bytes`);
+    return buffer;
+  } catch (error) {
+    console.error('Error downloading Zoom recording:', error);
+    throw error;
+  }
+}
+
 export default async function handler(req, res) {
   // Zoom recordings webhook endpoint
+  
+  // Test endpoint: GET /api/zoom-webhook?test=true
+  if (req.method === 'GET' && req.query.test === 'true') {
+    try {
+      const testDownloadUrl = 'https://zoom.us/v2/phone/recording/download/4387sv2-Tq61TEIiiwioRQ';
+      const testAccessToken = 'eyJzdiI6IjAwMDAwMiIsImFsZyI6IkhTNTEyIiwidiI6IjIuMCIsImtpZCI6ImNiYTMwZmMwLWMwNjEtNGNiMC1iZTIzLTE4NGI2ZDU3YzA1NCJ9.eyJhdWQiOiJodHRwczovL29hdXRoLnpvb20udXMiLCJ1aWQiOiJ0LV9VRnpMaFNZeVNiQ3FiMjVFeFFRIiwidmVyIjoxMCwiYXVpZCI6ImM2ZmNhZWNhOWE2YzE5NTFlYjJiYTZiNjM1ZDMyYjNlN2E3N2ZkOTJlZWM3YzY2YzgxMzc2Mzc1YjZhMjQwYWMiLCJuYmYiOjE3Njg0ODg1MDgsImNvZGUiOiJhbjVlMGNWWlRSaWQtT20zUmROeklnTFRRTmdscloyRnAiLCJpc3MiOiJ6bTpjaWQ6dTg1U0ZIWHZURHVoRVBTSHZFRWRZQSIsImdubyI6MCwiZXhwIjoxNzY4NDkyMTA4LCJ0eXBlIjozLCJpYXQiOjE3Njg0ODg1MDgsImFpZCI6IjdmNTQxd1ZpU1VpLUdjN1dJelBKSEEifQ.qCCCTKncTiTHvMqS9zAMWHuNn1L3KveBynhiHq31LvZLyxchaQYY_NTnTGqVlIEz2gj0A3L6MiAl2Cf_4fRB9Q';
+      
+      console.log('Testing download with provided URL and token...');
+      const recordingBuffer = await downloadZoomRecording(testDownloadUrl, testAccessToken);
+      
+      return res.status(200).json({ 
+        success: true,
+        message: 'Recording downloaded successfully',
+        size: recordingBuffer.length,
+        note: 'Recording buffer obtained. Add storage logic to save it.'
+      });
+    } catch (error) {
+      console.error('Test download failed:', error);
+      return res.status(500).json({ 
+        success: false,
+        error: error.message
+      });
+    }
+  }
   
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -85,19 +144,46 @@ export default async function handler(req, res) {
 
   // Handle phone.recording_completed event
   if (event === 'phone.recording_completed') {
-    const accessToken = await getZoomAccessToken();
-    console.log('Access token:', accessToken);
-    // According to Zoom docs: payload.object.recordings[0].download_url
-    const downloadUrl = payload?.object?.recordings?.[0]?.download_url;
-    
-    console.log('Phone recording completed - Download URL:', downloadUrl);
-    console.log('Download token:', download_token);
+    try {
+      // According to Zoom docs: payload.object.recordings[0].download_url
+      const downloadUrl = payload?.object?.recordings?.[0]?.download_url;
+      
+      console.log('Phone recording completed - Download URL:', downloadUrl);
+      console.log('Download token:', download_token);
 
+      if (!downloadUrl) {
+        console.error('No download URL found in payload');
+        return res.status(400).json({ 
+          error: 'No download URL found',
+          received: false
+        });
+      }
 
-    return res.status(200).json({ 
-      message: 'Recording completed event processed',
-      received: true
-    });
+      // Get access token (use provided token or fetch new one)
+      const accessToken = download_token || await getZoomAccessToken();
+      console.log('Using access token:', accessToken ? 'Token provided' : 'Fetched new token');
+
+      // Download the recording
+      const recordingBuffer = await downloadZoomRecording(downloadUrl, accessToken);
+      
+      // TODO: Save recording to storage (Supabase, S3, etc.)
+      // For now, just log that we got it
+      console.log('Recording downloaded successfully. Buffer size:', recordingBuffer.length);
+
+      return res.status(200).json({ 
+        message: 'Recording completed event processed',
+        received: true,
+        downloaded: true,
+        size: recordingBuffer.length
+      });
+    } catch (error) {
+      console.error('Error processing recording:', error);
+      return res.status(500).json({ 
+        error: 'Failed to process recording',
+        message: error.message,
+        received: true
+      });
+    }
   }
 
   // Handle other webhook events
