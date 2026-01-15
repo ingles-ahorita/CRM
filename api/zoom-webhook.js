@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { createClient } from '@deepgram/sdk';
 
 /**
  * Get Zoom OAuth access token using client credentials
@@ -118,62 +119,58 @@ async function downloadZoomRecording(downloadUrl, accessToken, maxRetries = 5, i
 }
 
 /**
- * Transcribe audio using OpenAI Whisper API
+ * Transcribe audio using Deepgram SDK
  * @param {Buffer} audioBuffer - The audio file buffer
  * @param {string} filename - Optional filename (defaults to 'audio.mp3')
  * @returns {Promise<string>} Transcription text
  */
-async function transcribeAudioWithWhisper(audioBuffer, filename = 'audio.mp3') {
-  const openAiApiKey = process.env.OPENAI_API_KEY;
+async function transcribeAudioWithDeepgram(audioBuffer, filename = 'audio.mp3') {
+  const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
 
-  if (!openAiApiKey) {
-    throw new Error('OPENAI_API_KEY environment variable not set');
+  if (!deepgramApiKey) {
+    throw new Error('DEEPGRAM_API_KEY environment variable not set');
   }
 
   try {
-    console.log('Sending audio to OpenAI Whisper API...');
+    console.log('Sending audio to Deepgram API...');
     console.log('Audio buffer size:', audioBuffer.length, 'bytes');
 
-    // Create FormData for multipart/form-data request
-    // Using global FormData (available in Node.js 18+ and Vercel)
-    const formData = new FormData();
-    
-    // Create a Blob from the buffer
-    const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-    formData.append('file', blob, filename);
-    formData.append('model', 'whisper-1');
-    formData.append('language', 'es'); // Hardcoded to Spanish
-    
-    // formData.append('prompt', ''); // Optional: provide context/prompt
-    // formData.append('response_format', 'json'); // Default is json, can also use 'text', 'srt', 'verbose_json', 'vtt'
+    // STEP 1: Create a Deepgram client using the API key
+    const deepgram = createClient(deepgramApiKey);
 
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAiApiKey}`
-        // Don't set Content-Type header - let fetch set it with boundary for multipart/form-data
-      },
-      body: formData
-    });
+    // STEP 2: Call the transcribeFile method with the audio buffer and options
+    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(
+      // Pass the audio buffer directly
+      audioBuffer,
+      // STEP 3: Configure Deepgram options for audio analysis
+      {
+        model: 'nova-3',
+        language: 'es', // Hardcoded to Spanish
+        smart_format: true,
+        punctuate: true,
+        diarize: false, // Set to true if you want speaker diarization
+      }
+    );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI Whisper API error: ${response.status} ${errorText}`);
+    if (error) {
+      throw new Error(`Deepgram API error: ${error.message || JSON.stringify(error)}`);
     }
 
-    const data = await response.json();
+    // STEP 4: Extract transcription from results
+    // Deepgram response structure: results.channels[0].alternatives[0].transcript
+    const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
     
-    if (!data.text) {
-      throw new Error('No transcription text in OpenAI response');
+    if (!transcript) {
+      throw new Error('No transcription text in Deepgram response');
     }
 
     console.log('Transcription completed successfully');
-    console.log('Transcription length:', data.text.length, 'characters');
-    console.log('Transcription preview:', data.text.substring(0, 200) + '...');
+    console.log('Transcription length:', transcript.length, 'characters');
+    console.log('Transcription preview:', transcript.substring(0, 200) + '...');
     
-    return data.text;
+    return transcript;
   } catch (error) {
-    console.error('Error transcribing audio with Whisper:', error);
+    console.error('Error transcribing audio with Deepgram:', error);
     throw error;
   }
 }
@@ -253,12 +250,12 @@ export default async function handler(req, res) {
       const recordingBuffer = await downloadZoomRecording(downloadUrl, accessToken);
       console.log('Recording downloaded successfully. Buffer size:', recordingBuffer.length);
 
-      // Transcribe the audio using OpenAI Whisper
+      // Transcribe the audio using Deepgram
       let transcription = null;
       try {
         const recordingId = payload?.object?.recordings?.[0]?.id || 'recording';
         const filename = `${recordingId}.mp3`;
-        transcription = await transcribeAudioWithWhisper(recordingBuffer, filename);
+        transcription = await transcribeAudioWithDeepgram(recordingBuffer, filename);
         console.log('Transcription completed:', transcription);
       } catch (transcriptionError) {
         console.error('Failed to transcribe audio:', transcriptionError);
