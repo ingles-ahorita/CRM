@@ -17,7 +17,11 @@ async function getZoomAccessToken() {
   const credentials = Buffer.from(`${zoomClientId}:${zoomClientSecret}`).toString('base64');
 
   try {
-    const response = await fetch(`https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${zoomAccountId}`, {
+    // Request scopes needed for phone recording downloads
+    const scopes = 'phone:read:call_recording:admin phone:read:call_recording';
+    const tokenUrl = `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${zoomAccountId}&scope=${encodeURIComponent(scopes)}`;
+    
+    const response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${credentials}`,
@@ -37,6 +41,8 @@ async function getZoomAccessToken() {
     }
 
     console.log('Zoom access token obtained successfully');
+    console.log('Token scopes:', data.scope || 'Not specified in response');
+    
     return data.access_token;
   } catch (error) {
     console.error('Error getting Zoom access token:', error);
