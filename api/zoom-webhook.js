@@ -1,6 +1,13 @@
 import crypto from 'crypto';
 import { createClient } from '@deepgram/sdk';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
+// Supabase client setup
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+const supabase = SUPABASE_URL && SUPABASE_ANON_KEY
+  ? createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 /**
  * Get Zoom OAuth access token using client credentials
  * @returns {Promise<string>} Access token
@@ -122,7 +129,7 @@ async function downloadZoomRecording(downloadUrl, accessToken, maxRetries = 5, i
  * Transcribe audio using Deepgram SDK
  * @param {Buffer} audioBuffer - The audio file buffer
  * @param {string} filename - Optional filename (defaults to 'audio.mp3')
- * @returns {Promise<string>} Transcription text
+ * @returns {Promise<{transcript: string, rawResponse: object}>} Transcription text and raw response
  */
 async function transcribeAudioWithDeepgram(audioBuffer, filename = 'audio.mp3') {
   const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
@@ -148,7 +155,7 @@ async function transcribeAudioWithDeepgram(audioBuffer, filename = 'audio.mp3') 
         language: 'es', // Hardcoded to Spanish
         smart_format: true,
         punctuate: true,
-        diarize: false, // Set to true if you want speaker diarization
+        diarize: true, // Set to true if you want speaker diarization
       }
     );
 
@@ -168,10 +175,137 @@ async function transcribeAudioWithDeepgram(audioBuffer, filename = 'audio.mp3') 
     console.log('Transcription length:', transcript.length, 'characters');
     console.log('Transcription preview:', transcript.substring(0, 200) + '...');
     
-    return transcript;
+    return {
+      transcript,
+      rawResponse: result
+    };
   } catch (error) {
     console.error('Error transcribing audio with Deepgram:', error);
     throw error;
+  }
+}
+
+/**
+ * Find the most recent call from calls table based on book_date matching the phone number
+ * @param {string} phoneNumber - The phone number to match
+ * @returns {Promise<number|null>} Call ID or null if not found
+ */
+async function findMostRecentCallId(phoneNumber) {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized');
+  }
+
+  if (!phoneNumber) {
+    console.error('No phone number provided');
+    return null;
+  }
+
+  try {
+    // Normalize phone number for comparison (remove +, spaces, dashes, etc.)
+    const normalizedPhone = phoneNumber.replace(/[\s+\-()]/g, '');
+    
+    console.log('Searching for most recent call with phone number:', phoneNumber, '(normalized:', normalizedPhone + ')');
+    
+    // Try exact match first
+    let { data, error } = await supabase
+      .from('calls')
+      .select('id, phone')
+      .eq('phone', phoneNumber)
+      .order('book_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // If exact match not found, try normalized phone number
+    if (!data && normalizedPhone !== phoneNumber) {
+      const { data: normalizedData, error: normalizedError } = await supabase
+        .from('calls')
+        .select('id, phone')
+        .eq('phone', normalizedPhone)
+        .order('book_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (normalizedError) {
+        console.error('Error finding most recent call with normalized phone:', normalizedError);
+      } else if (normalizedData) {
+        console.log('Found call with normalized phone number:', normalizedData);
+        return normalizedData.id || null;
+      }
+    }
+
+    // If still not found, try partial match (phone contains the normalized number)
+    if (!data) {
+      const { data: partialData, error: partialError } = await supabase
+        .from('calls')
+        .select('id, phone')
+        .ilike('phone', `%${normalizedPhone}%`)
+        .order('book_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (partialError) {
+        console.error('Error finding most recent call with partial phone match:', partialError);
+      } else if (partialData) {
+        console.log('Found call with partial phone match:', partialData);
+        return partialData.id || null;
+      }
+    }
+
+    if (error) {
+      console.error('Error finding most recent call:', error);
+      return null;
+    }
+
+    if (data) {
+      console.log('Found matching call:', data);
+      return data.id || null;
+    }
+
+    console.log('No call found matching phone number:', phoneNumber);
+    return null;
+  } catch (error) {
+    console.error('Error finding most recent call:', error);
+    return null;
+  }
+}
+
+/**
+ * Save transcription to setter_calls table
+ * @param {number} callId - The call ID from calls table
+ * @param {string} transcription - The transcription text
+ * @param {object} rawResponse - The raw Deepgram response
+ * @returns {Promise<boolean>} Success status
+ */
+async function saveTranscriptionToSetterCalls(callId, transcription, rawResponse) {
+  if (!supabase) {
+    console.error('Supabase client not initialized');
+    return false;
+  }
+
+  if (!callId) {
+    console.error('No call ID provided');
+    return false;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('setter_calls')
+      .insert({
+        call_id: callId,
+        transcription: typeof rawResponse === 'object' ? JSON.stringify(rawResponse) : rawResponse // Store the raw Deepgram response as JSON string
+      })
+      .select();
+
+    if (error) {
+      console.error('Error saving transcription to setter_calls:', error);
+      return false;
+    }
+
+    console.log('Transcription saved successfully to setter_calls:', data);
+    return true;
+  } catch (error) {
+    console.error('Error saving transcription:', error);
+    return false;
   }
 }
 
@@ -223,10 +357,12 @@ export default async function handler(req, res) {
       const downloadUrl = recording?.download_url;
       const recordingId = recording?.id;
       const callId = recording?.call_id;
+      const phoneNumber = recording?.callee_number || recording?.caller_number; // Use callee_number (number being called) as primary
       
       console.log('Phone recording completed event received');
       console.log('Recording ID:', recordingId);
       console.log('Call ID:', callId);
+      console.log('Phone Number:', phoneNumber);
       console.log('Download URL:', downloadUrl);
       console.log('Full recording object:', JSON.stringify(recording, null, 2));
 
@@ -251,27 +387,59 @@ export default async function handler(req, res) {
       console.log('Recording downloaded successfully. Buffer size:', recordingBuffer.length);
 
       // Transcribe the audio using Deepgram
-      let transcription = null;
+      let transcriptionResult = null;
+      let transcriptionText = null;
+      let rawTranscriptionResponse = null;
+      
       try {
         const recordingId = payload?.object?.recordings?.[0]?.id || 'recording';
         const filename = `${recordingId}.mp3`;
-        transcription = await transcribeAudioWithDeepgram(recordingBuffer, filename);
-        console.log('Transcription completed:', transcription);
+        transcriptionResult = await transcribeAudioWithDeepgram(recordingBuffer, filename);
+        transcriptionText = transcriptionResult.transcript;
+        rawTranscriptionResponse = transcriptionResult.rawResponse;
+        console.log('Transcription completed:', transcriptionText);
       } catch (transcriptionError) {
         console.error('Failed to transcribe audio:', transcriptionError);
         // Continue even if transcription fails - we still want to process the recording
       }
 
-      // TODO: Save recording to storage (Supabase, S3, etc.)
-      // TODO: Save transcription to database
+      // Save transcription to setter_calls table
+      if (transcriptionText && rawTranscriptionResponse) {
+        try {
+          if (!phoneNumber) {
+            console.error('No phone number found in recording payload');
+          } else {
+            const mostRecentCallId = await findMostRecentCallId(phoneNumber);
+            
+            if (mostRecentCallId) {
+              console.log('Found most recent call ID:', mostRecentCallId, 'for phone number:', phoneNumber);
+              const saved = await saveTranscriptionToSetterCalls(
+                mostRecentCallId,
+                transcriptionText,
+                rawTranscriptionResponse
+              );
+              
+              if (saved) {
+                console.log('Transcription saved successfully to setter_calls');
+              } else {
+                console.error('Failed to save transcription to setter_calls');
+              }
+            } else {
+              console.error('Could not find most recent call ID for phone number:', phoneNumber);
+            }
+          }
+        } catch (saveError) {
+          console.error('Error saving transcription:', saveError);
+        }
+      }
       
       return res.status(200).json({ 
         message: 'Recording completed event processed',
         received: true,
         downloaded: true,
         size: recordingBuffer.length,
-        transcribed: transcription !== null,
-        transcription: transcription || null
+        transcribed: transcriptionText !== null,
+        transcription: transcriptionText || null
       });
     } catch (error) {
       console.error('Error processing recording:', error);

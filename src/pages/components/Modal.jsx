@@ -722,11 +722,13 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [setterNote, setSetterNote] = useState(null);
   const [closerNote, setCloserNote] = useState(null);
+  const [transcription, setTranscription] = useState(null);
 
   useEffect(() => {
     if (!isOpen) {
       setSetterNote(null);
       setCloserNote(null);
+      setTranscription(null);
       setIsLoading(false);
       return;
     }
@@ -756,11 +758,33 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
         if (!error) setCloserNote(data);
       }
 
+      // Fetch transcription from setter_calls if callId exists
+      if (callId) {
+        const { data, error } = await supabase
+          .from('setter_calls')
+          .select('transcription')
+          .eq('call_id', callId)
+          .maybeSingle();
+        
+        if (!error && data && data.transcription) {
+          // Parse transcription if it's a JSON string, otherwise use as is
+          try {
+            const parsed = JSON.parse(data.transcription);
+            // Extract transcript text from Deepgram response structure
+            const transcriptText = parsed?.results?.channels?.[0]?.alternatives?.[0]?.transcript || data.transcription;
+            setTranscription(transcriptText);
+          } catch {
+            // If not JSON, use as is
+            setTranscription(data.transcription);
+          }
+        }
+      }
+
       setIsLoading(false);
     };
 
     fetchNotes();
-  }, [isOpen, lead.setter_note_id, lead.closer_note_id]);
+  }, [isOpen, lead.setter_note_id, lead.closer_note_id, callId]);
 
   if (!isOpen) return null;
 
@@ -901,10 +925,47 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                     <div style={valueStyle}>{setterNote.notes}</div>
                   </div>
                 )}
+
+                {transcription && (
+                  <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
+                    <div style={labelStyle}>🎙️ Call Transcription</div>
+                    <div style={{
+                      ...valueStyle,
+                      backgroundColor: '#ffffff',
+                      padding: '16px',
+                      borderRadius: '8px',
+                      border: '1px solid #e5e7eb',
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: '1.6',
+                      maxHeight: '400px',
+                      overflowY: 'auto'
+                    }}>
+                      {transcription}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ ...sectionStyle, textAlign: 'center', color: '#9ca3af' }}>
                 <p>No setter notes available</p>
+                {transcription && (
+                  <div style={{ marginTop: '20px', textAlign: 'left' }}>
+                    <div style={labelStyle}>🎙️ Call Transcription</div>
+                    <div style={{
+                      ...valueStyle,
+                      backgroundColor: '#ffffff',
+                      padding: '16px',
+                      borderRadius: '8px',
+                      border: '1px solid #e5e7eb',
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: '1.6',
+                      maxHeight: '400px',
+                      overflowY: 'auto'
+                    }}>
+                      {transcription}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
