@@ -3,6 +3,7 @@ import './Modal.css';
 import { supabase } from '../../lib/supabaseClient';
 import { useEffect } from 'react';
 import * as DateHelpers from '../../utils/dateHelpers';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 export function Modal({ isOpen, onClose, children, className = "" }) {
   if (!isOpen) return null;
@@ -718,18 +719,103 @@ if (idToUse) {
   ); 
 };
 
+/**
+ * Format Deepgram transcription with speaker separation
+ * @param {object} deepgramResponse - The parsed Deepgram API response
+ * @returns {string} Formatted transcription with speaker labels
+ */
+function formatTranscriptionWithSpeakers(deepgramResponse) {
+  try {
+    // First, try to get the simple transcript as fallback
+    const simpleTranscript = deepgramResponse?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+    
+    const words = deepgramResponse?.results?.channels?.[0]?.alternatives?.[0]?.words;
+    
+    // If no words array or words don't have speaker info, return simple transcript
+    if (!words || !Array.isArray(words) || words.length === 0) {
+      console.log('No words array found, using simple transcript');
+      return simpleTranscript || '';
+    }
+
+    // Check if any words have speaker information
+    const hasSpeakerInfo = words.some(word => word.speaker !== undefined && word.speaker !== null);
+    
+    if (!hasSpeakerInfo) {
+      console.log('No speaker information in words, using simple transcript');
+      return simpleTranscript || '';
+    }
+
+    // Group words by speaker
+    const speakerGroups = [];
+    let currentSpeaker = null;
+    let currentGroup = [];
+
+    words.forEach((wordObj) => {
+      const speaker = wordObj.speaker !== undefined && wordObj.speaker !== null ? wordObj.speaker : null;
+      const word = wordObj.word || '';
+
+      if (speaker !== currentSpeaker) {
+        // Save previous group
+        if (currentGroup.length > 0 && currentSpeaker !== null) {
+          speakerGroups.push({
+            speaker: currentSpeaker,
+            text: currentGroup.join(' ')
+          });
+        }
+        // Start new group
+        currentSpeaker = speaker;
+        currentGroup = [word];
+      } else {
+        currentGroup.push(word);
+      }
+    });
+
+    // Add last group
+    if (currentGroup.length > 0 && currentSpeaker !== null) {
+      speakerGroups.push({
+        speaker: currentSpeaker,
+        text: currentGroup.join(' ')
+      });
+    }
+
+    // Format with speaker labels
+    if (speakerGroups.length > 0) {
+      const formatted = speakerGroups.map(group => {
+        const speakerLabel = group.speaker !== null && group.speaker !== undefined 
+          ? `Speaker ${group.speaker + 1}` 
+          : 'Speaker';
+        return `${speakerLabel}: ${group.text}`;
+      }).join('\n\n');
+      
+      console.log('Formatted transcription with speakers:', formatted.substring(0, 100));
+      return formatted;
+    }
+
+    // Fallback to simple transcript
+    console.log('No speaker groups created, using simple transcript');
+    return simpleTranscript || '';
+  } catch (error) {
+    console.error('Error formatting transcription with speakers:', error);
+    // Fallback to simple transcript  
+    const simpleTranscript = deepgramResponse?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+    return simpleTranscript || '';
+  }
+}
+
 export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [setterNote, setSetterNote] = useState(null);
   const [closerNote, setCloserNote] = useState(null);
-  const [transcription, setTranscription] = useState(null);
+  const [transcriptions, setTranscriptions] = useState([]);
+  const [expandedTranscriptions, setExpandedTranscriptions] = useState({});
 
   useEffect(() => {
     if (!isOpen) {
       setSetterNote(null);
       setCloserNote(null);
-      setTranscription(null);
+      setTranscriptions([]);
       setIsLoading(false);
+      setExpandedTranscriptions({});
       return;
     }
 
@@ -758,25 +844,72 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
         if (!error) setCloserNote(data);
       }
 
-      // Fetch transcription from setter_calls if callId exists
+      // Fetch all transcriptions from setter_calls if callId exists
       if (callId) {
         const { data, error } = await supabase
           .from('setter_calls')
-          .select('transcription')
+          .select('transcription, created_at')
           .eq('call_id', callId)
-          .maybeSingle();
+          .order('created_at', { ascending: false });
         
-        if (!error && data && data.transcription) {
-          // Parse transcription if it's a JSON string, otherwise use as is
-          try {
-            const parsed = JSON.parse(data.transcription);
-            // Extract transcript text from Deepgram response structure
-            const transcriptText = parsed?.results?.channels?.[0]?.alternatives?.[0]?.transcript || data.transcription;
-            setTranscription(transcriptText);
-          } catch {
-            // If not JSON, use as is
-            setTranscription(data.transcription);
-          }
+        console.log('Fetched transcription data:', { data, error, callId });
+        
+        if (!error && data && data.length > 0) {
+          const formattedTranscriptions = data.map((item, index) => {
+            if (!item.transcription) return null;
+            
+            // Parse transcription if it's a JSON string, otherwise use as is
+            try {
+              const parsed = JSON.parse(item.transcription);
+              console.log(`Parsed transcription ${index + 1}:`, parsed);
+              // Extract speaker-separated transcription from Deepgram response
+              const formattedTranscription = formatTranscriptionWithSpeakers(parsed);
+              console.log(`Formatted transcription ${index + 1}:`, formattedTranscription);
+              
+              // Only return if we got a non-empty result
+              if (formattedTranscription && formattedTranscription.trim().length > 0) {
+                return {
+                  text: formattedTranscription,
+                  createdAt: item.created_at,
+                  index: index + 1
+                };
+              } else {
+                // Fallback to simple transcript if formatting returned empty
+                const simpleTranscript = parsed?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+                if (simpleTranscript) {
+                  return {
+                    text: simpleTranscript,
+                    createdAt: item.created_at,
+                    index: index + 1
+                  };
+                } else {
+                  return {
+                    text: item.transcription,
+                    createdAt: item.created_at,
+                    index: index + 1
+                  };
+                }
+              }
+            } catch (parseError) {
+              console.error(`Error parsing transcription ${index + 1}:`, parseError);
+              // If not JSON, use as is
+              return {
+                text: item.transcription,
+                createdAt: item.created_at,
+                index: index + 1
+              };
+            }
+          }).filter(Boolean); // Remove null entries
+          
+          setTranscriptions(formattedTranscriptions);
+          // Initialize all transcriptions as collapsed
+          const initialExpanded = {};
+          formattedTranscriptions.forEach((_, index) => {
+            initialExpanded[index] = false;
+          });
+          setExpandedTranscriptions(initialExpanded);
+        } else {
+          console.log('No transcriptions found:', { error, data, callId });
         }
       }
 
@@ -785,6 +918,77 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
 
     fetchNotes();
   }, [isOpen, lead.setter_note_id, lead.closer_note_id, callId]);
+  
+  // Helper function to render a single transcription
+  const renderTranscription = (transcriptionText, index, createdAt) => {
+    return (
+      <div>
+        {transcriptionText.includes('Speaker') && transcriptionText.includes(':') ? (
+          // Speaker-separated format
+          transcriptionText.split('\n\n').filter(seg => seg.trim()).map((segment, segIndex) => {
+            // Check if segment starts with "Speaker X:"
+            const speakerMatch = segment.match(/^(Speaker \d+):\s*(.*)$/);
+            if (speakerMatch) {
+              const [, speakerLabel, text] = speakerMatch;
+              return (
+                <div key={segIndex} style={{ marginBottom: '16px' }}>
+                  <div style={{
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    color: '#001749ff',
+                    marginBottom: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <span style={{
+                      display: 'inline-block',
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: speakerLabel.includes('Speaker 1') ? '#3b82f6' : '#10b981'
+                    }}></span>
+                    {speakerLabel}
+                  </div>
+                  <div style={{
+                    fontSize: '15px',
+                    color: '#111827',
+                    lineHeight: '1.6',
+                    paddingLeft: '16px',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    {text}
+                  </div>
+                </div>
+              );
+            }
+            // Fallback for segments without speaker label
+            return segment.trim() ? (
+              <div key={segIndex} style={{
+                fontSize: '15px',
+                color: '#111827',
+                lineHeight: '1.6',
+                marginBottom: '16px',
+                whiteSpace: 'pre-wrap'
+              }}>
+                {segment}
+              </div>
+            ) : null;
+          })
+        ) : (
+          // Plain text format
+          <div style={{
+            fontSize: '15px',
+            color: '#111827',
+            lineHeight: '1.6',
+            whiteSpace: 'pre-wrap'
+          }}>
+            {transcriptionText}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (!isOpen) return null;
 
@@ -926,44 +1130,118 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                   </div>
                 )}
 
-                {transcription && (
+                {transcriptions.length > 0 && (
                   <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
-                    <div style={labelStyle}>🎙️ Call Transcription</div>
-                    <div style={{
-                      ...valueStyle,
-                      backgroundColor: '#ffffff',
-                      padding: '16px',
-                      borderRadius: '8px',
-                      border: '1px solid #e5e7eb',
-                      whiteSpace: 'pre-wrap',
-                      lineHeight: '1.6',
-                      maxHeight: '400px',
-                      overflowY: 'auto'
-                    }}>
-                      {transcription}
+                    <div style={{ ...labelStyle, marginBottom: '12px' }}>
+                      🎙️ Setter's Call Transcriptions
                     </div>
+                    {transcriptions.map((transcription, index) => {
+                      const isExpanded = expandedTranscriptions[index] === true;
+                      return (
+                        <div key={index} style={{ marginBottom: index < transcriptions.length - 1 ? '16px' : '0' }}>
+                          <div 
+                            style={{ 
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              color: '#001749ff',
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '8px',
+                              userSelect: 'none',
+                              padding: '8px 12px',
+                              backgroundColor: '#f9fafb',
+                              borderRadius: '6px',
+                              border: '1px solid #e5e7eb'
+                            }}
+                            onClick={() => setExpandedTranscriptions(prev => ({
+                              ...prev,
+                              [index]: !isExpanded
+                            }))}
+                          >
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            <span>Transcription #{index + 1}</span>
+                            {transcription.createdAt && (
+                              <span style={{ fontSize: '12px', fontWeight: '400', color: '#6b7280', marginLeft: 'auto' }}>
+                                {new Date(transcription.createdAt).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          {isExpanded && (
+                            <div style={{
+                              backgroundColor: '#ffffff',
+                              padding: '16px',
+                              borderRadius: '8px',
+                              border: '1px solid #e5e7eb',
+                              maxHeight: '400px',
+                              overflowY: 'auto',
+                              marginTop: '8px'
+                            }}>
+                              {renderTranscription(transcription.text, index, transcription.createdAt)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             ) : (
               <div style={{ ...sectionStyle, textAlign: 'center', color: '#9ca3af' }}>
                 <p>No setter notes available</p>
-                {transcription && (
+                {transcriptions.length > 0 && (
                   <div style={{ marginTop: '20px', textAlign: 'left' }}>
-                    <div style={labelStyle}>🎙️ Call Transcription</div>
-                    <div style={{
-                      ...valueStyle,
-                      backgroundColor: '#ffffff',
-                      padding: '16px',
-                      borderRadius: '8px',
-                      border: '1px solid #e5e7eb',
-                      whiteSpace: 'pre-wrap',
-                      lineHeight: '1.6',
-                      maxHeight: '400px',
-                      overflowY: 'auto'
-                    }}>
-                      {transcription}
+                    <div style={{ ...labelStyle, marginBottom: '12px' }}>
+                      🎙️ Call Transcription{transcriptions.length > 1 ? `s (${transcriptions.length})` : ''}
                     </div>
+                    {transcriptions.map((transcription, index) => {
+                      const isExpanded = expandedTranscriptions[index] === true;
+                      return (
+                        <div key={index} style={{ marginBottom: index < transcriptions.length - 1 ? '16px' : '0' }}>
+                          <div 
+                            style={{ 
+                              fontSize: '14px',
+                              fontWeight: '600',
+                              color: '#001749ff',
+                              cursor: 'pointer', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              gap: '8px',
+                              userSelect: 'none',
+                              padding: '8px 12px',
+                              backgroundColor: '#f9fafb',
+                              borderRadius: '6px',
+                              border: '1px solid #e5e7eb'
+                            }}
+                            onClick={() => setExpandedTranscriptions(prev => ({
+                              ...prev,
+                              [index]: !isExpanded
+                            }))}
+                          >
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            <span>Transcription #{index + 1}</span>
+                            {transcription.createdAt && (
+                              <span style={{ fontSize: '12px', fontWeight: '400', color: '#6b7280', marginLeft: 'auto' }}>
+                                {new Date(transcription.createdAt).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                          {isExpanded && (
+                            <div style={{
+                              backgroundColor: '#ffffff',
+                              padding: '16px',
+                              borderRadius: '8px',
+                              border: '1px solid #e5e7eb',
+                              maxHeight: '400px',
+                              overflowY: 'auto',
+                              marginTop: '8px'
+                            }}>
+                              {renderTranscription(transcription.text, index, transcription.createdAt)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -274,9 +274,10 @@ async function findMostRecentCallId(phoneNumber) {
  * @param {number} callId - The call ID from calls table
  * @param {string} transcription - The transcription text
  * @param {object} rawResponse - The raw Deepgram response
+ * @param {string} recordingId - Optional recording ID to prevent duplicates
  * @returns {Promise<boolean>} Success status
  */
-async function saveTranscriptionToSetterCalls(callId, transcription, rawResponse) {
+async function saveTranscriptionToSetterCalls(callId, transcription, rawResponse, recordingId = null) {
   if (!supabase) {
     console.error('Supabase client not initialized');
     return false;
@@ -288,12 +289,19 @@ async function saveTranscriptionToSetterCalls(callId, transcription, rawResponse
   }
 
   try {
+    const insertData = {
+      call_id: callId,
+      transcription: typeof rawResponse === 'object' ? JSON.stringify(rawResponse) : rawResponse // Store the raw Deepgram response as JSON string
+    };
+    
+    // Add recording_id if provided (for duplicate prevention)
+    if (recordingId) {
+      insertData.recording_id = recordingId;
+    }
+    
     const { data, error } = await supabase
       .from('setter_calls')
-      .insert({
-        call_id: callId,
-        transcription: typeof rawResponse === 'object' ? JSON.stringify(rawResponse) : rawResponse // Store the raw Deepgram response as JSON string
-      })
+      .insert(insertData)
       .select();
 
     if (error) {
@@ -374,6 +382,50 @@ export default async function handler(req, res) {
         });
       }
 
+      // Check if we've already processed this recording recently (prevent duplicate processing)
+      if (recordingId && supabase) {
+        try {
+          // Try to check by recording_id column (if it exists)
+          const { data: existingTranscription, error: recordingIdError } = await supabase
+            .from('setter_calls')
+            .select('id, created_at')
+            .eq('recording_id', recordingId)
+            .maybeSingle();
+          
+          if (!recordingIdError && existingTranscription) {
+            console.log('Recording already processed (found by recording ID):', recordingId);
+            return res.status(200).json({ 
+              message: 'Recording already processed',
+              received: true,
+              alreadyProcessed: true
+            });
+          }
+          
+          // Also check by download URL pattern (extract ID from URL)
+          const urlIdMatch = downloadUrl.match(/\/download\/([^\/\?]+)/);
+          if (urlIdMatch) {
+            const urlId = urlIdMatch[1];
+            const { data: existingByUrl, error: urlIdError } = await supabase
+              .from('setter_calls')
+              .select('id, created_at')
+              .eq('recording_id', urlId)
+              .maybeSingle();
+            
+            if (!urlIdError && existingByUrl) {
+              console.log('Recording already processed (found by URL ID):', urlId);
+              return res.status(200).json({ 
+                message: 'Recording already processed',
+                received: true,
+                alreadyProcessed: true
+              });
+            }
+          }
+        } catch (duplicateCheckError) {
+          // If recording_id column doesn't exist, continue processing
+          console.log('Duplicate check failed (column may not exist), continuing:', duplicateCheckError.message);
+        }
+      }
+
       // Wait a bit before attempting download (recording might need processing time)
       console.log('Waiting 3 seconds before attempting download...');
       await new Promise(resolve => setTimeout(resolve, 3000));
@@ -416,7 +468,8 @@ export default async function handler(req, res) {
               const saved = await saveTranscriptionToSetterCalls(
                 mostRecentCallId,
                 transcriptionText,
-                rawTranscriptionResponse
+                rawTranscriptionResponse,
+                recordingId
               );
               
               if (saved) {

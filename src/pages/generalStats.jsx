@@ -555,6 +555,7 @@ async function fetchWeeklyStats() {
       const showUpRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalShowedUp / weekStats.totalBooked) * 100 : 0;
       const conversionRateShowedUp = weekStats.totalShowedUp > 0 ? (weekStats.totalPurchased / weekStats.totalShowedUp) * 100 : 0;
       const conversionRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalPurchased / weekStats.totalBooked) * 100 : 0;
+      const confirmationRate = weekStats.totalBooked > 0 ? (weekStats.totalConfirmed / weekStats.totalBooked) * 100 : 0;
       
       // Extract conversion rates for organic and ads
       const organicConversionRate = weekStats.sourceStats?.organic?.conversionRate || 0;
@@ -570,6 +571,7 @@ async function fetchWeeklyStats() {
         showUpRateBooked,
         conversionRateShowedUp,
         conversionRateBooked,
+        confirmationRate,
         organicConversionRate,
         adsConversionRate
       });
@@ -652,6 +654,9 @@ async function fetchMonthlyStats() {
     const conversionRateBooked = monthStats.totalBooked > 0 
       ? (monthStats.totalPurchased / monthStats.totalBooked) * 100 
       : 0;
+    const confirmationRate = monthStats.totalBooked > 0 
+      ? (monthStats.totalConfirmed / monthStats.totalBooked) * 100 
+      : 0;
     
     return {
       monthStart: startDateStr,
@@ -662,7 +667,8 @@ async function fetchMonthlyStats() {
       showUpRateConfirmed,
       showUpRateBooked,
       conversionRateShowedUp,
-      conversionRateBooked
+      conversionRateBooked,
+      confirmationRate
     };
   }).filter(Boolean).reverse();
   
@@ -710,6 +716,7 @@ async function fetchDailyStats(numDays = 30) {
       const showUpRateBooked = dayStats.totalBooked > 0 ? (dayStats.totalShowedUp / dayStats.totalBooked) * 100 : 0;
       const conversionRateShowedUp = dayStats.totalShowedUp > 0 ? (dayStats.totalPurchased / dayStats.totalShowedUp) * 100 : 0;
       const conversionRateBooked = dayStats.totalBooked > 0 ? (dayStats.totalPurchased / dayStats.totalBooked) * 100 : 0;
+      const confirmationRate = dayStats.totalBooked > 0 ? (dayStats.totalConfirmed / dayStats.totalBooked) * 100 : 0;
       
       daysData.unshift({
         dayStart: startDateStr,
@@ -720,7 +727,8 @@ async function fetchDailyStats(numDays = 30) {
         showUpRateConfirmed,
         showUpRateBooked,
         conversionRateShowedUp,
-        conversionRateBooked
+        conversionRateBooked,
+        confirmationRate
       });
     }
   }
