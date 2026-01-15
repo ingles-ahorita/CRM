@@ -85,32 +85,69 @@ async function downloadZoomRecording(downloadUrl, accessToken) {
   }
 }
 
+/**
+ * Transcribe audio using OpenAI Whisper API
+ * @param {Buffer} audioBuffer - The audio file buffer
+ * @param {string} filename - Optional filename (defaults to 'audio.mp3')
+ * @returns {Promise<string>} Transcription text
+ */
+async function transcribeAudioWithWhisper(audioBuffer, filename = 'audio.mp3') {
+  const openAiApiKey = process.env.OPENAI_API_KEY;
+
+  if (!openAiApiKey) {
+    throw new Error('OPENAI_API_KEY environment variable not set');
+  }
+
+  try {
+    console.log('Sending audio to OpenAI Whisper API...');
+    console.log('Audio buffer size:', audioBuffer.length, 'bytes');
+
+    // Create FormData for multipart/form-data request
+    // Using global FormData (available in Node.js 18+ and Vercel)
+    const formData = new FormData();
+    
+    // Create a Blob from the buffer
+    const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+    formData.append('file', blob, filename);
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'en'); // Optional: specify language if known
+    // formData.append('prompt', ''); // Optional: provide context/prompt
+    // formData.append('response_format', 'json'); // Default is json, can also use 'text', 'srt', 'verbose_json', 'vtt'
+
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAiApiKey}`
+        // Don't set Content-Type header - let fetch set it with boundary for multipart/form-data
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI Whisper API error: ${response.status} ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.text) {
+      throw new Error('No transcription text in OpenAI response');
+    }
+
+    console.log('Transcription completed successfully');
+    console.log('Transcription length:', data.text.length, 'characters');
+    console.log('Transcription preview:', data.text.substring(0, 200) + '...');
+    
+    return data.text;
+  } catch (error) {
+    console.error('Error transcribing audio with Whisper:', error);
+    throw error;
+  }
+}
+
 export default async function handler(req, res) {
   // Zoom recordings webhook endpoint
   
-  // Test endpoint: GET /api/zoom-webhook?test=true
-  if (req.method === 'GET' && req.query.test === 'true') {
-    try {
-      const testDownloadUrl = 'https://zoom.us/v2/phone/recording/download/4387sv2-Tq61TEIiiwioRQ';
-      const testAccessToken = 'eyJzdiI6IjAwMDAwMiIsImFsZyI6IkhTNTEyIiwidiI6IjIuMCIsImtpZCI6ImNiYTMwZmMwLWMwNjEtNGNiMC1iZTIzLTE4NGI2ZDU3YzA1NCJ9.eyJhdWQiOiJodHRwczovL29hdXRoLnpvb20udXMiLCJ1aWQiOiJ0LV9VRnpMaFNZeVNiQ3FiMjVFeFFRIiwidmVyIjoxMCwiYXVpZCI6ImM2ZmNhZWNhOWE2YzE5NTFlYjJiYTZiNjM1ZDMyYjNlN2E3N2ZkOTJlZWM3YzY2YzgxMzc2Mzc1YjZhMjQwYWMiLCJuYmYiOjE3Njg0ODg1MDgsImNvZGUiOiJhbjVlMGNWWlRSaWQtT20zUmROeklnTFRRTmdscloyRnAiLCJpc3MiOiJ6bTpjaWQ6dTg1U0ZIWHZURHVoRVBTSHZFRWRZQSIsImdubyI6MCwiZXhwIjoxNzY4NDkyMTA4LCJ0eXBlIjozLCJpYXQiOjE3Njg0ODg1MDgsImFpZCI6IjdmNTQxd1ZpU1VpLUdjN1dJelBKSEEifQ.qCCCTKncTiTHvMqS9zAMWHuNn1L3KveBynhiHq31LvZLyxchaQYY_NTnTGqVlIEz2gj0A3L6MiAl2Cf_4fRB9Q';
-      
-      console.log('Testing download with provided URL and token...');
-      const recordingBuffer = await downloadZoomRecording(testDownloadUrl, testAccessToken);
-      
-      return res.status(200).json({ 
-        success: true,
-        message: 'Recording downloaded successfully',
-        size: recordingBuffer.length,
-        note: 'Recording buffer obtained. Add storage logic to save it.'
-      });
-    } catch (error) {
-      console.error('Test download failed:', error);
-      return res.status(500).json({ 
-        success: false,
-        error: error.message
-      });
-    }
-  }
   
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -171,16 +208,30 @@ export default async function handler(req, res) {
 
       // Download the recording
       const recordingBuffer = await downloadZoomRecording(downloadUrl, accessToken);
-      
-      // TODO: Save recording to storage (Supabase, S3, etc.)
-      // For now, just log that we got it
       console.log('Recording downloaded successfully. Buffer size:', recordingBuffer.length);
 
+      // Transcribe the audio using OpenAI Whisper
+      let transcription = null;
+      try {
+        const recordingId = payload?.object?.recordings?.[0]?.id || 'recording';
+        const filename = `${recordingId}.mp3`;
+        transcription = await transcribeAudioWithWhisper(recordingBuffer, filename);
+        console.log('Transcription completed:', transcription);
+      } catch (transcriptionError) {
+        console.error('Failed to transcribe audio:', transcriptionError);
+        // Continue even if transcription fails - we still want to process the recording
+      }
+
+      // TODO: Save recording to storage (Supabase, S3, etc.)
+      // TODO: Save transcription to database
+      
       return res.status(200).json({ 
         message: 'Recording completed event processed',
         received: true,
         downloaded: true,
-        size: recordingBuffer.length
+        size: recordingBuffer.length,
+        transcribed: transcription !== null,
+        transcription: transcription || null
       });
     } catch (error) {
       console.error('Error processing recording:', error);
