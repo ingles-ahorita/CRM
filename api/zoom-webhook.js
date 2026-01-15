@@ -142,7 +142,8 @@ async function transcribeAudioWithWhisper(audioBuffer, filename = 'audio.mp3') {
     const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
     formData.append('file', blob, filename);
     formData.append('model', 'whisper-1');
-    formData.append('language', 'en'); // Optional: specify language if known
+    formData.append('language', 'es'); // Hardcoded to Spanish
+    
     // formData.append('prompt', ''); // Optional: provide context/prompt
     // formData.append('response_format', 'json'); // Default is json, can also use 'text', 'srt', 'verbose_json', 'vtt'
 
