@@ -1103,8 +1103,8 @@ export default function StatsDashboard() {
   // Load stats on initial mount only
   useEffect(() => {
     const loadInitialStats = async () => {
-      setLoading(true);
-      const data = await fetchStatsData(startDate, endDate);
+    setLoading(true);
+    const data = await fetchStatsData(startDate, endDate);
       setStats(data);
       setLoading(false);
     };
@@ -1909,65 +1909,65 @@ export default function StatsDashboard() {
 
         {/* Conversion Rate by Closer */}
         {stats && stats.closers && stats.closers.length > 0 && (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Conversion Rate by Closer</h2>
-              <p className="text-sm text-gray-500 mt-1">Purchased / Confirmed per closer</p>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Closer
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Showed up
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Purchased
-                    </th>
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Conversion Rate
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {stats.closers.map((closer) => {
-                    const conversionRate = closer.showedUp > 0 
-                      ? (closer.purchased / closer.showedUp) * 100 
-                      : 0;
-                    
-                    return (
-                      <tr key={closer.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900" onClick={() => navigate(`/closer-stats/${closer.id}`)} onMouseEnter={(e) => e.currentTarget.style.cursor = 'pointer'}>{closer.name} </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900">{closer.showedUp}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm font-semibold text-green-600">{closer.purchased}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="inline-flex items-center">
-                            <span className={`text-lg font-bold ${
-                              conversionRate >= 70 ? 'text-green-600' :
-                              conversionRate >= 50 ? 'text-yellow-600' :
-                              'text-red-600'
-                            }`}>
-                              {conversionRate.toFixed(1)}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900">Conversion Rate by Closer</h2>
+            <p className="text-sm text-gray-500 mt-1">Purchased / Confirmed per closer</p>
           </div>
+          
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Closer
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Showed up
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Purchased
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Conversion Rate
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {stats.closers.map((closer) => {
+                  const conversionRate = closer.showedUp > 0 
+                    ? (closer.purchased / closer.showedUp) * 100 
+                    : 0;
+                  
+                  return (
+                    <tr key={closer.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900" onClick={() => navigate(`/closer-stats/${closer.id}`)} onMouseEnter={(e) => e.currentTarget.style.cursor = 'pointer'}>{closer.name} </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{closer.showedUp}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-semibold text-green-600">{closer.purchased}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="inline-flex items-center">
+                          <span className={`text-lg font-bold ${
+                            conversionRate >= 70 ? 'text-green-600' :
+                            conversionRate >= 50 ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {conversionRate.toFixed(1)}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
         )}
 
         {/* Setter Stats - Pick Up Rate and Show Up Rate */}
@@ -2065,83 +2065,83 @@ export default function StatsDashboard() {
 
           {/* Country Sales Table */}
           {stats && stats.countries && stats.countries.length > 0 && (
-            <div className="bg-white shadow rounded-lg overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Sales by Country</h3>
-                <p className="mt-1 text-sm text-gray-500">Performance metrics grouped by phone number country</p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Country
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Total Booked
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Pick Up Rate
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Show Up Rate
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Sales
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Conversion Rate
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {stats.countries.map((country, index) => (
-                      <tr key={country.country} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="text-sm font-medium text-gray-900">
-                              {country.country}
-                            </div>
-                            {index < 3 && (
-                              <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                index === 0 ? 'bg-yellow-100 text-yellow-800' :
-                                index === 1 ? 'bg-gray-100 text-gray-800' :
-                                'bg-orange-100 text-orange-800'
-                              }`}>
-                                #{index + 1}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900">{country.totalBooked}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900">{country.pickUpRate.toFixed(1)}%</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900">{country.showUpRate.toFixed(1)}%</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm font-semibold text-green-600">{country.totalPurchased}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="inline-flex items-center">
-                            <span className={`text-lg font-bold ${
-                              country.conversionRate >= 70 ? 'text-green-600' :
-                              country.conversionRate >= 50 ? 'text-yellow-600' :
-                              'text-red-600'
-                            }`}>
-                              {country.conversionRate.toFixed(1)}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+          <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900">Sales by Country</h3>
+              <p className="mt-1 text-sm text-gray-500">Performance metrics grouped by phone number country</p>
             </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Country
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total Booked
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Pick Up Rate
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Show Up Rate
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Sales
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Conversion Rate
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {stats.countries.map((country, index) => (
+                    <tr key={country.country} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="text-sm font-medium text-gray-900">
+                            {country.country}
+                          </div>
+                          {index < 3 && (
+                            <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                              index === 1 ? 'bg-gray-100 text-gray-800' :
+                              'bg-orange-100 text-orange-800'
+                            }`}>
+                              #{index + 1}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.totalBooked}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.pickUpRate.toFixed(1)}%</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.showUpRate.toFixed(1)}%</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-semibold text-green-600">{country.totalPurchased}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="inline-flex items-center">
+                          <span className={`text-lg font-bold ${
+                            country.conversionRate >= 70 ? 'text-green-600' :
+                            country.conversionRate >= 50 ? 'text-yellow-600' :
+                            'text-red-600'
+                          }`}>
+                            {country.conversionRate.toFixed(1)}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
           )}
         </div>
         )}

@@ -39,8 +39,8 @@ const ComparisonTable = ({
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
-            <p className="text-sm text-gray-500 mt-1">{description}</p>
+        <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+        <p className="text-sm text-gray-500 mt-1">{description}</p>
           </div>
           <button
             onClick={() => setShowOrganicSplit(!showOrganicSplit)}
@@ -153,13 +153,13 @@ const ComparisonTable = ({
                   {periodLabel === 'Week' ? (
                     <>
                       {showOrganicSplit ? (
-                        <>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Organic Conversion Rate
-                          </th>
-                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Ads Conversion Rate
-                          </th>
+                    <>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Organic Conversion Rate
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Ads Conversion Rate
+                      </th>
                         </>
                       ) : (
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -364,21 +364,21 @@ const ComparisonTable = ({
                       {periodLabel === 'Week' ? (
                         <>
                           {showOrganicSplit ? (
-                            <>
-                              <td className="px-6 py-4 whitespace-nowrap text-center">
-                                <div className="text-sm text-green-600">
-                                  {item.organicConversionRate?.toFixed(1) || '0.0'}%
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-center">
-                                <div className="text-sm text-blue-600">
-                                  {item.adsConversionRate?.toFixed(1) || '0.0'}%
-                                </div>
-                              </td>
-                            </>
-                          ) : (
-                            <td className="px-6 py-4 whitespace-nowrap text-center">
-                              <div className="text-sm text-gray-900">
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="text-sm text-green-600">
+                              {item.organicConversionRate?.toFixed(1) || '0.0'}%
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="text-sm text-blue-600">
+                              {item.adsConversionRate?.toFixed(1) || '0.0'}%
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
                                 {item.conversionRateShowedUp?.toFixed(1) || '0.0'}%
                               </div>
                             </td>

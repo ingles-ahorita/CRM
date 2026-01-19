@@ -24,6 +24,8 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
     const [outcome, setOutcome] = useState('');
     const [offers, setOffers] = useState([]);
     const [selectedOffer, setSelectedOffer] = useState(null);
+    const [calendlyQuestions, setCalendlyQuestions] = useState(null);
+    const [calendlyQuestionsExpanded, setCalendlyQuestionsExpanded] = useState(false);
 
     const [noteData, setNoteData] = useState(null);
 
@@ -52,6 +54,32 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
     };
     fetchOffers();
   }, [isOpen, mode]);
+
+  // Fetch calendly_questions when modal opens (for setter mode)
+  useEffect(() => {
+    if (!isOpen || mode !== 'setter') {
+      setCalendlyQuestions(null);
+      setCalendlyQuestionsExpanded(false);
+      return;
+    }
+
+    const fetchCalendlyQuestions = async () => {
+      const callIdToFetch = callId || lead.id;
+      if (callIdToFetch) {
+        const { data: callData, error: callError } = await supabase
+          .from('calls')
+          .select('calendly_questions')
+          .eq('id', callIdToFetch)
+          .single();
+        
+        if (!callError && callData?.calendly_questions) {
+          const parsed = parseCalendlyQuestions(callData.calendly_questions);
+          setCalendlyQuestions(parsed);
+        }
+      }
+    };
+    fetchCalendlyQuestions();
+  }, [isOpen, mode, callId, lead.id]);
 
   // Fetch note data when modal opens
   useEffect(() => {
@@ -406,6 +434,65 @@ if (idToUse) {
         )}
       </div>
 
+      {/* Calendly Questions - Compact Display (Setter Mode Only) */}
+      {mode === 'setter' && calendlyQuestions && Array.isArray(calendlyQuestions) && calendlyQuestions.length > 0 && (
+        <div style={{ 
+          marginBottom: '20px', 
+          paddingLeft: '40px', 
+          paddingRight: '40px'
+        }}>
+          <div 
+            onClick={() => setCalendlyQuestionsExpanded(!calendlyQuestionsExpanded)}
+            style={{ 
+              fontSize: '13px', 
+              fontWeight: '600', 
+              color: '#001749ff', 
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              userSelect: 'none',
+              padding: '8px 12px',
+              backgroundColor: '#f9fafb',
+              borderRadius: '6px',
+              border: '1px solid #e5e7eb',
+              marginBottom: calendlyQuestionsExpanded ? '10px' : '0'
+            }}
+          >
+            {calendlyQuestionsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            <span>📋 Calendly Q&A</span>
+          </div>
+          {calendlyQuestionsExpanded && (
+            <div style={{ 
+              backgroundColor: '#f9fafb',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              border: '1px solid #e5e7eb',
+              marginTop: '8px'
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {calendlyQuestions.map((qa, index) => (
+                  qa.Answer ? (
+                    <div key={index} style={{
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      color: '#374151'
+                    }}>
+                      <span style={{ fontWeight: '600', color: '#001749ff' }}>
+                        {index + 1}. {qa.Question || `Q${index + 1}`}
+                      </span>
+                      <span style={{ marginLeft: '6px', color: '#111827' }}>
+                        {qa.Answer}
+                      </span>
+                    </div>
+                  ) : null
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
 <div style={{ marginBottom: '20px' }}>
 <form id="setter-note-form" onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '40px', paddingRight: '40px' }}>
   
@@ -720,6 +807,40 @@ if (idToUse) {
 };
 
 /**
+ * Parse calendly questions (handles both old and new formats)
+ * @param {string|object} data - The calendly_questions data
+ * @returns {Array|null} Array of {Question, Answer} objects or null
+ */
+function parseCalendlyQuestions(data) {
+  if (!data) return null;
+  
+  try {
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    
+    // New format: array with question/answer strings
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].question && parsed[0].answer) {
+      const questions = parsed[0].question.split(',').map(q => q.trim());
+      const answers = parsed[0].answer.split(',').map(a => a.trim());
+      
+      return questions.map((q, index) => ({
+        Question: q,
+        Answer: answers[index] || null
+      })).filter(qa => qa.Question); // Filter out empty questions
+    }
+    
+    // Old format: output.QA structure
+    if (parsed.output && parsed.output.QA && Array.isArray(parsed.output.QA)) {
+      return parsed.output.QA;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error parsing calendly_questions:', error);
+    return null;
+  }
+}
+
+/**
  * Format Deepgram transcription with speaker separation
  * @param {object} deepgramResponse - The parsed Deepgram API response
  * @returns {string} Formatted transcription with speaker labels
@@ -808,6 +929,8 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
   const [closerNote, setCloserNote] = useState(null);
   const [transcriptions, setTranscriptions] = useState([]);
   const [expandedTranscriptions, setExpandedTranscriptions] = useState({});
+  const [calendlyQuestions, setCalendlyQuestions] = useState(null);
+  const [calendlyQuestionsExpanded, setCalendlyQuestionsExpanded] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -816,6 +939,8 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
       setTranscriptions([]);
       setIsLoading(false);
       setExpandedTranscriptions({});
+      setCalendlyQuestions(null);
+      setCalendlyQuestionsExpanded(false);
       return;
     }
 
@@ -910,6 +1035,21 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
           setExpandedTranscriptions(initialExpanded);
         } else {
           console.log('No transcriptions found:', { error, data, callId });
+        }
+      }
+
+      // Fetch calendly_questions from calls table
+      const callIdToFetch = callId || lead.id;
+      if (callIdToFetch) {
+        const { data: callData, error: callError } = await supabase
+          .from('calls')
+          .select('calendly_questions')
+          .eq('id', callIdToFetch)
+          .single();
+        
+        if (!callError && callData?.calendly_questions) {
+          const parsed = parseCalendlyQuestions(callData.calendly_questions);
+          setCalendlyQuestions(parsed);
         }
       }
 
@@ -1058,7 +1198,7 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
             Notes for <b>{lead.name}</b>
           </h2>
 
-          <div style={{ paddingLeft: '40px', paddingRight: '50px', paddingBottom: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+          <div style={{ paddingLeft: '40px', paddingRight: '50px', paddingBottom: '20px' }}>
             
             {/* Setter Notes Section */}
             {setterNote ? (
@@ -1127,6 +1267,58 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                   <div>
                     <div style={labelStyle}>⚠️ Extra Notes</div>
                     <div style={valueStyle}>{setterNote.notes}</div>
+                  </div>
+                )}
+
+                {calendlyQuestions && Array.isArray(calendlyQuestions) && calendlyQuestions.length > 0 && (
+                  <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e5e7eb' }}>
+                    <div 
+                      onClick={() => setCalendlyQuestionsExpanded(!calendlyQuestionsExpanded)}
+                      style={{ 
+                        ...labelStyle, 
+                        marginBottom: calendlyQuestionsExpanded ? '10px' : '0',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        userSelect: 'none',
+                        padding: '8px 12px',
+                        backgroundColor: '#f9fafb',
+                        borderRadius: '6px',
+                        border: '1px solid #e5e7eb'
+                      }}
+                    >
+                      {calendlyQuestionsExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      <span>📋 Calendly Q&A</span>
+                    </div>
+                    {calendlyQuestionsExpanded && (
+                      <div style={{ 
+                        backgroundColor: '#f9fafb',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb',
+                        marginTop: '8px'
+                      }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {calendlyQuestions.map((qa, index) => (
+                            qa.Answer ? (
+                              <div key={index} style={{
+                                fontSize: '13px',
+                                lineHeight: '1.5',
+                                color: '#374151'
+                              }}>
+                                <span style={{ fontWeight: '600', color: '#001749ff' }}>
+                                  {index + 1}. {qa.Question || `Q${index + 1}`}
+                                </span>
+                                <span style={{ marginLeft: '6px', color: '#111827' }}>
+                                  {qa.Answer}
+                                </span>
+                              </div>
+                            ) : null
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
