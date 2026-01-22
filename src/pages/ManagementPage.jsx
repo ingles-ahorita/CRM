@@ -75,6 +75,7 @@ export default function ManagementPage() {
   }, [headerState, setSearchParams]);
 
   useEffect(() => {
+    console.log('Fetching leadsaaaa with headerState:', headerState);
     fetchAll(
       headerState.searchTerm,
       headerState.activeTab,

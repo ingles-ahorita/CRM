@@ -139,7 +139,6 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
   motivation: formData.get('motivation'),
   show_up_confirmed: formData.get('show_up_confirmed') === 'on',
   watched_masterclass: formData.get('watched_masterclass') === 'on',
-  age: parseInt(formData.get('age')) || null,
   current_job: formData.get('current_job'),
   open_to_invest: formData.get('open_to_invest') === 'on',
   notes: formData.get('notes')
@@ -496,12 +495,6 @@ if (idToUse) {
 <div style={{ marginBottom: '20px' }}>
 <form id="setter-note-form" onSubmit={handleSubmit} key={noteData?.id || 'new'} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', paddingLeft: '40px', paddingRight: '40px' }}>
   
-  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-    <label style={labelStyle}>👤 Age:</label>
-    <input name="age" type="number" min="1" max="120" 
-           defaultValue={noteData?.age || ''} style={{...inputStyle, width: '60px', minWidth: '60px', textAlign: 'center'}} />
-  </div>
-
   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
     <input name="practice_daily" type="checkbox" 
            defaultChecked={noteData?.practice_daily || false}
@@ -1241,13 +1234,6 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                   </span>
                   <span style={{ fontSize: '15px' }}>🎥 Watched masterclass</span>
                 </div>
-
-                {setterNote.age && (
-                  <div>
-                    <div style={labelStyle}>👤 Age</div>
-                    <div style={valueStyle}>{setterNote.age}</div>
-                  </div>
-                )}
 
                 {setterNote.current_job && (
                   <div>

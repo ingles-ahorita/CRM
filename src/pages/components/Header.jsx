@@ -82,12 +82,16 @@ const updateHeaderState = (updates) => {
               <button
                 key={tab}
                 onClick={() => {
+                    // Only clear dates when switching away from 'all' and 'follow ups' tabs
+                    // Keep dates when switching between 'all' and 'follow ups'
+                    const shouldClearDates = tab !== 'all' && tab !== 'follow ups' && activeTab !== 'all' && activeTab !== 'follow ups';
+                    
                     updateHeaderState({ 
                       activeTab: tab, 
                       searchTerm: '', 
                       showSearch: false,
-                      startDate: '',
-                      endDate: '',
+                      startDate: shouldClearDates ? '' : (tab === 'all' || tab === 'follow ups' ? startDate : ''),
+                      endDate: shouldClearDates ? '' : (tab === 'all' || tab === 'follow ups' ? endDate : ''),
                       setterFilter: '',
                       closerFilter: ''
                     });
@@ -125,8 +129,8 @@ const updateHeaderState = (updates) => {
               </button>
             ))}
 
-              {/* Date range - only when viewing all */}
-  {activeTab === 'all' && (
+              {/* Date range - only when viewing all or follow ups */}
+  {(activeTab === 'all' || activeTab === 'follow ups') && (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0', flexWrap: 'wrap', marginLeft: 'auto', marginRight: '2vh', transform: 'translateY(-10px)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <label style={{ fontSize: '12px', color: '#6b7280' }}>Start</label>
@@ -396,6 +400,11 @@ const updateHeaderState = (updates) => {
       label="No ManyChat ID"
       active={filters.noManychatId}
       onClick={() => toggleFilter('noManychatId')}
+    />
+    <FilterButton
+      label="Lock In"
+      active={filters.lockIn}
+      onClick={() => toggleFilter('lockIn')}
     />
   </div>
 )}

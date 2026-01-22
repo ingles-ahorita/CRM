@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
-import { ChevronLeft, ChevronRight, Plus, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Calendar, Edit2, Trash2, Pencil, Globe } from 'lucide-react';
 import ScheduleGrid from './components/ScheduleGrid';
 import ScheduleForm from './components/ScheduleForm';
 
@@ -22,11 +22,27 @@ export default function SchedulePage() {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [isDateOverrideMode, setIsDateOverrideMode] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedTimezone, setSelectedTimezone] = useState(() => {
+    return localStorage.getItem('scheduleTimezone') || 'Europe/Madrid';
+  });
 
   useEffect(() => {
     fetchSetters();
     fetchSchedules();
-  }, [currentWeekStart]);
+  }, [currentWeekStart, selectedTimezone]);
+
+  useEffect(() => {
+    localStorage.setItem('scheduleTimezone', selectedTimezone);
+  }, [selectedTimezone]);
+
+  const timezoneOptions = [
+    { value: 'Europe/Madrid', label: 'Spain (Europe/Madrid)' },
+    { value: 'America/New_York', label: 'US Eastern (America/New_York)' },
+    { value: 'America/Los_Angeles', label: 'US Pacific (America/Los_Angeles)' },
+    { value: 'Europe/London', label: 'UK (Europe/London)' },
+    { value: 'UTC', label: 'UTC' },
+    { value: 'local', label: 'Browser Local Time' }
+  ];
 
   const fetchSetters = async () => {
     try {
@@ -69,8 +85,8 @@ export default function SchedulePage() {
           setters (id, name)
         `)
         .not('specific_date', 'is', null)
-        .gte('specific_date', weekDates[0].toISOString().split('T')[0])
-        .lte('specific_date', weekDates[6].toISOString().split('T')[0]);
+        .gte('specific_date', formatDateLocal(weekDates[0]))
+        .lte('specific_date', formatDateLocal(weekDates[6]));
 
       if (overrideError) throw overrideError;
 
@@ -91,6 +107,30 @@ export default function SchedulePage() {
       dates.push(date);
     }
     return dates;
+  };
+
+  // Helper function to format date as YYYY-MM-DD in specified timezone
+  const formatDateInTimezone = (date, timezone) => {
+    if (timezone === 'local') {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Convert date to the specified timezone
+    const dateStr = date.toLocaleDateString('en-CA', { 
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return dateStr; // Returns YYYY-MM-DD format
+  };
+
+  // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion) - kept for backward compatibility
+  const formatDateLocal = (date) => {
+    return formatDateInTimezone(date, selectedTimezone);
   };
 
   const navigateWeek = (direction) => {
@@ -171,22 +211,105 @@ export default function SchedulePage() {
 
   const weekDates = getWeekDates(currentWeekStart);
 
+  // Filter date overrides (schedules with specific_date)
+  const dateOverrides = schedules.filter(schedule => schedule.specific_date !== null);
+  
+  // Sort by date
+  const sortedOverrides = [...dateOverrides].sort((a, b) => {
+    return a.specific_date.localeCompare(b.specific_date);
+  });
+
+  const formatTime = (timeStr) => {
+    if (!timeStr) return '';
+    const [hours, minutes] = timeStr.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${displayHour}:${minutes} ${ampm}`;
+  };
+
+  const formatDateDisplay = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr + 'T00:00:00');
+    
+    if (selectedTimezone === 'local') {
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    }
+    
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric',
+      timeZone: selectedTimezone
+    });
+  };
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
         {/* Header */}
         <div style={{ marginBottom: '24px' }}>
-          <h1 style={{ 
-            fontSize: '28px', 
-            fontWeight: 'bold', 
-            color: '#111827', 
-            marginBottom: '8px' 
-          }}>
-            Setter Schedule Management
-          </h1>
-          <p style={{ color: '#6b7280', fontSize: '16px' }}>
-            Manage weekly recurring schedules and date-specific overrides
-          </p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <div>
+              <h1 style={{ 
+                fontSize: '28px', 
+                fontWeight: 'bold', 
+                color: '#111827', 
+                marginBottom: '8px' 
+              }}>
+                Setter Schedule Management
+              </h1>
+              <p style={{ color: '#6b7280', fontSize: '16px' }}>
+                Manage weekly recurring schedules and date-specific overrides
+              </p>
+            </div>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '12px'
+            }}>
+              <Globe size={18} color="#6b7280" />
+              <label style={{ 
+                fontSize: '14px', 
+                fontWeight: '500', 
+                color: '#374151' 
+              }}>
+                Timezone:
+              </label>
+              <select
+                value={selectedTimezone}
+                onChange={(e) => setSelectedTimezone(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #d1d5db',
+                  backgroundColor: 'white',
+                  color: '#111827',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  transition: 'all 0.2s',
+                  minWidth: '200px'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#4f46e5';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '#d1d5db';
+                }}
+              >
+                {timezoneOptions.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Week Navigation */}
@@ -354,14 +477,190 @@ export default function SchedulePage() {
           </div>
         </div>
 
+        {/* Main Content Area - Grid and Sidebar */}
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         {/* Schedule Grid */}
-        <ScheduleGrid
-          weekDates={weekDates}
-          schedules={schedules}
-          setters={setters}
-          onEditSchedule={handleEditSchedule}
-          onDeleteSchedule={handleDeleteSchedule}
-        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <ScheduleGrid
+            weekDates={weekDates}
+            schedules={schedules}
+            setters={setters}
+            onEditSchedule={handleEditSchedule}
+            onDeleteSchedule={handleDeleteSchedule}
+            timezone={selectedTimezone}
+          />
+        </div>
+
+          {/* Date Overrides Sidebar */}
+          <div style={{ 
+            width: '320px', 
+            backgroundColor: 'white', 
+            borderRadius: '8px', 
+            border: '1px solid #e5e7eb',
+            padding: '20px',
+            position: 'sticky',
+            top: '24px',
+            maxHeight: 'calc(100vh - 48px)',
+            overflowY: 'auto'
+          }}>
+            <div style={{ marginBottom: '16px' }}>
+              <h2 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                color: '#111827',
+                marginBottom: '4px'
+              }}>
+                Date Overrides
+              </h2>
+              <p style={{ 
+                fontSize: '13px', 
+                color: '#6b7280',
+                margin: 0
+              }}>
+                {sortedOverrides.length} override{sortedOverrides.length !== 1 ? 's' : ''} this week
+              </p>
+            </div>
+
+            {sortedOverrides.length === 0 ? (
+              <div style={{ 
+                padding: '32px 16px', 
+                textAlign: 'center',
+                color: '#9ca3af',
+                fontSize: '14px'
+              }}>
+                No date overrides for this week
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {sortedOverrides.map((override) => {
+                  const isOvernight = override.end_time <= override.start_time;
+                  return (
+                    <div
+                      key={override.id}
+                      style={{
+                        padding: '12px',
+                        backgroundColor: '#f9fafb',
+                        borderRadius: '6px',
+                        border: '1px solid #e5e7eb',
+                        transition: 'all 0.2s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f3f4f6';
+                        e.currentTarget.style.borderColor = '#d1d5db';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f9fafb';
+                        e.currentTarget.style.borderColor = '#e5e7eb';
+                      }}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'flex-start',
+                        marginBottom: '8px'
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ 
+                            fontSize: '13px', 
+                            fontWeight: '600', 
+                            color: '#111827',
+                            marginBottom: '4px'
+                          }}>
+                            {formatDateDisplay(override.specific_date)}
+                          </div>
+                          <div style={{ 
+                            fontSize: '14px', 
+                            fontWeight: '500', 
+                            color: '#374151',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            {override.setters?.name || 'Unknown Setter'}
+                            <Pencil size={14} color="#6b7280" />
+                          </div>
+                          <div style={{ 
+                            fontSize: '12px', 
+                            color: '#6b7280',
+                            marginTop: '4px'
+                          }}>
+                            {formatTime(override.start_time)} - {formatTime(override.end_time)}
+                            {isOvernight && (
+                              <span style={{ 
+                                fontSize: '11px', 
+                                color: '#9ca3af',
+                                fontStyle: 'italic',
+                                marginLeft: '4px'
+                              }}>
+                                (overnight)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '4px', marginLeft: '8px' }}>
+                          <button
+                            onClick={() => handleEditSchedule(override)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '4px',
+                              border: '1px solid #d1d5db',
+                              backgroundColor: 'white',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              padding: 0
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f3f4f6';
+                              e.currentTarget.style.borderColor = '#9ca3af';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'white';
+                              e.currentTarget.style.borderColor = '#d1d5db';
+                            }}
+                            title="Edit override"
+                          >
+                            <Edit2 size={14} color="#6b7280" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSchedule(override.id)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '4px',
+                              border: '1px solid #dc2626',
+                              backgroundColor: 'white',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              padding: 0
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#fef2f2';
+                              e.currentTarget.style.borderColor = '#b91c1c';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'white';
+                              e.currentTarget.style.borderColor = '#dc2626';
+                            }}
+                            title="Delete override"
+                          >
+                            <Trash2 size={14} color="#dc2626" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Schedule Form Modal */}
         {isFormOpen && (

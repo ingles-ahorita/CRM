@@ -18,7 +18,8 @@ export default function ScheduleForm({
     days_of_week: [], // Array for multiple days
     start_time: '',
     end_time: '',
-    specific_date: ''
+    specific_date: '',
+    before_shift: false
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -71,7 +72,8 @@ export default function ScheduleForm({
           : [],
         start_time: formatTimeForInput(editingSchedule.start_time),
         end_time: formatTimeForInput(editingSchedule.end_time),
-        specific_date: editingSchedule.specific_date || ''
+        specific_date: editingSchedule.specific_date || '',
+        before_shift: editingSchedule.before_shift || false
       });
     } else {
       setFormData({
@@ -79,7 +81,8 @@ export default function ScheduleForm({
         days_of_week: [],
         start_time: '',
         end_time: '',
-        specific_date: ''
+        specific_date: '',
+        before_shift: false
       });
       setEditAsOverride(false);
       setOverrideDate(null);
@@ -159,6 +162,7 @@ export default function ScheduleForm({
         setter_id: formData.setter_id,
         start_time: formData.start_time + ':00', // Add seconds for database
         end_time: formData.end_time + ':00',
+        before_shift: formData.before_shift || false,
       };
 
       if (editingSchedule) {
@@ -931,6 +935,36 @@ export default function ScheduleForm({
                 }}
               />
             </div>
+          </div>
+
+          {/* Before Shift Checkbox */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '10px',
+              cursor: 'pointer',
+              userSelect: 'none'
+            }}>
+              <input
+                type="checkbox"
+                checked={formData.before_shift}
+                onChange={(e) => setFormData(prev => ({ ...prev, before_shift: e.target.checked }))}
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  cursor: 'pointer',
+                  accentColor: '#4f46e5'
+                }}
+              />
+              <span style={{ 
+                fontSize: '14px', 
+                fontWeight: '500', 
+                color: '#374151'
+              }}>
+                Before Shift (display name in red)
+              </span>
+            </label>
           </div>
 
           {/* Form Actions */}

@@ -117,6 +117,39 @@ async function fetchUTMStatsData(startDate, endDate) {
     return 'Unknown';
   };
 
+  // Helper function to extract granular breakdown key
+  const getGranularKey = (call, type) => {
+    const source = getUTMValue(call, 'source') || 'Unknown';
+    const medium = getUTMValue(call, 'medium') || 'Unknown';
+    const campaign = getUTMValue(call, 'campaign') || 'Unknown';
+    
+    switch (type) {
+      case 'source_medium':
+        return `${source} + ${medium}`;
+      case 'source_campaign':
+        return `${source} + ${campaign}`;
+      case 'campaign_pattern':
+        // Extract patterns from campaign (e.g., "youtube-bio" -> "youtube bio")
+        const campaignLower = campaign.toLowerCase();
+        if (campaignLower.includes('bio')) {
+          return `${source} bio`;
+        } else if (campaignLower.includes('link')) {
+          return `${source} link`;
+        } else if (campaignLower.includes('story')) {
+          return `${source} story`;
+        } else if (campaignLower.includes('reel')) {
+          return `${source} reel`;
+        } else if (campaignLower.includes('post')) {
+          return `${source} post`;
+        } else if (campaignLower.includes('video')) {
+          return `${source} video`;
+        }
+        return `${source} - ${campaign}`;
+      default:
+        return 'Unknown';
+    }
+  };
+
   // Group by UTM Source
   const sourceStats = {};
   
@@ -360,10 +393,220 @@ async function fetchUTMStatsData(startDate, endDate) {
     campaign.conversionRate = campaign.totalShowedUp > 0 ? (campaign.totalPurchased / campaign.totalShowedUp) * 100 : 0;
   });
 
+  // Group by Source + Medium combination
+  const sourceMediumStats = {};
+  
+  filteredBookingsMade.forEach(booking => {
+    const key = getGranularKey(booking, 'source_medium');
+    if (!sourceMediumStats[key]) {
+      sourceMediumStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    sourceMediumStats[key].totalBookedInPeriod++;
+    if (booking.picked_up) sourceMediumStats[key].totalPickedUp++;
+  });
+  
+  filteredCalls.forEach(call => {
+    const key = getGranularKey(call, 'source_medium');
+    if (!sourceMediumStats[key]) {
+      sourceMediumStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    sourceMediumStats[key].totalCallsInPeriod++;
+    if (call.showed_up) sourceMediumStats[key].totalShowedUp++;
+    if (call.confirmed) sourceMediumStats[key].totalConfirmed++;
+  });
+  
+  purchasedCalls.forEach(call => {
+    const key = getGranularKey(call, 'source_medium');
+    if (!sourceMediumStats[key]) {
+      sourceMediumStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    sourceMediumStats[key].totalPurchased++;
+  });
+  
+  Object.values(sourceMediumStats).forEach(item => {
+    item.pickUpRate = item.totalBookedInPeriod > 0 ? (item.totalPickedUp / item.totalBookedInPeriod) * 100 : 0;
+    item.showUpRate = item.totalCallsInPeriod > 0 ? (item.totalShowedUp / item.totalCallsInPeriod) * 100 : 0;
+    item.conversionRate = item.totalShowedUp > 0 ? (item.totalPurchased / item.totalShowedUp) * 100 : 0;
+  });
+
+  // Group by Source + Campaign combination
+  const sourceCampaignStats = {};
+  
+  filteredBookingsMade.forEach(booking => {
+    const key = getGranularKey(booking, 'source_campaign');
+    if (!sourceCampaignStats[key]) {
+      sourceCampaignStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    sourceCampaignStats[key].totalBookedInPeriod++;
+    if (booking.picked_up) sourceCampaignStats[key].totalPickedUp++;
+  });
+  
+  filteredCalls.forEach(call => {
+    const key = getGranularKey(call, 'source_campaign');
+    if (!sourceCampaignStats[key]) {
+      sourceCampaignStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    sourceCampaignStats[key].totalCallsInPeriod++;
+    if (call.showed_up) sourceCampaignStats[key].totalShowedUp++;
+    if (call.confirmed) sourceCampaignStats[key].totalConfirmed++;
+  });
+  
+  purchasedCalls.forEach(call => {
+    const key = getGranularKey(call, 'source_campaign');
+    if (!sourceCampaignStats[key]) {
+      sourceCampaignStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    sourceCampaignStats[key].totalPurchased++;
+  });
+  
+  Object.values(sourceCampaignStats).forEach(item => {
+    item.pickUpRate = item.totalBookedInPeriod > 0 ? (item.totalPickedUp / item.totalBookedInPeriod) * 100 : 0;
+    item.showUpRate = item.totalCallsInPeriod > 0 ? (item.totalShowedUp / item.totalCallsInPeriod) * 100 : 0;
+    item.conversionRate = item.totalShowedUp > 0 ? (item.totalPurchased / item.totalShowedUp) * 100 : 0;
+  });
+
+  // Group by Campaign Pattern (e.g., youtube bio, tiktok bio)
+  const campaignPatternStats = {};
+  
+  filteredBookingsMade.forEach(booking => {
+    const key = getGranularKey(booking, 'campaign_pattern');
+    if (!campaignPatternStats[key]) {
+      campaignPatternStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    campaignPatternStats[key].totalBookedInPeriod++;
+    if (booking.picked_up) campaignPatternStats[key].totalPickedUp++;
+  });
+  
+  filteredCalls.forEach(call => {
+    const key = getGranularKey(call, 'campaign_pattern');
+    if (!campaignPatternStats[key]) {
+      campaignPatternStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    campaignPatternStats[key].totalCallsInPeriod++;
+    if (call.showed_up) campaignPatternStats[key].totalShowedUp++;
+    if (call.confirmed) campaignPatternStats[key].totalConfirmed++;
+  });
+  
+  purchasedCalls.forEach(call => {
+    const key = getGranularKey(call, 'campaign_pattern');
+    if (!campaignPatternStats[key]) {
+      campaignPatternStats[key] = {
+        key: key,
+        totalBookedInPeriod: 0,
+        totalCallsInPeriod: 0,
+        totalPickedUp: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0
+      };
+    }
+    campaignPatternStats[key].totalPurchased++;
+  });
+  
+  Object.values(campaignPatternStats).forEach(item => {
+    item.pickUpRate = item.totalBookedInPeriod > 0 ? (item.totalPickedUp / item.totalBookedInPeriod) * 100 : 0;
+    item.showUpRate = item.totalCallsInPeriod > 0 ? (item.totalShowedUp / item.totalCallsInPeriod) * 100 : 0;
+    item.conversionRate = item.totalShowedUp > 0 ? (item.totalPurchased / item.totalShowedUp) * 100 : 0;
+  });
+
   // Sort by total purchased
   const sortedSources = Object.values(sourceStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
   const sortedMediums = Object.values(mediumStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
   const sortedCampaigns = Object.values(campaignStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
+  const sortedSourceMediums = Object.values(sourceMediumStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
+  const sortedSourceCampaigns = Object.values(sourceCampaignStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
+  const sortedCampaignPatterns = Object.values(campaignPatternStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
 
   // Calculate totals from breakdown to ensure they match
   // Sum up calls from breakdown tables to get accurate totals
@@ -422,7 +665,10 @@ async function fetchUTMStatsData(startDate, endDate) {
     totalRescheduled: filteredCalls.filter(c => c.is_reschedule).length,
     sources: sortedSources,
     mediums: sortedMediums,
-    campaigns: sortedCampaigns
+    campaigns: sortedCampaigns,
+    sourceMediums: sortedSourceMediums,
+    sourceCampaigns: sortedSourceCampaigns,
+    campaignPatterns: sortedCampaignPatterns
   };
 }
 
@@ -709,7 +955,7 @@ export default function UTMStatsDashboard() {
   const [loadingWeekly, setLoadingWeekly] = useState(false);
   const [loadingMonthly, setLoadingMonthly] = useState(false);
   const [loadingDaily, setLoadingDaily] = useState(false);
-  const [utmFilter, setUtmFilter] = useState('all'); // 'all', 'source', 'medium', 'campaign'
+  const [utmFilter, setUtmFilter] = useState('all'); // 'all', 'source', 'medium', 'campaign', 'source_medium', 'source_campaign', 'campaign_pattern'
 
   const goToPreviousWeek = () => {
     const currentStart = new Date(startDate);
@@ -862,7 +1108,7 @@ export default function UTMStatsDashboard() {
 
             {/* UTM Filter */}
             {comparisonView === 'none' && (
-              <div className="flex gap-2 mb-4">
+              <div className="flex flex-wrap gap-2 mb-4">
                 <button
                   onClick={() => setUtmFilter('all')}
                   className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -902,6 +1148,36 @@ export default function UTMStatsDashboard() {
                   }`}
                 >
                   By Campaign
+                </button>
+                <button
+                  onClick={() => setUtmFilter('source_medium')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    utmFilter === 'source_medium'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Source + Medium
+                </button>
+                <button
+                  onClick={() => setUtmFilter('source_campaign')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    utmFilter === 'source_campaign'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Source + Campaign
+                </button>
+                <button
+                  onClick={() => setUtmFilter('campaign_pattern')}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    utmFilter === 'campaign_pattern'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Campaign Patterns
                 </button>
               </div>
             )}
@@ -1341,6 +1617,267 @@ export default function UTMStatsDashboard() {
                                   'text-red-600'
                                 }`}>
                                   {campaign.conversionRate.toFixed(1)}%
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* UTM Source + Medium Table */}
+              {(utmFilter === 'all' || utmFilter === 'source_medium') && stats && stats.sourceMediums && stats.sourceMediums.length > 0 && (
+                <div className="bg-white shadow rounded-lg overflow-hidden mb-6">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-medium text-gray-900">Performance by Source + Medium</h3>
+                    <p className="mt-1 text-sm text-gray-500">Metrics grouped by combination of UTM source and medium</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Source + Medium
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Booked in Period
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Calls in Period
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Pick Up Rate
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Show Up Rate
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Sales
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Conversion Rate
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {stats.sourceMediums.map((item, index) => (
+                          <tr key={item.key} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {item.key}
+                                </div>
+                                {index < 3 && (
+                                  <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                                    index === 1 ? 'bg-gray-100 text-gray-800' :
+                                    'bg-orange-100 text-orange-800'
+                                  }`}>
+                                    #{index + 1}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.totalBookedInPeriod}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.totalCallsInPeriod}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.pickUpRate.toFixed(1)}%</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.showUpRate.toFixed(1)}%</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm font-semibold text-green-600">{item.totalPurchased}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="inline-flex items-center">
+                                <span className={`text-lg font-bold ${
+                                  item.conversionRate >= 70 ? 'text-green-600' :
+                                  item.conversionRate >= 50 ? 'text-yellow-600' :
+                                  'text-red-600'
+                                }`}>
+                                  {item.conversionRate.toFixed(1)}%
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* UTM Source + Campaign Table */}
+              {(utmFilter === 'all' || utmFilter === 'source_campaign') && stats && stats.sourceCampaigns && stats.sourceCampaigns.length > 0 && (
+                <div className="bg-white shadow rounded-lg overflow-hidden mb-6">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-medium text-gray-900">Performance by Source + Campaign</h3>
+                    <p className="mt-1 text-sm text-gray-500">Metrics grouped by combination of UTM source and campaign</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Source + Campaign
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Booked in Period
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Calls in Period
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Pick Up Rate
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Show Up Rate
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Sales
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Conversion Rate
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {stats.sourceCampaigns.map((item, index) => (
+                          <tr key={item.key} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {item.key}
+                                </div>
+                                {index < 3 && (
+                                  <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                                    index === 1 ? 'bg-gray-100 text-gray-800' :
+                                    'bg-orange-100 text-orange-800'
+                                  }`}>
+                                    #{index + 1}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.totalBookedInPeriod}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.totalCallsInPeriod}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.pickUpRate.toFixed(1)}%</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.showUpRate.toFixed(1)}%</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm font-semibold text-green-600">{item.totalPurchased}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="inline-flex items-center">
+                                <span className={`text-lg font-bold ${
+                                  item.conversionRate >= 70 ? 'text-green-600' :
+                                  item.conversionRate >= 50 ? 'text-yellow-600' :
+                                  'text-red-600'
+                                }`}>
+                                  {item.conversionRate.toFixed(1)}%
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* UTM Campaign Patterns Table */}
+              {(utmFilter === 'all' || utmFilter === 'campaign_pattern') && stats && stats.campaignPatterns && stats.campaignPatterns.length > 0 && (
+                <div className="bg-white shadow rounded-lg overflow-hidden mb-6">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-medium text-gray-900">Performance by Campaign Patterns</h3>
+                    <p className="mt-1 text-sm text-gray-500">Metrics grouped by campaign patterns (e.g., youtube bio, tiktok bio, etc.)</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Pattern
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Booked in Period
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Calls in Period
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Pick Up Rate
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Show Up Rate
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Sales
+                          </th>
+                          <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Conversion Rate
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {stats.campaignPatterns.map((item, index) => (
+                          <tr key={item.key} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {item.key}
+                                </div>
+                                {index < 3 && (
+                                  <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    index === 0 ? 'bg-yellow-100 text-yellow-800' :
+                                    index === 1 ? 'bg-gray-100 text-gray-800' :
+                                    'bg-orange-100 text-orange-800'
+                                  }`}>
+                                    #{index + 1}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.totalBookedInPeriod}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.totalCallsInPeriod}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.pickUpRate.toFixed(1)}%</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm text-gray-900">{item.showUpRate.toFixed(1)}%</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="text-sm font-semibold text-green-600">{item.totalPurchased}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              <div className="inline-flex items-center">
+                                <span className={`text-lg font-bold ${
+                                  item.conversionRate >= 70 ? 'text-green-600' :
+                                  item.conversionRate >= 50 ? 'text-yellow-600' :
+                                  'text-red-600'
+                                }`}>
+                                  {item.conversionRate.toFixed(1)}%
                                 </span>
                               </div>
                             </td>

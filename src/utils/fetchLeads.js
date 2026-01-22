@@ -25,7 +25,9 @@ if (filters?.purchased) {
 }
   
   // Fetch leads
-  // Use inner join for follow ups tab, regular join for others
+  // Use inner join for follow ups tab to ensure we get calls with outcome_log entries
+  // Use regular join for others
+  // Note: A call can only have ONE outcome_log entry, so it's either 'follow_up' OR 'lock_in'
   const outcomeLogSelect = activeTab === 'follow ups' 
     ? `outcome_log!inner!call_id (id, outcome)`
     : `outcome_log!call_id (id, outcome)`;
@@ -45,9 +47,27 @@ let query = supabase
 
   // Filter by date based on active tab
   if (activeTab === 'follow ups') {
-    // Filter for calls that have outcome_log entries with outcome = 'follow_up'
-    // The inner join already ensures only calls with outcome_log entries are returned
-    query = query.eq('outcome_log.outcome', 'follow_up');
+    // For follow ups tab, filter at DB level based on lockIn filter:
+    // - If lockIn filter is active: show calls with 'lock_in' outcome
+    // - Otherwise: show calls with 'follow_up' outcome
+    // We filter in JavaScript below to handle edge cases, but DB filter improves performance
+    if (filters?.lockIn) {
+      query = query.eq('outcome_log.outcome', 'lock_in');
+    } else {
+      query = query.eq('outcome_log.outcome', 'follow_up');
+    }
+    
+    // Apply date range filtering if provided
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      query = query.gte(sortField, start.toISOString());
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query = query.lte(sortField, end.toISOString());
+    }
   } else if (activeTab !== 'all') {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -152,7 +172,16 @@ if (searchTerm) {
   // For follow ups, filter results in JavaScript if relationship filter doesn't work
   // This ensures we only show calls with outcome = 'follow_up'
   let shouldFilterFollowUps = activeTab === 'follow ups';
-console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc');
+  
+  console.log('Fetching leads:', {
+    activeTab,
+    lockInFilter: filters?.lockIn,
+    startDate,
+    endDate,
+    sortField,
+    order
+  });
+  
   const { data: leadsData, error: leadsError } = await query;
 
   if (leadsError) {
@@ -173,13 +202,35 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
   let leadsWithCallTime = leadsData.map(lead => ({...lead, ...callMap[lead.id]}));
 
   // Filter for follow ups if needed (in case relationship filter didn't work)
+  // Note: A call can only have ONE outcome_log entry, so it's either 'follow_up' OR 'lock_in', not both
   if (shouldFilterFollowUps) {
+    const beforeFilterCount = leadsWithCallTime.length;
     leadsWithCallTime = leadsWithCallTime.filter(lead => {
-      // Check if any outcome_log entry has outcome = 'follow_up'
+      // Normalize outcome_log to always be an array for easier processing
+      let outcomeLogs = [];
       if (Array.isArray(lead.outcome_log)) {
-        return lead.outcome_log.some(ol => ol.outcome === 'follow_up');
+        outcomeLogs = lead.outcome_log.filter(ol => ol != null); // Filter out null/undefined entries
+      } else if (lead.outcome_log && typeof lead.outcome_log === 'object') {
+        outcomeLogs = [lead.outcome_log];
       }
-      return lead.outcome_log?.outcome === 'follow_up';
+      
+      // If lockIn filter is active, show calls with 'lock_in' outcome instead of 'follow_up'
+      if (filters?.lockIn) {
+        // Check if the outcome_log entry has outcome = 'lock_in'
+        const hasLockIn = outcomeLogs.some(ol => ol && ol.outcome === 'lock_in');
+        return hasLockIn;
+      }
+      
+      // Otherwise, show calls with 'follow_up' outcome
+      const hasFollowUp = outcomeLogs.some(ol => ol && ol.outcome === 'follow_up');
+      return hasFollowUp;
+    });
+    
+    console.log('Follow ups filter applied:', {
+      beforeCount: beforeFilterCount,
+      afterCount: leadsWithCallTime.length,
+      lockInFilterActive: filters?.lockIn,
+      showing: filters?.lockIn ? 'lock_in' : 'follow_up'
     });
   }
 
@@ -188,7 +239,8 @@ console.log('Sorting:', sortField, 'order:', order, 'ascending:', order === 'asc
   }
 
   // Filter for Lock In (calls with outcome = 'lock_in')
-  if (filters?.lockIn) {
+  // Only apply this filter if NOT on follow ups tab (follow ups tab handles it above)
+  if (filters?.lockIn && !shouldFilterFollowUps) {
     leadsWithCallTime = leadsWithCallTime.filter(lead => {
       // Check if any outcome_log entry has outcome = 'lock_in'
       if (Array.isArray(lead.outcome_log)) {

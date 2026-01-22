@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Edit2, Trash2 } from 'lucide-react';
+import { Edit2, Trash2, Clock, ArrowDown, Pencil } from 'lucide-react';
 
 // Generate colors for setters
 const generateColors = (count) => {
@@ -21,7 +21,7 @@ const generateColors = (count) => {
   return result;
 };
 
-export default function ScheduleGrid({ weekDates, schedules, setters, onEditSchedule, onDeleteSchedule }) {
+export default function ScheduleGrid({ weekDates, schedules, setters, onEditSchedule, onDeleteSchedule, timezone = 'local' }) {
   const [hoveredCell, setHoveredCell] = useState(null);
   const [selectedSchedule, setSelectedSchedule] = useState(null);
 
@@ -31,12 +31,27 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
     setterColorMap[setter.id] = setterColors[index];
   });
 
-  // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion)
+  // Helper function to format date as YYYY-MM-DD in specified timezone
+  const formatDateInTimezone = (date, tz) => {
+    if (tz === 'local') {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    const dateStr = date.toLocaleDateString('en-CA', { 
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    return dateStr; // Returns YYYY-MM-DD format
+  };
+
+  // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion) - kept for backward compatibility
   const formatDateLocal = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return formatDateInTimezone(date, timezone);
   };
 
   // Convert time string (HH:MM) to minutes since midnight
@@ -120,6 +135,7 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
               endTime: schedule.end_time,
               isOverride: isOverride,
               isOvernight: isOvernight,
+              beforeShift: schedule.before_shift || false,
               schedule: schedule, // Store full schedule object
               date: schedule.specific_date || formatDateLocal(weekDates[dayIndex]) // Date for this occurrence
             };
@@ -137,6 +153,7 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
                 endTime: schedule.end_time,
                 isOverride: isOverride,
                 isOvernight: isOvernight,
+                beforeShift: schedule.before_shift || false,
                 schedule: schedule,
                 date: schedule.specific_date || formatDateLocal(weekDates[dayIndex])
               };
@@ -259,6 +276,25 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
+  // Function to darken a hex color
+  const darkenColor = (hex, percent = 20) => {
+    // Remove # if present
+    hex = hex.replace('#', '');
+    
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    
+    // Darken by reducing RGB values
+    const darkenedR = Math.max(0, Math.floor(r * (1 - percent / 100)));
+    const darkenedG = Math.max(0, Math.floor(g * (1 - percent / 100)));
+    const darkenedB = Math.max(0, Math.floor(b * (1 - percent / 100)));
+    
+    // Convert back to hex
+    return `#${darkenedR.toString(16).padStart(2, '0')}${darkenedG.toString(16).padStart(2, '0')}${darkenedB.toString(16).padStart(2, '0')}`;
+  };
+
   return (
     <div style={{ backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
       {/* Header */}
@@ -286,7 +322,14 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
           >
             <div style={{ fontSize: '14px' }}>{dayNames[dayIndex]}</div>
             <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-              {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {timezone === 'local' 
+                ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                : date.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    timeZone: timezone 
+                  })
+              }
             </div>
           </div>
         ))}
@@ -329,7 +372,9 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
                     padding: '8px',
                     borderRight: dayIndex < 6 ? '1px solid #e5e7eb' : 'none',
                     backgroundColor: schedule 
-                      ? setterColorMap[schedule.setterId] || '#f3f4f6'
+                      ? (schedule.beforeShift 
+                          ? '#9ca3af'
+                          : setterColorMap[schedule.setterId] || '#f3f4f6')
                       : '#ffffff',
                     cursor: schedule ? 'pointer' : 'default',
                     position: 'relative',
@@ -343,9 +388,22 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
                       fontSize: '12px',
                       fontWeight: '500',
                       color: '#111827',
-                      textAlign: 'center'
+                      textAlign: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px'
                     }}>
                       {schedule.setterName}
+                      {schedule.isOverride && (
+                        <Pencil size={12} color="#6b7280" />
+                      )}
+                      {schedule.beforeShift && (
+                        <>
+                          <Clock size={12} color="#111827" />
+                          <ArrowDown size={12} color="#111827" />
+                        </>
+                      )}
                     </div>
                   )}
                   
@@ -365,7 +423,9 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
                       zIndex: 10,
                       boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
                     }}>
-                      <div>{schedule.setterName}</div>
+                      <div style={{ color: 'white' }}>
+                        {schedule.setterName}
+                      </div>
                       <div style={{ fontSize: '11px', opacity: 0.9, marginTop: '4px' }}>
                         {formatTime(schedule.startTime)} - {formatTime(schedule.endTime)}
                         {schedule.isOvernight && ' (next day)'}
@@ -378,6 +438,11 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
                       {schedule.isOvernight && !schedule.isOverride && (
                         <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '4px', fontStyle: 'italic' }}>
                           Overnight Shift
+                        </div>
+                      )}
+                      {schedule.beforeShift && (
+                        <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '4px', fontStyle: 'italic', color: '#fca5a5' }}>
+                          Before Shift
                         </div>
                       )}
                     </div>
@@ -414,6 +479,11 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
               {formatTime(selectedSchedule.startTime)} - {formatTime(selectedSchedule.endTime)}
               {selectedSchedule.isOvernight && ' (overnight - ends next day)'}
             </div>
+            {selectedSchedule.beforeShift && (
+              <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '4px', fontStyle: 'italic' }}>
+                Before Shift
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
