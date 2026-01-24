@@ -77,7 +77,7 @@ export default async function handler(req, res) {
     const openai = getOpenAIClient();
     const completion = await openai.responses.parse({
       model: "gpt-4o-mini",
-      ...(previous_response_id !== undefined ? { previous_response_id } : {}),
+      ...(previous_response_id ? { previous_response_id } : {}),
       input: [
         {
           role: "system",
