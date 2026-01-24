@@ -66,7 +66,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const { message, state, previous_response_id } = req.body;
+    const { message, state, previous_response_id, context } = req.body;
 
     // Fetch system prompt from Supabase
     const systemPrompt = await getSystemPrompt();
@@ -82,6 +82,11 @@ export default async function handler(req, res) {
         {
           role: "system",
           content: systemPrompt
+        },
+        {
+          role: "system",
+          content: context
+            
         },
         {
           role: "user",
@@ -125,7 +130,11 @@ export default async function handler(req, res) {
                         "additionalProperties": false
                     }
                 },
-                "required": ["reply", "action", "detected_state"],
+                "updated_context": {
+                    "type": "string",
+                    "description": "el contexto actualizado"
+                },
+                "required": ["reply", "action", "detected_state", "updated_context"],
                 "additionalProperties": false
             }
         }
@@ -139,7 +148,8 @@ export default async function handler(req, res) {
       success: true,
       response: parsedResponse,
       response_id: completion.id,
-      system_prompt: systemPrompt
+      system_prompt: systemPrompt,
+      context: completion.
     });
 
   } catch (error) {
