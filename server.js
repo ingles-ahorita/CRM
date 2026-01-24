@@ -2,9 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import 'dotenv/config'; // Loads .env by default
+import dotenv from 'dotenv';
 
+// Load .env.local if it exists (takes precedence)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const envLocalPath = join(__dirname, '.env.local');
+dotenv.config({ path: envLocalPath, override: true });
 
 const app = express();
 const PORT = 3000;
@@ -14,7 +19,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler, aiSetterHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -39,6 +44,7 @@ async function loadHandlers() {
   calendlyWebhookHandler = await loadHandler('./api/calendly-webhook.js', 'calendly-webhook');
   kajabiWebhookHandler = await loadHandler('./api/kajabi-webhook.js', 'kajabi-webhook');
   rubenShiftToggleHandler = await loadHandler('./api/ruben-shift-toggle.js', 'ruben-shift-toggle');
+  aiSetterHandler = await loadHandler('./api/ai-setter.js', 'ai-setter');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -113,6 +119,11 @@ app.post('/api/kajabi-webhook', async (req, res) => {
 app.post('/api/ruben-shift-toggle', async (req, res) => {
   if (!rubenShiftToggleHandler) await loadHandlers();
   return adaptVercelHandler(rubenShiftToggleHandler)(req, res);
+});
+
+app.post('/api/ai-setter', async (req, res) => {
+  if (!aiSetterHandler) await loadHandlers();
+  return adaptVercelHandler(aiSetterHandler)(req, res);
 });
 
 // Catch-all for unregistered API routes

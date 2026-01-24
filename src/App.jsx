@@ -18,6 +18,7 @@ import RubenShiftsView from './pages/RubenShiftsView';
 import UTMStatsDashboard from './pages/utmStats';
 import OffersPage from './pages/OffersPage';
 import UsersPage from './pages/UsersPage';
+import AISetterPage from './pages/AISetterPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -72,6 +73,11 @@ function AppRoutes() {
       <Route path="/users" element={
         <ProtectedRoute>
           <UsersPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/ai-setter" element={
+        <ProtectedRoute>
+          <AISetterPage />
         </ProtectedRoute>
       } />
 

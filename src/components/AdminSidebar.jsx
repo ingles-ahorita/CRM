@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, LayoutDashboard, BarChart3, Calendar, TrendingUp, Gift, Users } from 'lucide-react';
+import { Menu, LayoutDashboard, BarChart3, Calendar, TrendingUp, Gift, Users, Bot } from 'lucide-react';
 import { useSimpleAuth } from '../useSimpleAuth';
 
 const menuItems = [
@@ -10,6 +10,7 @@ const menuItems = [
   { path: '/schedules', label: 'Setters schedules', icon: Calendar },
   { path: '/offers', label: 'Offers', icon: Gift },
   { path: '/users', label: 'Users', icon: Users },
+  { path: '/ai-setter', label: 'AI Setter', icon: Bot },
 ];
 
 export default function AdminSidebar({ children }) {
