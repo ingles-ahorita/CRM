@@ -148,8 +148,7 @@ export default async function handler(req, res) {
       success: true,
       response: parsedResponse,
       response_id: completion.id,
-      system_prompt: systemPrompt,
-      context: completion.
+      system_prompt: systemPrompt
     });
 
   } catch (error) {
