@@ -122,7 +122,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ 
       success: true,
       response: parsedResponse,
-      state: JSON.stringify(state, null, 2)
     });
 
   } catch (error) {
