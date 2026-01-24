@@ -105,7 +105,7 @@ export default async function handler(req, res) {
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["SEND_VIDEO", "ASK_IF_WATCHED", "SEND_BOOKING","ASK_IF_BOOKED", "HANDOFF_HUMAN", "CONTINUE_CONVERSATION"],
+                        "enum": ["SEND_VIDEO", "SEND_BOOKING", "HANDOFF_HUMAN", "CONTINUE_CONVERSATION"],
                         "description": "la acción a realizar"
                     },
                     detected_state: {
