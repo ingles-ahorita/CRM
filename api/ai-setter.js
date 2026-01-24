@@ -101,15 +101,31 @@ export default async function handler(req, res) {
                 "properties": {
                     "reply": {
                         "type": "string",
-                        "description": "The text reply to send to the user"
+                        "description": "la respuesta de la IA"
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["SEND_MASTERCLASS", "ASK_IF_WATCHED", "SEND_BOOKING", "HANDOFF_HUMAN"],
-                        "description": "The action to take"
+                        "enum": ["SEND_MASTERCLASS", "ASK_IF_WATCHED", "SEND_BOOKING","ASK_IF_BOOKED", "HANDOFF_HUMAN"],
+                        "description": "la acción a realizar"
+                    },
+                    detected_state: {
+                        "type": "object",
+                        "description": "los estados detectados",
+                        "properties": {
+                            "masterclass_watched": {
+                                "type": "boolean",
+                                "description": "si el video ha sido visto"
+                            },
+                            "call_booked": {
+                                "type": "boolean",
+                                "description": "si la llamada ha sido agendada"
+                            }
+                        },
+                        "required": ["masterclass_watched", "call_booked"],
+                        "additionalProperties": false
                     }
                 },
-                "required": ["reply", "action"],
+                "required": ["reply", "action", "detected_state"],
                 "additionalProperties": false
             }
         }
@@ -122,7 +138,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ 
       success: true,
       response: parsedResponse,
-      response_id: completion.id
+      response_id: completion.id,
+      system_prompt: systemPrompt
     });
 
   } catch (error) {
