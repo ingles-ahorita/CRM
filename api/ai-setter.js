@@ -105,23 +105,23 @@ export default async function handler(req, res) {
                     },
                     "action": {
                         "type": "string",
-                        "enum": ["SEND_MASTERCLASS", "ASK_IF_WATCHED", "SEND_BOOKING","ASK_IF_BOOKED", "HANDOFF_HUMAN"],
+                        "enum": ["SEND_VIDEO", "ASK_IF_WATCHED", "SEND_BOOKING","ASK_IF_BOOKED", "HANDOFF_HUMAN", "CONTINUE_CONVERSATION"],
                         "description": "la acción a realizar"
                     },
                     detected_state: {
                         "type": "object",
                         "description": "los estados detectados",
                         "properties": {
-                            "masterclass_watched": {
+                            "video_watched": {
                                 "type": "boolean",
-                                "description": "si el video ha sido visto"
+                                "description": "detectar si el lead ya vio el video"
                             },
                             "call_booked": {
                                 "type": "boolean",
-                                "description": "si la llamada ha sido agendada"
+                                "description": "detectar si el lead ya agendo una llamada con nosotros"
                             }
                         },
-                        "required": ["masterclass_watched", "call_booked"],
+                        "required": ["video_watched", "call_booked"],
                         "additionalProperties": false
                     }
                 },
