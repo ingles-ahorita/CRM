@@ -128,11 +128,11 @@ export default async function handler(req, res) {
                         },
                         "required": ["video_watched", "call_booked"],
                         "additionalProperties": false
+                    },
+                    "updated_context": {
+                        "type": "string",
+                        "description": "el contexto actualizado"
                     }
-                },
-                "updated_context": {
-                    "type": "string",
-                    "description": "el contexto actualizado"
                 },
                 "required": ["reply", "action", "detected_state", "updated_context"],
                 "additionalProperties": false
