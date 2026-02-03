@@ -16,6 +16,7 @@ export default function LeadsPage() {
       const [dataState, setDataState] = useState({
   leads: [],
   loading: true,
+  calltimeLoading: false,
   setterMap: {},
   closerMap: {},
   counts: { booked:0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0, slots: 0 },
@@ -187,6 +188,7 @@ useEffect(() => {
               closerMap={dataState.closerMap}
               mode='full'
               currentUserId={userId}
+              calltimeLoading={dataState.calltimeLoading}
             />
           ))}
 
@@ -206,6 +208,7 @@ useEffect(() => {
       lead={lead}
       setterMap={dataState.setterMap}
       closerMap={dataState.closerMap}
+      calltimeLoading={dataState.calltimeLoading}
     />
   ))}
 </div>

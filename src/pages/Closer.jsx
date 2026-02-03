@@ -60,6 +60,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
         const [dataState, setDataState] = useState({
   leads: [],
   loading: true,
+  calltimeLoading: false,
   setterMap: {},
   closerMap: {}
 });
@@ -149,6 +150,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
               closerMap={dataState.closerMap}
               mode='closer'
               currentUserId={closer}
+              calltimeLoading={dataState.calltimeLoading}
             />
           ))}
 
@@ -163,11 +165,12 @@ import { useSimpleAuth } from '../useSimpleAuth';
           <div>
   <LeadListHeader />
   {dataState.leads.map(lead => (
-    <LeadItemCompact 
+    <LeadItemCompact
       key={lead.id}
       lead={lead}
       setterMap={dataState.setterMap}
       closerMap={dataState.closerMap}
+      calltimeLoading={dataState.calltimeLoading}
     />
   ))}
 </div>

@@ -16,6 +16,7 @@ export default function ManagementPage() {
   const [dataState, setDataState] = useState({
     leads: [],
     loading: true,
+    calltimeLoading: false,
     setterMap: {},
     closerMap: {},
     counts: { booked:0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0, slots: 0 },
@@ -171,11 +172,12 @@ export default function ManagementPage() {
           <div>
             <LeadListHeader />
             {dataState.leads.map(lead => (
-              <LeadItemCompact 
+              <LeadItemCompact
                 key={lead.id}
                 lead={lead}
                 setterMap={dataState.setterMap}
                 closerMap={dataState.closerMap}
+                calltimeLoading={dataState.calltimeLoading}
               />
             ))}
 

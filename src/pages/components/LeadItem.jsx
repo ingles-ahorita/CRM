@@ -18,6 +18,8 @@ const formatStatusValue = (value) => {
 };
 
  function callTimeColor(time, isRescheduled, called){
+  // Loading state - when time is undefined
+  if (time === undefined) return '#e5e7eb';
   if(isRescheduled && !called) return '#dd86ddff';
   if(!called) return '#cfcfcfff';
   if(time < 6) return '#88ff2dff';
@@ -26,7 +28,7 @@ const formatStatusValue = (value) => {
   console.log("no color found", time, isRescheduled, called);
 }
 
-export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full' }) {
+export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full', calltimeLoading = false }) {
   const location = useLocation();
 const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith('/lead/');
   // Add CSS for loading spinner animation
@@ -36,6 +38,15 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
       @keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
+      }
+      .calltime-spinner {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border: 2px solid rgba(52, 52, 52, 0.3);
+        border-top-color: rgba(52, 52, 52, 0.8);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
       }
     `;
     document.head.appendChild(style);
@@ -363,7 +374,14 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
              {( mode !== 'closer') && (
               <a href={getZoomCallLogUrl(lead.phone, lead.book_date)} target="_blank" rel="noopener noreferrer">
              <span className="lead-status-badge" style={{backgroundColor: callTimeColor(lead.responseTimeMinutes, lead.is_reschedule, lead.called)}}>
-              {lead.called ? (lead.responseTimeMinutes+ "m"): "Not called" }</span> </a>
+              {calltimeLoading ? (
+                <span className="calltime-spinner"></span>
+              ) : lead.called ? (
+                lead.responseTimeMinutes + "m"
+              ) : (
+                "Not called"
+              )}
+             </span> </a>
               )}
               
               {(new Date() - new Date(lead.book_date)) < (2 * 60 * 60 * 1000) && (lead.confirmed === null) &&(
@@ -1157,7 +1175,7 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, sho
 
 // compact version
 
-export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
+export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltimeLoading = false }) {
   const navigate = useNavigate();
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1378,9 +1396,18 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {} }) {
           fontWeight: '600',
           borderRadius: '4px',
           padding: '2px 8px',
-          fontSize: '12px'
+          fontSize: '12px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}>
-          {lead.called ? `${lead.responseTimeMinutes}m` : 'Not called'}
+          {calltimeLoading ? (
+            <span className="calltime-spinner"></span>
+          ) : lead.called ? (
+            `${lead.responseTimeMinutes}m`
+          ) : (
+            'Not called'
+          )}
         </span>
         </a>
       </div>

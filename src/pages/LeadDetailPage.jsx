@@ -12,6 +12,7 @@
       const [dataState, setDataState] = useState({
   leads: [],
   loading: true,
+  calltimeLoading: false,
   setterMap: {},
   closerMap: {}
 });
@@ -93,7 +94,8 @@ useEffect(() => {
             lead={call}
             setterMap={dataState.setterMap}
             closerMap={dataState.closerMap}
-            mode={localStorage.getItem('userRole')}/>
+            mode={localStorage.getItem('userRole')}
+            calltimeLoading={dataState.calltimeLoading}/>
           ))}
         </div>
       </div>

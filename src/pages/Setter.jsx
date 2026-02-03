@@ -99,6 +99,7 @@ import { supabase } from '../lib/supabaseClient';
     const [dataState, setDataState] = useState({
   leads: [],
   loading: true,
+  calltimeLoading: false,
   setterMap: {},
   closerMap: {}
 });
@@ -145,7 +146,7 @@ import { supabase } from '../lib/supabaseClient';
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
             {dataState.leads.map((lead) => (
-              <LeadItem key={lead.id} lead={lead} closerMap = {dataState.closerMap} setterMap={dataState.setterMap} mode="setter" currentUserId={setter}/>
+              <LeadItem key={lead.id} lead={lead} closerMap = {dataState.closerMap} setterMap={dataState.setterMap} mode="setter" currentUserId={setter} calltimeLoading={dataState.calltimeLoading}/>
             ))}
 
             {(dataState.leads.length === 0 && !dataState.loading) && (

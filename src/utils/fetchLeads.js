@@ -197,9 +197,9 @@ if (searchTerm) {
 
   };
 
-  const callMap = await runAnalysis(leadsData, endDate);
 
-  let leadsWithCallTime = leadsData.map(lead => ({...lead, ...callMap[lead.id]}));
+
+  let leadsWithCallTime = leadsData;
 
   // Filter for follow ups if needed (in case relationship filter didn't work)
   // Note: A call can only have ONE outcome_log entry, so it's either 'follow_up' OR 'lock_in', not both
@@ -268,24 +268,35 @@ if (searchTerm) {
   };
 
     updateDataState({ leads: leadsWithCallTime || [], counts: finalCounts});
+    updateDataState({ loading: false });
+
+    // Set calltime loading state before running analysis
+    updateDataState({ calltimeLoading: true });
+    const callMap = await runAnalysis(leadsData, endDate);
+    leadsWithCallTime = leadsWithCallTime.map(lead => ({...lead, ...callMap[lead.id]}));
+    updateDataState({ leads: leadsWithCallTime || [], counts: finalCounts});
+    updateDataState({ calltimeLoading: false });
   }
+
   
-  const { data: settersData, error: settersError } = await supabase
-    .from('setters')
-    .select('id, name');
-  if (!settersError && settersData) {
+  
+  // Fetch setters and closers in a single request using Supabase's rpc/multi-table feature, if available;
+  // otherwise, use batched fetch. Here's a generic approach using Promise.all:
+
+  const [settersRes, closersRes] = await Promise.all([
+    supabase.from('setters').select('id, name'),
+    supabase.from('closers').select('id, name')
+  ]);
+
+  if (!settersRes.error && settersRes.data) {
     const map = {};
-    settersData.forEach(s => { map[s.id] = s.name; });
+    settersRes.data.forEach(s => { map[s.id] = s.name; });
     updateDataState({ setterMap: map });
   }
-    console.log("Fetching closers");
-  // Fetch closers
-  const { data: closersData, error: closersError } = await supabase
-    .from('closers')
-    .select('id, name');
-  if (!closersError && closersData) {
+
+  if (!closersRes.error && closersRes.data) {
     const map = {};
-    closersData.forEach(c => { map[c.id] = c.name; });
+    closersRes.data.forEach(c => { map[c.id] = c.name; });
     updateDataState({ closerMap: map });
   }
 
