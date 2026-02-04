@@ -195,6 +195,36 @@ const refundDate = refundDateValue
   ? new Date(refundDateValue).toISOString() 
   : null;
 
+// Extract clawback percentage (default 100)
+const clawbackPercentage = parseFloat(formData.get('clawback')) || 100;
+
+// Apply clawback percentage to refund commissions
+if (outcomeValue === 'refund' && commission !== null && clawbackPercentage < 100) {
+  const originalCommission = Math.abs(commission); // Get the positive value
+  
+  // Check if refund and purchase are in the same month
+  if (purchasedDate && refundDate) {
+    const purchaseDate = new Date(purchasedDate);
+    const refundDateObj = new Date(refundDate);
+    const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+    const refundMonth = refundDateObj.getFullYear() * 12 + refundDateObj.getMonth();
+    const isSameMonth = purchaseMonth === refundMonth;
+    
+    if (isSameMonth) {
+      // Same month refund: commission becomes positive (opposite of 0)
+      // Formula: original_commission * (100 - clawback) / 100
+      commission = originalCommission * (100 - clawbackPercentage) / 100;
+    } else {
+      // Previous month refund: reduce the negative commission
+      // Formula: negative_commission * clawback / 100
+      commission = commission * clawbackPercentage / 100;
+    }
+  } else {
+    // If dates are missing, assume previous month and reduce negative
+    commission = commission * clawbackPercentage / 100;
+  }
+}
+
 const paidSecondInstallment = formData.get('paid_second_installment') === 'on';
 
 const closerPayload = {
@@ -204,6 +234,7 @@ const closerPayload = {
   commission: commission,
   purchase_date: purchasedDate,
   refund_date: refundDate,
+  clawback: outcomeValue === 'refund' ? clawbackPercentage : null,
   prepared_score: parseInt(formData.get('prepared_score')) || null,
   prepared_reason: formData.get('prepared_reason'),
   budget_max: formData.get('budget_max'),
@@ -757,6 +788,26 @@ if (idToUse) {
               }
               style={{...inputStyle, width: '100%'}}
             />
+          </div>
+        )}
+
+        {/* Clawback Percentage - Only show when outcome is refund */}
+        {mode === 'closer' && outcome === 'refund' && (
+          <div>
+            <label style={labelStyle}>💰 Clawback Percentage:</label>
+            <input
+              name="clawback"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              defaultValue={noteData?.clawback ?? 100}
+              placeholder="100"
+              style={{...inputStyle, width: '100%'}}
+            />
+            <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+              Default: 100%. If less, negative commission is reduced or $0 becomes positive.
+            </p>
           </div>
         )}
         

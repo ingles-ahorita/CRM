@@ -866,6 +866,17 @@ async function fetchPurchases(closer = null, month = null) {
           return purchaseMonth === refundMonth;
         })();
       
+      // Check if clawback percentage is less than 100
+      const clawbackPercentage = outcomeLog.clawback ?? 100;
+      const hasClawbackAdjustment = clawbackPercentage < 100;
+      
+      // For same-month refunds: if clawback < 100%, preserve the adjusted commission (positive)
+      // Otherwise, set to 0. For purchases and previous-month refunds, use the stored commission
+      let commission = outcomeLog.commission;
+      if (isSameMonthRefund && !hasClawbackAdjustment) {
+        commission = 0;
+      }
+      
       return {
         ...outcomeLog.calls,
         // Add outcome_log fields that might be useful
@@ -873,8 +884,7 @@ async function fetchPurchases(closer = null, month = null) {
         purchase_date: outcomeLog.purchase_date,
         refund_date: outcomeLog.refund_date,
         outcome: outcomeLog.outcome,
-        // If same month refund, set commission to 0, otherwise use original commission
-        commission: isSameMonthRefund ? 0 : outcomeLog.commission,
+        commission: commission,
         offer_id: outcomeLog.offer_id,
         offer_name: outcomeLog.offers?.name || null,
         discount: outcomeLog.discount,
@@ -1298,14 +1308,24 @@ async function fetchRefundsList(closer = null, month = null) {
           return purchaseMonth === refundMonth;
         })();
       
+      // Check if clawback percentage is less than 100
+      const clawbackPercentage = outcomeLog.clawback ?? 100;
+      const hasClawbackAdjustment = clawbackPercentage < 100;
+      
+      // For same-month refunds: if clawback < 100%, preserve the adjusted commission (positive)
+      // Otherwise, set to 0. For previous-month refunds, use the stored commission (already adjusted)
+      let commission = outcomeLog.commission;
+      if (isSameMonthRefund && !hasClawbackAdjustment) {
+        commission = 0;
+      }
+      
       return {
         ...outcomeLog.calls,
         outcome_log_id: outcomeLog.id,
         purchase_date: outcomeLog.purchase_date,
         refund_date: outcomeLog.refund_date,
         outcome: outcomeLog.outcome,
-        // Set commission to 0 for same-month refunds
-        commission: isSameMonthRefund ? 0 : outcomeLog.commission,
+        commission: commission,
         offer_id: outcomeLog.offer_id,
         offer_name: outcomeLog.offers?.name || null,
         discount: outcomeLog.discount,
