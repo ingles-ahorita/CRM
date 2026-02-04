@@ -148,30 +148,38 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode }) => {
 
 // Calculate commission: base_commission - (percentage of discount)
 // Or PIF_commission if PIF checkbox is checked
-// Only calculate when outcome is 'yes' and an offer is selected
+// Calculate when outcome is 'yes' or 'refund' and an offer is selected
+// For refunds, commission is the same as purchase but negative
 const outcomeValue = formData.get('outcome') || '';
 const discountValue = formData.get('discount') || '';
 const offerId = formData.get('offer_id') || null;
 const pifChecked = formData.get('pif') === 'on';
 let commission = null;
 
-if (outcomeValue === 'yes' && offerId) {
+if ((outcomeValue === 'yes' || outcomeValue === 'refund') && offerId) {
   const selectedOfferObj = offers.find(o => o.id === offerId);
   if (selectedOfferObj) {
+    let calculatedCommission = null;
+    
     // If PIF checkbox is checked, use PIF_commission
     if (pifChecked && selectedOfferObj.PIF_commission) {
-      commission = selectedOfferObj.PIF_commission;
+      calculatedCommission = selectedOfferObj.PIF_commission;
     } else if (selectedOfferObj.base_commission) {
       // Otherwise use base_commission with discount
       if (discountValue) {
         // Discount is always a percentage
         const discountStr = discountValue.toString().trim();
         // let discountPercent = parseFloat(discountStr.replace('%', '')) || 0;
-        commission = selectedOfferObj.base_commission - (selectedOfferObj.base_commission * discountValue / 100);
+        calculatedCommission = selectedOfferObj.base_commission - (selectedOfferObj.base_commission * discountValue / 100);
       } else {
         // No discount, use full base_commission
-        commission = selectedOfferObj.base_commission;
+        calculatedCommission = selectedOfferObj.base_commission;
       }
+    }
+    
+    // For refunds, make commission negative
+    if (calculatedCommission !== null) {
+      commission = outcomeValue === 'refund' ? -calculatedCommission : calculatedCommission;
     }
   }
 }
@@ -182,6 +190,11 @@ const purchasedDate = purchasedDateValue
   ? new Date(purchasedDateValue).toISOString() 
   : null;
 
+const refundDateValue = formData.get('refund_date') || null;
+const refundDate = refundDateValue 
+  ? new Date(refundDateValue).toISOString() 
+  : null;
+
 const paidSecondInstallment = formData.get('paid_second_installment') === 'on';
 
 const closerPayload = {
@@ -190,6 +203,7 @@ const closerPayload = {
   discount: discountValue || null,
   commission: commission,
   purchase_date: purchasedDate,
+  refund_date: refundDate,
   prepared_score: parseInt(formData.get('prepared_score')) || null,
   prepared_reason: formData.get('prepared_reason'),
   budget_max: formData.get('budget_max'),
@@ -644,8 +658,8 @@ if (idToUse) {
           </div>
         )}
 
-        {/* Conditional Offer & Discount - Only show when outcome is yes */}
-        {mode === 'closer' && outcome === 'yes' && (
+        {/* Conditional Offer & Discount - Show when outcome is yes or refund */}
+        {mode === 'closer' && (outcome === 'yes' || outcome === 'refund') && (
           <>
             <div>
               <label style={labelStyle}>💰 Offer: <span style={{ color: 'red' }}>*</span></label>
@@ -654,7 +668,7 @@ if (idToUse) {
                 value={selectedOffer || ''}
                 onChange={(e) => setSelectedOffer(e.target.value)}
                 style={{...inputStyle, cursor: 'pointer', width: '100%'}}
-                required={outcome === 'yes'}
+                required={outcome === 'yes' || outcome === 'refund'}
               >
                 <option value="">Select an offer...</option>
                 {offers.map((offer) => (
@@ -686,25 +700,29 @@ if (idToUse) {
               </div>
             </div>
 
-            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input 
-                name="pif" 
-                type="checkbox" 
-                defaultChecked={noteData?.PIF || noteData?.pif || false}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
-              />
-              <label style={labelStyle}>💳 PIF (Pay In Full)</label>
-            </div>
+            {outcome === 'yes' && (
+              <>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input 
+                    name="pif" 
+                    type="checkbox" 
+                    defaultChecked={noteData?.PIF || noteData?.pif || false}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
+                  />
+                  <label style={labelStyle}>💳 PIF (Pay In Full)</label>
+                </div>
 
-            <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input 
-                name="paid_second_installment" 
-                type="checkbox" 
-                defaultChecked={noteData?.paid_second_installment || false}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
-              />
-              <label style={labelStyle}>💰 Paid Second Installment</label>
-            </div>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input 
+                    name="paid_second_installment" 
+                    type="checkbox" 
+                    defaultChecked={noteData?.paid_second_installment || false}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
+                  />
+                  <label style={labelStyle}>💰 Paid Second Installment</label>
+                </div>
+              </>
+            )}
           </>
         )}
 
@@ -718,6 +736,23 @@ if (idToUse) {
               defaultValue={
                 noteData?.purchase_date 
                   ? new Date(noteData.purchase_date).toISOString().split('T')[0]
+                  : new Date().toISOString().split('T')[0]
+              }
+              style={{...inputStyle, width: '100%'}}
+            />
+          </div>
+        )}
+
+        {/* Refund Date - Only show when outcome is refund */}
+        {mode === 'closer' && outcome === 'refund' && (
+          <div>
+            <label style={labelStyle}>🔄 Refund Date:</label>
+            <input
+              name="refund_date"
+              type="date"
+              defaultValue={
+                noteData?.refund_date 
+                  ? new Date(noteData.refund_date).toISOString().split('T')[0]
                   : new Date().toISOString().split('T')[0]
               }
               style={{...inputStyle, width: '100%'}}

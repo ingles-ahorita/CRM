@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LeadItemCompact, LeadListHeader } from './components/LeadItem';
-import { ViewNotesModal } from './components/Modal';
+import { NotesModal } from './components/Modal';
 import { Phone, Mail } from 'lucide-react';
 import * as DateHelpers from '../utils/dateHelpers';
 
@@ -17,6 +17,19 @@ export default function CloserStatsDashboard() {
   const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
   const [purchases, setPurchases] = useState([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [purchaseLogRefunds, setPurchaseLogRefunds] = useState([]);
+  const [purchaseLogRefundsLoading, setPurchaseLogRefundsLoading] = useState(false);
+  const [secondInstallments, setSecondInstallments] = useState(0);
+  const [secondInstallmentsCommission, setSecondInstallmentsCommission] = useState(0);
+  const [secondInstallmentsLoading, setSecondInstallmentsLoading] = useState(false);
+  const [secondInstallmentsList, setSecondInstallmentsList] = useState([]);
+  const [secondInstallmentsListLoading, setSecondInstallmentsListLoading] = useState(false);
+  const [refunds, setRefunds] = useState(0);
+  const [refundsLoading, setRefundsLoading] = useState(false);
+  const [refundsCommission, setRefundsCommission] = useState(0);
+  const [refundsCommissionLoading, setRefundsCommissionLoading] = useState(false);
+  const [refundsList, setRefundsList] = useState([]);
+  const [refundsListLoading, setRefundsListLoading] = useState(false);
   const [setterMap, setSetterMap] = useState({});
   const [closerMap, setCloserMap] = useState({});
   const navigate = useNavigate();
@@ -60,13 +73,66 @@ export default function CloserStatsDashboard() {
     if (viewMode === 'purchases') {
       const loadPurchases = async () => {
         setPurchasesLoading(true);
+        setPurchaseLogRefundsLoading(true);
         const purchasesData = await fetchPurchases(closer, selectedMonth);
         setPurchases(purchasesData);
+        // Also fetch refunds list based on refund_date
+        const refundsData = await fetchPurchaseLogRefunds(closer, selectedMonth);
+        setPurchaseLogRefunds(refundsData);
         setPurchasesLoading(false);
+        setPurchaseLogRefundsLoading(false);
       };
       loadPurchases();
+    } else if (viewMode === 'refunds') {
+      const loadRefundsList = async () => {
+        setRefundsListLoading(true);
+        const refundsData = await fetchRefundsList(closer, selectedMonth);
+        setRefundsList(refundsData);
+        setRefundsListLoading(false);
+      };
+      loadRefundsList();
+    } else if (viewMode === 'secondInstallments') {
+      const loadSecondInstallmentsList = async () => {
+        setSecondInstallmentsListLoading(true);
+        // Calculate previous month for second installments
+        const [year, monthNum] = selectedMonth.split('-');
+        const prevMonthDate = new Date(parseInt(year), parseInt(monthNum) - 2, 1);
+        const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+        const secondInstallmentsData = await fetchSecondInstallmentsList(closer, prevMonth);
+        setSecondInstallmentsList(secondInstallmentsData);
+        setSecondInstallmentsListLoading(false);
+      };
+      loadSecondInstallmentsList();
     }
-  }, [closer, selectedMonth, viewMode]); 
+  }, [closer, selectedMonth, viewMode]);
+
+  // Fetch second installments from previous month
+  useEffect(() => {
+    const loadSecondInstallments = async () => {
+      setSecondInstallmentsLoading(true);
+      const result = await fetchSecondInstallments(closer, selectedMonth);
+      setSecondInstallments(result.count);
+      setSecondInstallmentsCommission(result.commission);
+      setSecondInstallmentsLoading(false);
+    };
+    loadSecondInstallments();
+  }, [closer, selectedMonth]);
+
+  // Fetch refunds from selected month
+  useEffect(() => {
+    const loadRefunds = async () => {
+      setRefundsLoading(true);
+      setRefundsCommissionLoading(true);
+      const count = await fetchRefunds(closer, selectedMonth);
+      setRefunds(count);
+      // Also fetch refunds commission based on refund_date
+      const refundsComm = await fetchRefundsCommission(closer, selectedMonth);
+      setRefundsCommission(refundsComm);
+      setRefundsLoading(false);
+      setRefundsCommissionLoading(false);
+    };
+    loadRefunds();
+  }, [closer, selectedMonth]); 
 
   if (loading) {
     return (
@@ -111,6 +177,26 @@ export default function CloserStatsDashboard() {
             }`}
           >
             Purchase Log
+          </button>
+          <button
+            onClick={() => setViewMode('refunds')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'refunds'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            Refunds
+          </button>
+          <button
+            onClick={() => setViewMode('secondInstallments')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              viewMode === 'secondInstallments'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            Second Installments
           </button>
         </div>
 
@@ -192,8 +278,13 @@ export default function CloserStatsDashboard() {
               const currentMonthData = data.find(row => row.month === selectedMonth);
               if (!currentMonthData) return null;
               
+              // Calculate previous month
+              const [year, monthNum] = selectedMonth.split('-');
+              const prevMonthDate = new Date(parseInt(year), parseInt(monthNum) - 2, 1);
+              const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+              
               return (
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-5 gap-4">
                   <div className="bg-white rounded-lg shadow p-6">
                     <div className="text-sm font-medium text-gray-500">Show-Ups ({selectedMonth})</div>
                     <div className="mt-2 text-3xl font-bold text-gray-900">
@@ -209,6 +300,28 @@ export default function CloserStatsDashboard() {
                   </div>
                   
                   <div className="bg-white rounded-lg shadow p-6">
+                    <div className="text-sm font-medium text-gray-500">Second Installments ({prevMonth})</div>
+                    <div className="mt-2 text-3xl font-bold text-purple-600">
+                      {secondInstallmentsLoading ? (
+                        <span className="text-lg">...</span>
+                      ) : (
+                        secondInstallments
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <div className="text-sm font-medium text-gray-500">Refunds ({selectedMonth})</div>
+                    <div className="mt-2 text-3xl font-bold text-red-600">
+                      {refundsLoading ? (
+                        <span className="text-lg">...</span>
+                      ) : (
+                        refunds
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white rounded-lg shadow p-6">
                     <div className="text-sm font-medium text-gray-500">Conversion Rate ({selectedMonth})</div>
                     <div className="mt-2 text-3xl font-bold text-blue-600">
                       {currentMonthData.conversionRate?.toFixed(1)}%
@@ -220,9 +333,27 @@ export default function CloserStatsDashboard() {
 
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white rounded-lg shadow p-6">
-                <div className="text-sm font-medium text-gray-500">Revenue ({selectedMonth})</div>
+                <div className="text-sm font-medium text-gray-500">Comission ({selectedMonth})</div>
                 <div className="mt-2 text-3xl font-bold text-purple-600">
-                  ${data.find(row => row.month === selectedMonth)?.revenue?.toFixed(2) || '0.00'}
+                  ${(() => {
+                    const currentMonthRevenue = data.find(row => row.month === selectedMonth)?.revenue || 0;
+                    const secondInstallmentsComm = secondInstallmentsLoading ? 0 : secondInstallmentsCommission;
+                    const refundsComm = refundsCommissionLoading ? 0 : refundsCommission;
+                    // Refunds commission is already negative, so adding it subtracts from total
+                    const totalCommission = currentMonthRevenue + secondInstallmentsComm + refundsComm;
+                    return totalCommission.toFixed(2);
+                  })()}
+                </div>
+                <div className="text-xs text-gray-500 mt-1 space-y-1">
+                  <div>Base: ${data.find(row => row.month === selectedMonth)?.revenue?.toFixed(2) || '0.00'}</div>
+                  {!secondInstallmentsLoading && secondInstallmentsCommission > 0 && (
+                    <div className="text-green-600">+ ${secondInstallmentsCommission.toFixed(2)} from second installments</div>
+                  )}
+                  {!refundsCommissionLoading && (
+                    <div className={refundsCommission < 0 ? 'text-red-600' : 'text-gray-500'}>
+                      {refundsCommission > 0 ? '+' : ''}${refundsCommission.toFixed(2)} from refunds
+                    </div>
+                  )}
                 </div>
               </div>
               
@@ -241,23 +372,178 @@ export default function CloserStatsDashboard() {
               </div>
             </div>
           </>
-        ) : (
+        ) : viewMode === 'purchases' ? (
+          <>
+            {/* Purchases Table */}
+            <div className="bg-white rounded-lg shadow mb-6">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Purchases - {selectedMonth}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {purchases.length} purchase{purchases.length !== 1 ? 's' : ''} found
+                </p>
+              </div>
+              {purchasesLoading ? (
+                <div className="p-8 text-center text-gray-500">Loading purchases...</div>
+              ) : purchases.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">No purchases found for this month.</div>
+              ) : (
+                <div>
+                  {/* Purchase Log Header */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gap: '16px',
+                      padding: '12px 16px',
+                      backgroundColor: '#f3f4f6',
+                      borderBottom: '2px solid #e5e7eb',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    <div>Contact Info</div>
+                    <div>Setter</div>
+                    <div>Purchase Date</div>
+                    <div>Offer</div>
+                    <div style={{ textAlign: 'center' }}>Commission</div>
+                    <div style={{ textAlign: 'center' }}>Notes</div>
+                  </div>
+                  {purchases.map(lead => (
+                    <PurchaseItem
+                      key={lead.id}
+                      lead={lead}
+                      setterMap={setterMap}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Refunds Table */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Refunds - {selectedMonth}
+                </h2>
+                <p className="text-sm text-red-600 mt-1">
+                  {purchaseLogRefunds.length} refund{purchaseLogRefunds.length !== 1 ? 's' : ''} found (based on refund date)
+                </p>
+              </div>
+              {purchaseLogRefundsLoading ? (
+                <div className="p-8 text-center text-gray-500">Loading refunds...</div>
+              ) : purchaseLogRefunds.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">No refunds found for this month.</div>
+              ) : (
+                <div>
+                  {/* Refunds Log Header */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gap: '16px',
+                      padding: '12px 16px',
+                      backgroundColor: '#f3f4f6',
+                      borderBottom: '2px solid #e5e7eb',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    <div>Contact Info</div>
+                    <div>Setter</div>
+                    <div>Refund Date</div>
+                    <div>Offer</div>
+                    <div style={{ textAlign: 'center' }}>Commission</div>
+                    <div style={{ textAlign: 'center' }}>Notes</div>
+                  </div>
+                  {purchaseLogRefunds.map(lead => (
+                    <PurchaseItem
+                      key={lead.id}
+                      lead={lead}
+                      setterMap={setterMap}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : viewMode === 'refunds' ? (
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">
-                Purchase Log - {selectedMonth}
+                Refunds - {selectedMonth}
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                {purchases.length} purchase{purchases.length !== 1 ? 's' : ''} found
+                {refundsList.length} refund{refundsList.length !== 1 ? 's' : ''} found
               </p>
             </div>
-            {purchasesLoading ? (
-              <div className="p-8 text-center text-gray-500">Loading purchases...</div>
-            ) : purchases.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No purchases found for this month.</div>
+            {refundsListLoading ? (
+              <div className="p-8 text-center text-gray-500">Loading refunds...</div>
+            ) : refundsList.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No refunds found for this month.</div>
             ) : (
               <div>
-                {/* Purchase Log Header */}
+                {/* Refunds Log Header */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                    gap: '16px',
+                    padding: '12px 16px',
+                    backgroundColor: '#f3f4f6',
+                    borderBottom: '2px solid #e5e7eb',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: '#6b7280',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}
+                >
+                  <div>Contact Info</div>
+                  <div>Setter</div>
+                  <div>Refund Date</div>
+                  <div>Offer</div>
+                  <div style={{ textAlign: 'center' }}>Commission</div>
+                  <div style={{ textAlign: 'center' }}>Notes</div>
+                </div>
+                {refundsList.map(lead => (
+                  <PurchaseItem
+                    key={lead.id}
+                    lead={lead}
+                    setterMap={setterMap}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : viewMode === 'secondInstallments' ? (
+          <div className="bg-white rounded-lg shadow">
+            <div className="p-4 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Second Installments - {(() => {
+                  const [year, monthNum] = selectedMonth.split('-');
+                  const prevMonthDate = new Date(parseInt(year), parseInt(monthNum) - 2, 1);
+                  return `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+                })()}
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {secondInstallmentsList.length} second installment{secondInstallmentsList.length !== 1 ? 's' : ''} found
+              </p>
+            </div>
+            {secondInstallmentsListLoading ? (
+              <div className="p-8 text-center text-gray-500">Loading second installments...</div>
+            ) : secondInstallmentsList.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No second installments found for the previous month.</div>
+            ) : (
+              <div>
+                {/* Second Installments Log Header */}
                 <div
                   style={{
                     display: 'grid',
@@ -280,7 +566,7 @@ export default function CloserStatsDashboard() {
                   <div style={{ textAlign: 'center' }}>Commission</div>
                   <div style={{ textAlign: 'center' }}>Notes</div>
                 </div>
-                {purchases.map(lead => (
+                {secondInstallmentsList.map(lead => (
                   <PurchaseItem
                     key={lead.id}
                     lead={lead}
@@ -290,7 +576,7 @@ export default function CloserStatsDashboard() {
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -447,7 +733,7 @@ async function fetchPurchases(closer = null, month = null) {
         name
       )
     `)
-    .in('outcome', ['yes', 'refund'])
+    .eq('outcome', 'yes')
     .gte('purchase_date', startDateISO)
     .lte('purchase_date', endDateISO)
     .order('purchase_date', { ascending: false });
@@ -532,10 +818,485 @@ async function fetchPurchases(closer = null, month = null) {
   return purchases;
 }
 
+async function fetchSecondInstallments(closer = null, currentMonth = null) {
+  if (!currentMonth) return { count: 0, commission: 0 };
+
+  // Calculate previous month
+  const [year, monthNum] = currentMonth.split('-');
+  const prevMonthDate = new Date(parseInt(year), parseInt(monthNum) - 2, 1);
+  const prevYear = prevMonthDate.getFullYear();
+  const prevMonth = prevMonthDate.getMonth() + 1;
+  
+  // Create dates at start and end of previous month in UTC
+  const startDate = new Date(Date.UTC(prevYear, prevMonth - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(prevYear, prevMonth, 0, 23, 59, 59, 999));
+  
+  // Format dates for Supabase query
+  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
+  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
+  
+  // Query outcome_log for second installments from previous month (include commission)
+  let query = supabase
+    .from('outcome_log')
+    .select(`
+      id,
+      call_id,
+      commission,
+      calls!inner!call_id (
+        closer_id
+      )
+    `)
+    .eq('outcome', 'yes')
+    .eq('paid_second_installment', true)
+    .gte('purchase_date', startDateISO)
+    .lte('purchase_date', endDateISO);
+
+  // Filter by closer_id if specified
+  if (closer) {
+    query = query.eq('calls.closer_id', closer);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching second installments:', error);
+    return { count: 0, commission: 0 };
+  }
+
+  // Filter by closer_id in JavaScript as well (in case join filter doesn't work)
+  let filteredData = data || [];
+  if (closer) {
+    filteredData = filteredData.filter(item => 
+      item.calls && item.calls.closer_id === closer
+    );
+  }
+
+  // Calculate total commission
+  const totalCommission = filteredData.reduce((sum, item) => {
+    return sum + (item.commission || 0);
+  }, 0);
+
+  return {
+    count: filteredData.length,
+    commission: totalCommission
+  };
+}
+
+async function fetchRefunds(closer = null, month = null) {
+  if (!month) return 0;
+
+  // Parse month (format: YYYY-MM)
+  const [year, monthNum] = month.split('-');
+  // Create dates at start and end of month in UTC
+  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
+  
+  // Query outcome_log for refunds
+  let query = supabase
+    .from('outcome_log')
+    .select(`
+      id,
+      call_id,
+      refund_date,
+      purchase_date,
+      calls!inner!call_id (
+        closer_id
+      )
+    `)
+    .eq('outcome', 'refund');
+
+  // Filter by closer_id if specified
+  if (closer) {
+    query = query.eq('calls.closer_id', closer);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching refunds:', error);
+    return 0;
+  }
+
+  // Filter by closer_id in JavaScript as well (in case join filter doesn't work)
+  let filteredData = data || [];
+  if (closer) {
+    filteredData = filteredData.filter(item => 
+      item.calls && item.calls.closer_id === closer
+    );
+  }
+
+  // Filter by date range in JavaScript (check refund_date first, then purchase_date)
+  filteredData = filteredData.filter(item => {
+    const dateToCheck = item.refund_date || item.purchase_date;
+    if (!dateToCheck) return false;
+    
+    const checkDate = new Date(dateToCheck);
+    const checkDateOnly = new Date(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+    const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    
+    return checkDateOnly >= startDateOnly && checkDateOnly <= endDateOnly;
+  });
+
+  return filteredData.length;
+}
+
+async function fetchRefundsCommission(closer = null, month = null) {
+  if (!month) return 0;
+
+  // Parse month (format: YYYY-MM)
+  const [year, monthNum] = month.split('-');
+  // Create dates at start and end of month in UTC
+  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
+  
+  // Format dates for Supabase query
+  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
+  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
+  
+  // Query outcome_log for refunds with refund_date in the selected month
+  // Include purchase_date to check if refund happened in same month as sale
+  let query = supabase
+    .from('outcome_log')
+    .select(`
+      id,
+      call_id,
+      refund_date,
+      purchase_date,
+      commission,
+      calls!inner!call_id (
+        closer_id
+      )
+    `)
+    .eq('outcome', 'refund')
+    .not('refund_date', 'is', null)
+    .gte('refund_date', startDateISO)
+    .lte('refund_date', endDateISO);
+
+  // Filter by closer_id if specified
+  if (closer) {
+    query = query.eq('calls.closer_id', closer);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching refunds commission:', error);
+    return 0;
+  }
+
+  // Filter by closer_id in JavaScript as well (in case join filter doesn't work)
+  let filteredData = data || [];
+  if (closer) {
+    filteredData = filteredData.filter(item => 
+      item.calls && item.calls.closer_id === closer
+    );
+  }
+
+  // Filter by date range and exclude refunds that happened in same month as sale
+  filteredData = filteredData.filter(item => {
+    if (!item.refund_date) return false;
+    
+    // Check if refund_date is in the selected month
+    const refundDate = new Date(item.refund_date);
+    const refundDateOnly = new Date(refundDate.getFullYear(), refundDate.getMonth(), refundDate.getDate());
+    const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    
+    if (refundDateOnly < startDateOnly || refundDateOnly > endDateOnly) {
+      return false;
+    }
+    
+    // Exclude if refund happened in same month as purchase
+    if (item.purchase_date) {
+      const purchaseDate = new Date(item.purchase_date);
+      const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
+      const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+      
+      // If refund and purchase are in the same month, exclude it
+      if (refundMonth === purchaseMonth) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+
+  // Sum up commission (refunds commission is negative)
+  const totalCommission = filteredData.reduce((sum, item) => {
+    return sum + (item.commission || 0);
+  }, 0);
+
+  return totalCommission;
+}
+
+async function fetchPurchaseLogRefunds(closer = null, month = null) {
+  if (!month) return [];
+
+  // Parse month (format: YYYY-MM)
+  const [year, monthNum] = month.split('-');
+  // Create dates at start and end of month in UTC
+  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
+  
+  // Format dates for Supabase query
+  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
+  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
+  
+  // Query outcome_log for refunds with refund_date in the selected month
+  let query = supabase
+    .from('outcome_log')
+    .select(`
+      *,
+      calls!inner!call_id (
+        *,
+        closers (id, name),
+        setters (id, name)
+      ),
+      offers!offer_id (
+        id,
+        name
+      )
+    `)
+    .eq('outcome', 'refund')
+    .not('refund_date', 'is', null)
+    .gte('refund_date', startDateISO)
+    .lte('refund_date', endDateISO)
+    .order('refund_date', { ascending: false });
+
+  // Filter by closer_id if specified
+  if (closer) {
+    query = query.eq('calls.closer_id', closer);
+  }
+
+  const { data: outcomeLogs, error } = await query;
+
+  if (error) {
+    console.error('Error fetching purchase log refunds:', error);
+    return [];
+  }
+
+  // Transform outcome_log entries
+  let refunds = (outcomeLogs || [])
+    .map(outcomeLog => ({
+      ...outcomeLog.calls,
+      outcome_log_id: outcomeLog.id,
+      purchase_date: outcomeLog.purchase_date,
+      refund_date: outcomeLog.refund_date,
+      outcome: outcomeLog.outcome,
+      commission: outcomeLog.commission,
+      offer_id: outcomeLog.offer_id,
+      offer_name: outcomeLog.offers?.name || null,
+      discount: outcomeLog.discount,
+      purchased_at: outcomeLog.purchase_date,
+      purchased: true
+    }))
+    .filter(refund => {
+      // Must have refund_date
+      if (!refund.refund_date) return false;
+      
+      // Filter by closer_id if specified
+      if (closer && refund.closer_id !== closer) {
+        return false;
+      }
+      
+      // Filter by date range (refund_date)
+      const checkDate = new Date(refund.refund_date);
+      const checkDateOnly = new Date(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+      
+      return checkDateOnly >= startDateOnly && checkDateOnly <= endDateOnly;
+    });
+  
+  // Sort by refund_date descending
+  refunds.sort((a, b) => {
+    const dateA = new Date(a.refund_date);
+    const dateB = new Date(b.refund_date);
+    return dateB - dateA;
+  });
+
+  return refunds;
+}
+
+async function fetchRefundsList(closer = null, month = null) {
+  if (!month) return [];
+
+  // Parse month (format: YYYY-MM)
+  const [year, monthNum] = month.split('-');
+  // Create dates at start and end of month in UTC
+  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
+  
+  // Format dates for Supabase query
+  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
+  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
+  
+  // Query outcome_log for refunds
+  let query = supabase
+    .from('outcome_log')
+    .select(`
+      *,
+      calls!inner!call_id (
+        *,
+        closers (id, name),
+        setters (id, name)
+      ),
+      offers!offer_id (
+        id,
+        name
+      )
+    `)
+    .eq('outcome', 'refund')
+    .order('refund_date', { ascending: false, nullsFirst: false });
+
+  // Filter by closer_id if specified
+  if (closer) {
+    query = query.eq('calls.closer_id', closer);
+  }
+
+  const { data: outcomeLogs, error } = await query;
+
+  if (error) {
+    console.error('Error fetching refunds list:', error);
+    return [];
+  }
+
+  // Transform and filter by date range
+  let refunds = (outcomeLogs || [])
+    .map(outcomeLog => ({
+      ...outcomeLog.calls,
+      outcome_log_id: outcomeLog.id,
+      purchase_date: outcomeLog.purchase_date,
+      refund_date: outcomeLog.refund_date,
+      outcome: outcomeLog.outcome,
+      commission: outcomeLog.commission,
+      offer_id: outcomeLog.offer_id,
+      offer_name: outcomeLog.offers?.name || null,
+      discount: outcomeLog.discount,
+      purchased_at: outcomeLog.purchase_date,
+      purchased: true
+    }))
+    .filter(refund => {
+      // Must have refund_date or purchase_date
+      if (!refund.refund_date && !refund.purchase_date) return false;
+      
+      // Filter by closer_id if specified
+      if (closer && refund.closer_id !== closer) {
+        return false;
+      }
+      
+      // Filter by date range (use refund_date if available, otherwise purchase_date)
+      const dateToCheck = refund.refund_date || refund.purchase_date;
+      const checkDate = new Date(dateToCheck);
+      const checkDateOnly = new Date(checkDate.getFullYear(), checkDate.getMonth(), checkDate.getDate());
+      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+      
+      return checkDateOnly >= startDateOnly && checkDateOnly <= endDateOnly;
+    });
+  
+  // Sort by refund_date descending (or purchase_date if refund_date is null)
+  refunds.sort((a, b) => {
+    const dateA = new Date(a.refund_date || a.purchase_date);
+    const dateB = new Date(b.refund_date || b.purchase_date);
+    return dateB - dateA;
+  });
+
+  return refunds;
+}
+
+async function fetchSecondInstallmentsList(closer = null, month = null) {
+  if (!month) return [];
+
+  // Parse month (format: YYYY-MM)
+  const [year, monthNum] = month.split('-');
+  // Create dates at start and end of month in UTC
+  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
+  
+  // Format dates for Supabase query
+  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
+  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
+  
+  // Query outcome_log for second installments
+  let query = supabase
+    .from('outcome_log')
+    .select(`
+      *,
+      calls!inner!call_id (
+        *,
+        closers (id, name),
+        setters (id, name)
+      ),
+      offers!offer_id (
+        id,
+        name
+      )
+    `)
+    .eq('outcome', 'yes')
+    .eq('paid_second_installment', true)
+    .gte('purchase_date', startDateISO)
+    .lte('purchase_date', endDateISO)
+    .order('purchase_date', { ascending: false });
+
+  // Filter by closer_id if specified
+  if (closer) {
+    query = query.eq('calls.closer_id', closer);
+  }
+
+  const { data: outcomeLogs, error } = await query;
+
+  if (error) {
+    console.error('Error fetching second installments list:', error);
+    return [];
+  }
+
+  // Transform outcome_log entries
+  let secondInstallments = (outcomeLogs || [])
+    .map(outcomeLog => ({
+      ...outcomeLog.calls,
+      outcome_log_id: outcomeLog.id,
+      purchase_date: outcomeLog.purchase_date,
+      outcome: outcomeLog.outcome,
+      commission: outcomeLog.commission,
+      offer_id: outcomeLog.offer_id,
+      offer_name: outcomeLog.offers?.name || null,
+      discount: outcomeLog.discount,
+      purchased_at: outcomeLog.purchase_date,
+      purchased: true,
+      paid_second_installment: outcomeLog.paid_second_installment
+    }))
+    .filter(item => {
+      // Filter by closer_id if specified
+      if (closer && item.closer_id !== closer) {
+        return false;
+      }
+      
+      // Filter by date range
+      if (!item.purchase_date) return false;
+      const purchaseDate = new Date(item.purchase_date);
+      const purchaseDateOnly = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth(), purchaseDate.getDate());
+      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+      
+      return purchaseDateOnly >= startDateOnly && purchaseDateOnly <= endDateOnly;
+    });
+  
+  // Sort by purchase_date descending
+  secondInstallments.sort((a, b) => {
+    const dateA = new Date(a.purchase_date);
+    const dateB = new Date(b.purchase_date);
+    return dateB - dateA;
+  });
+
+  return secondInstallments;
+}
+
 // Purchase Item Component - Simplified for purchase log
 function PurchaseItem({ lead, setterMap = {} }) {
   const navigate = useNavigate();
-  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   return (
     <div
@@ -635,9 +1396,11 @@ function PurchaseItem({ lead, setterMap = {} }) {
         {setterMap[lead.setter_id] || 'N/A'}
       </div>
 
-      {/* Purchase Date */}
+      {/* Purchase Date / Refund Date */}
       <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
+        {lead.outcome === 'refund' && lead.refund_date
+          ? DateHelpers.formatTimeWithRelative(lead.refund_date)
+          : DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
       </div>
 
       {/* Offer Name */}
@@ -663,13 +1426,13 @@ function PurchaseItem({ lead, setterMap = {} }) {
         {lead.commission ? `$${lead.commission.toFixed(2)}` : 'N/A'}
       </div>
 
-      {/* Notes */}
+      {/* Edit Closer Note */}
       <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
         <button
-          onClick={() => setViewModalOpen(true)}
+          onClick={() => setEditModalOpen(true)}
           style={{
             padding: '5px 12px',
-            backgroundColor: (lead.setter_note_id) || (lead.closer_note_id) ? '#7053d0ff' : '#3f2f76ff',
+            backgroundColor: lead.closer_note_id ? '#7053d0ff' : '#3f2f76ff',
             color: 'white',
             border: 'none',
             borderRadius: '6px',
@@ -679,15 +1442,16 @@ function PurchaseItem({ lead, setterMap = {} }) {
             whiteSpace: 'nowrap'
           }}
         >
-          📝 Notes
+          ✏️
         </button>
       </div>
 
-      <ViewNotesModal 
-        isOpen={viewModalOpen} 
-        onClose={() => setViewModalOpen(false)} 
+      <NotesModal 
+        isOpen={editModalOpen} 
+        onClose={() => setEditModalOpen(false)} 
         lead={lead}
         callId={lead.id}
+        mode="closer"
       />
     </div>
   );
