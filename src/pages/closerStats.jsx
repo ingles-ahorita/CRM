@@ -17,6 +17,8 @@ export default function CloserStatsDashboard() {
   const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
   const [purchases, setPurchases] = useState([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [purchasesForCommission, setPurchasesForCommission] = useState([]);
+  const [purchasesForCommissionLoading, setPurchasesForCommissionLoading] = useState(false);
   const [purchaseLogRefunds, setPurchaseLogRefunds] = useState([]);
   const [purchaseLogRefundsLoading, setPurchaseLogRefundsLoading] = useState(false);
   const [secondInstallments, setSecondInstallments] = useState(0);
@@ -153,6 +155,17 @@ export default function CloserStatsDashboard() {
       setRefundsCommissionLoading(false);
     };
     loadRefunds();
+  }, [closer, selectedMonth]);
+
+  // Always fetch purchases for commission calculation (regardless of viewMode)
+  useEffect(() => {
+    const loadPurchasesForCommission = async () => {
+      setPurchasesForCommissionLoading(true);
+      const purchasesData = await fetchPurchases(closer, selectedMonth);
+      setPurchasesForCommission(purchasesData);
+      setPurchasesForCommissionLoading(false);
+    };
+    loadPurchasesForCommission();
   }, [closer, selectedMonth]); 
 
   if (loading) {
@@ -364,7 +377,8 @@ export default function CloserStatsDashboard() {
                     // Calculate commission from same-month refunds in purchases table
                     // These are refunds that happened in the same month as purchase
                     // Their commission can be 0 (if clawback is 100%) or positive (if clawback < 100%)
-                    const sameMonthRefundsComm = purchases
+                    // Use purchasesForCommission which is always loaded, not purchases which is only loaded in purchases view
+                    const sameMonthRefundsComm = purchasesForCommissionLoading ? 0 : purchasesForCommission
                       .filter(p => p.outcome === 'refund' && p.commission !== null && p.commission !== undefined)
                       .reduce((sum, p) => sum + (p.commission || 0), 0);
                     
@@ -380,10 +394,11 @@ export default function CloserStatsDashboard() {
                     <div className="text-green-600">+ ${secondInstallmentsCommission.toFixed(2)} from second installments</div>
                   )}
                   {(() => {
-                    const sameMonthRefundsComm = purchases
+                    // Use purchasesForCommission which is always loaded, not purchases which is only loaded in purchases view
+                    const sameMonthRefundsComm = purchasesForCommissionLoading ? 0 : purchasesForCommission
                       .filter(p => p.outcome === 'refund' && p.commission !== null && p.commission !== undefined)
                       .reduce((sum, p) => sum + (p.commission || 0), 0);
-                    return sameMonthRefundsComm > 0 && (
+                    return !purchasesForCommissionLoading && sameMonthRefundsComm > 0 && (
                       <div className="text-green-600">+ ${sameMonthRefundsComm.toFixed(2)} from same-month refunds (clawback)</div>
                     );
                   })()}
