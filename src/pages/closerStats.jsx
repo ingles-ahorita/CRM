@@ -360,8 +360,17 @@ export default function CloserStatsDashboard() {
                     const currentMonthRevenue = data.find(row => row.month === selectedMonth)?.revenue || 0;
                     const secondInstallmentsComm = secondInstallmentsLoading ? 0 : secondInstallmentsCommission;
                     const refundsComm = refundsCommissionLoading ? 0 : refundsCommission;
+                    
+                    // Calculate commission from same-month refunds in purchases table
+                    // These are refunds that happened in the same month as purchase
+                    // Their commission can be 0 (if clawback is 100%) or positive (if clawback < 100%)
+                    const sameMonthRefundsComm = purchases
+                      .filter(p => p.outcome === 'refund' && p.commission !== null && p.commission !== undefined)
+                      .reduce((sum, p) => sum + (p.commission || 0), 0);
+                    
                     // Refunds commission is already negative, so adding it subtracts from total
-                    const totalCommission = currentMonthRevenue + secondInstallmentsComm + refundsComm;
+                    // Same-month refunds commission is positive (or 0), so adding it adds to total
+                    const totalCommission = currentMonthRevenue + secondInstallmentsComm + refundsComm + sameMonthRefundsComm;
                     return totalCommission.toFixed(2);
                   })()}
                 </div>
@@ -370,9 +379,17 @@ export default function CloserStatsDashboard() {
                   {!secondInstallmentsLoading && secondInstallmentsCommission > 0 && (
                     <div className="text-green-600">+ ${secondInstallmentsCommission.toFixed(2)} from second installments</div>
                   )}
+                  {(() => {
+                    const sameMonthRefundsComm = purchases
+                      .filter(p => p.outcome === 'refund' && p.commission !== null && p.commission !== undefined)
+                      .reduce((sum, p) => sum + (p.commission || 0), 0);
+                    return sameMonthRefundsComm > 0 && (
+                      <div className="text-green-600">+ ${sameMonthRefundsComm.toFixed(2)} from same-month refunds (clawback)</div>
+                    );
+                  })()}
                   {!refundsCommissionLoading && (
                     <div className={refundsCommission < 0 ? 'text-red-600' : 'text-gray-500'}>
-                      {refundsCommission > 0 ? '+' : ''}${refundsCommission.toFixed(2)} from refunds
+                      {refundsCommission > 0 ? '+' : ''}${refundsCommission.toFixed(2)} from previous-month refunds
                     </div>
                   )}
                 </div>
