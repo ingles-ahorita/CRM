@@ -30,6 +30,8 @@ export default function CloserStatsDashboard() {
   const [refundsCommissionLoading, setRefundsCommissionLoading] = useState(false);
   const [refundsList, setRefundsList] = useState([]);
   const [refundsListLoading, setRefundsListLoading] = useState(false);
+  const [sameMonthRefundsList, setSameMonthRefundsList] = useState([]);
+  const [previousMonthRefundsList, setPreviousMonthRefundsList] = useState([]);
   const [setterMap, setSetterMap] = useState({});
   const [closerMap, setCloserMap] = useState({});
   const navigate = useNavigate();
@@ -87,6 +89,25 @@ export default function CloserStatsDashboard() {
       const loadRefundsList = async () => {
         setRefundsListLoading(true);
         const refundsData = await fetchRefundsList(closer, selectedMonth);
+        // Split refunds into same-month and previous-month
+        const sameMonth = refundsData.filter(refund => {
+          if (!refund.purchase_date || !refund.refund_date) return false;
+          const purchaseDate = new Date(refund.purchase_date);
+          const refundDate = new Date(refund.refund_date);
+          const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+          const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
+          return purchaseMonth === refundMonth;
+        });
+        const previousMonth = refundsData.filter(refund => {
+          if (!refund.purchase_date || !refund.refund_date) return false;
+          const purchaseDate = new Date(refund.purchase_date);
+          const refundDate = new Date(refund.refund_date);
+          const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+          const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
+          return purchaseMonth !== refundMonth;
+        });
+        setSameMonthRefundsList(sameMonth);
+        setPreviousMonthRefundsList(previousMonth);
         setRefundsList(refundsData);
         setRefundsListLoading(false);
       };
@@ -428,19 +449,73 @@ export default function CloserStatsDashboard() {
             <div className="bg-white rounded-lg shadow">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">
-                  Refunds - {selectedMonth}
+                  Refunds from Previous Months - {selectedMonth}
                 </h2>
                 <p className="text-sm text-red-600 mt-1">
-                  {purchaseLogRefunds.length} refund{purchaseLogRefunds.length !== 1 ? 's' : ''} found (based on refund date)
+                  {purchaseLogRefunds.length} refund{purchaseLogRefunds.length !== 1 ? 's' : ''} found from previous month{purchaseLogRefunds.length !== 1 ? 's' : ''} (based on refund date)
                 </p>
               </div>
               {purchaseLogRefundsLoading ? (
                 <div className="p-8 text-center text-gray-500">Loading refunds...</div>
               ) : purchaseLogRefunds.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">No refunds found for this month.</div>
+                <div className="p-8 text-center text-gray-500">No refunds from previous months found for this period.</div>
               ) : (
                 <div>
                   {/* Refunds Log Header */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gap: '16px',
+                      padding: '12px 16px',
+                      backgroundColor: '#f3f4f6',
+                      borderBottom: '2px solid #e5e7eb',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    <div>Contact Info</div>
+                    <div>Setter</div>
+                    <div>Purchase Date</div>
+                    <div>Refund Date</div>
+                    <div>Offer</div>
+                    <div style={{ textAlign: 'center' }}>Commission</div>
+                    <div style={{ textAlign: 'center' }}>Notes</div>
+                  </div>
+                  {purchaseLogRefunds.map(lead => (
+                    <PurchaseItem
+                      key={lead.id}
+                      lead={lead}
+                      setterMap={setterMap}
+                      isRefundsTable={true}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        ) : viewMode === 'refunds' ? (
+          <>
+            {/* Same Month Refunds Table */}
+            <div className="bg-white rounded-lg shadow mb-6">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Refunds from Same Month - {selectedMonth}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {sameMonthRefundsList.length} refund{sameMonthRefundsList.length !== 1 ? 's' : ''} found (commission: $0.00)
+                </p>
+              </div>
+              {refundsListLoading ? (
+                <div className="p-8 text-center text-gray-500">Loading refunds...</div>
+              ) : sameMonthRefundsList.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">No same-month refunds found.</div>
+              ) : (
+                <div>
+                  {/* Same Month Refunds Header */}
                   <div
                     style={{
                       display: 'grid',
@@ -463,66 +538,69 @@ export default function CloserStatsDashboard() {
                     <div style={{ textAlign: 'center' }}>Commission</div>
                     <div style={{ textAlign: 'center' }}>Notes</div>
                   </div>
-                  {purchaseLogRefunds.map(lead => (
+                  {sameMonthRefundsList.map(lead => (
                     <PurchaseItem
                       key={lead.id}
-                      lead={lead}
+                      lead={{...lead, commission: 0}}
                       setterMap={setterMap}
                     />
                   ))}
                 </div>
               )}
             </div>
-          </>
-        ) : viewMode === 'refunds' ? (
-          <div className="bg-white rounded-lg shadow">
-            <div className="p-4 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Refunds - {selectedMonth}
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                {refundsList.length} refund{refundsList.length !== 1 ? 's' : ''} found
-              </p>
-            </div>
-            {refundsListLoading ? (
-              <div className="p-8 text-center text-gray-500">Loading refunds...</div>
-            ) : refundsList.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No refunds found for this month.</div>
-            ) : (
-              <div>
-                {/* Refunds Log Header */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
-                    gap: '16px',
-                    padding: '12px 16px',
-                    backgroundColor: '#f3f4f6',
-                    borderBottom: '2px solid #e5e7eb',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}
-                >
-                  <div>Contact Info</div>
-                  <div>Setter</div>
-                  <div>Refund Date</div>
-                  <div>Offer</div>
-                  <div style={{ textAlign: 'center' }}>Commission</div>
-                  <div style={{ textAlign: 'center' }}>Notes</div>
-                </div>
-                {refundsList.map(lead => (
-                  <PurchaseItem
-                    key={lead.id}
-                    lead={lead}
-                    setterMap={setterMap}
-                  />
-                ))}
+
+            {/* Previous Month Refunds Table */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Refunds from Previous Months - {selectedMonth}
+                </h2>
+                <p className="text-sm text-red-600 mt-1">
+                  {previousMonthRefundsList.length} refund{previousMonthRefundsList.length !== 1 ? 's' : ''} found (based on refund date)
+                </p>
               </div>
-            )}
-          </div>
+              {refundsListLoading ? (
+                <div className="p-8 text-center text-gray-500">Loading refunds...</div>
+              ) : previousMonthRefundsList.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">No refunds from previous months found.</div>
+              ) : (
+                <div>
+                  {/* Previous Month Refunds Header */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gap: '16px',
+                      padding: '12px 16px',
+                      backgroundColor: '#f3f4f6',
+                      borderBottom: '2px solid #e5e7eb',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    <div>Contact Info</div>
+                    <div>Setter</div>
+                    <div>Purchase Date</div>
+                    <div>Refund Date</div>
+                    <div>Offer</div>
+                    <div style={{ textAlign: 'center' }}>Commission</div>
+                    <div style={{ textAlign: 'center' }}>Notes</div>
+                  </div>
+                  {previousMonthRefundsList.map(lead => (
+                    <PurchaseItem
+                      key={lead.id}
+                      lead={lead}
+                      setterMap={setterMap}
+                      isRefundsTable={true}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
         ) : viewMode === 'secondInstallments' ? (
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b border-gray-200">
@@ -718,7 +796,8 @@ async function fetchPurchases(closer = null, month = null) {
   const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
   const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
   
-  // Now query outcome_log with proper filtering
+  // Now query outcome_log - include both 'yes' and 'refund' outcomes
+  // We'll filter refunds to only include those in same month as purchase
   let query = supabase
     .from('outcome_log')
     .select(`
@@ -733,7 +812,7 @@ async function fetchPurchases(closer = null, month = null) {
         name
       )
     `)
-    .eq('outcome', 'yes')
+    .in('outcome', ['yes', 'refund'])
     .gte('purchase_date', startDateISO)
     .lte('purchase_date', endDateISO)
     .order('purchase_date', { ascending: false });
@@ -774,20 +853,36 @@ async function fetchPurchases(closer = null, month = null) {
   
   // Now transform the deduplicated outcome_log entries
   let purchases = Array.from(outcomeLogsByCallId.values())
-    .map(outcomeLog => ({
-      ...outcomeLog.calls,
-      // Add outcome_log fields that might be useful
-      outcome_log_id: outcomeLog.id,
-      purchase_date: outcomeLog.purchase_date,
-      outcome: outcomeLog.outcome,
-      commission: outcomeLog.commission,
-      offer_id: outcomeLog.offer_id,
-      offer_name: outcomeLog.offers?.name || null,
-      discount: outcomeLog.discount,
-      // Keep purchased_at for backward compatibility, but use purchase_date
-      purchased_at: outcomeLog.purchase_date,
-      purchased: true
-    }));
+    .map(outcomeLog => {
+      // Check if refund happened in same month as purchase
+      const isSameMonthRefund = outcomeLog.outcome === 'refund' && 
+        outcomeLog.purchase_date && 
+        outcomeLog.refund_date &&
+        (() => {
+          const purchaseDate = new Date(outcomeLog.purchase_date);
+          const refundDate = new Date(outcomeLog.refund_date);
+          const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+          const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
+          return purchaseMonth === refundMonth;
+        })();
+      
+      return {
+        ...outcomeLog.calls,
+        // Add outcome_log fields that might be useful
+        outcome_log_id: outcomeLog.id,
+        purchase_date: outcomeLog.purchase_date,
+        refund_date: outcomeLog.refund_date,
+        outcome: outcomeLog.outcome,
+        // If same month refund, set commission to 0, otherwise use original commission
+        commission: isSameMonthRefund ? 0 : outcomeLog.commission,
+        offer_id: outcomeLog.offer_id,
+        offer_name: outcomeLog.offers?.name || null,
+        discount: outcomeLog.discount,
+        // Keep purchased_at for backward compatibility, but use purchase_date
+        purchased_at: outcomeLog.purchase_date,
+        purchased: true
+      };
+    });
 
   // Filter by date range and closer - ensure all purchases are within the selected month and belong to the correct closer
   purchases = purchases.filter(purchase => {
@@ -799,7 +894,18 @@ async function fetchPurchases(closer = null, month = null) {
       return false;
     }
     
-    // Filter by date range
+    // For refunds, only include if refund happened in same month as purchase
+    if (purchase.outcome === 'refund') {
+      if (!purchase.refund_date) return false;
+      const purchaseDate = new Date(purchase.purchase_date);
+      const refundDate = new Date(purchase.refund_date);
+      const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+      const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
+      // Only include if same month
+      if (purchaseMonth !== refundMonth) return false;
+    }
+    
+    // Filter by date range (based on purchase_date)
     const purchaseDate = new Date(purchase.purchase_date);
     const purchaseDateOnly = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth(), purchaseDate.getDate());
     const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
@@ -1106,7 +1212,23 @@ async function fetchPurchaseLogRefunds(closer = null, month = null) {
       const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
       const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
       
-      return checkDateOnly >= startDateOnly && checkDateOnly <= endDateOnly;
+      if (checkDateOnly < startDateOnly || checkDateOnly > endDateOnly) {
+        return false;
+      }
+      
+      // Exclude refunds that happened in same month as purchase (those appear in purchases table)
+      if (refund.purchase_date) {
+        const purchaseDate = new Date(refund.purchase_date);
+        const refundMonth = checkDate.getFullYear() * 12 + checkDate.getMonth();
+        const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+        
+        // Exclude if refund and purchase are in the same month
+        if (refundMonth === purchaseMonth) {
+          return false;
+        }
+      }
+      
+      return true;
     });
   
   // Sort by refund_date descending
@@ -1164,19 +1286,33 @@ async function fetchRefundsList(closer = null, month = null) {
 
   // Transform and filter by date range
   let refunds = (outcomeLogs || [])
-    .map(outcomeLog => ({
-      ...outcomeLog.calls,
-      outcome_log_id: outcomeLog.id,
-      purchase_date: outcomeLog.purchase_date,
-      refund_date: outcomeLog.refund_date,
-      outcome: outcomeLog.outcome,
-      commission: outcomeLog.commission,
-      offer_id: outcomeLog.offer_id,
-      offer_name: outcomeLog.offers?.name || null,
-      discount: outcomeLog.discount,
-      purchased_at: outcomeLog.purchase_date,
-      purchased: true
-    }))
+    .map(outcomeLog => {
+      // Check if refund happened in same month as purchase
+      const isSameMonthRefund = outcomeLog.purchase_date && 
+        outcomeLog.refund_date &&
+        (() => {
+          const purchaseDate = new Date(outcomeLog.purchase_date);
+          const refundDate = new Date(outcomeLog.refund_date);
+          const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+          const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
+          return purchaseMonth === refundMonth;
+        })();
+      
+      return {
+        ...outcomeLog.calls,
+        outcome_log_id: outcomeLog.id,
+        purchase_date: outcomeLog.purchase_date,
+        refund_date: outcomeLog.refund_date,
+        outcome: outcomeLog.outcome,
+        // Set commission to 0 for same-month refunds
+        commission: isSameMonthRefund ? 0 : outcomeLog.commission,
+        offer_id: outcomeLog.offer_id,
+        offer_name: outcomeLog.offers?.name || null,
+        discount: outcomeLog.discount,
+        purchased_at: outcomeLog.purchase_date,
+        purchased: true
+      };
+    })
     .filter(refund => {
       // Must have refund_date or purchase_date
       if (!refund.refund_date && !refund.purchase_date) return false;
@@ -1294,15 +1430,20 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
 }
 
 // Purchase Item Component - Simplified for purchase log
-function PurchaseItem({ lead, setterMap = {} }) {
+function PurchaseItem({ lead, setterMap = {}, isRefundsTable = false }) {
   const navigate = useNavigate();
   const [editModalOpen, setEditModalOpen] = useState(false);
+
+  // Determine grid columns based on table type
+  const gridColumns = isRefundsTable 
+    ? '2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr' // Includes purchase date
+    : '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr'; // Standard purchase table
 
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+        gridTemplateColumns: gridColumns,
         gap: '16px',
         alignItems: 'center',
         padding: '12px 16px',
@@ -1396,11 +1537,20 @@ function PurchaseItem({ lead, setterMap = {} }) {
         {setterMap[lead.setter_id] || 'N/A'}
       </div>
 
+      {/* Purchase Date - Show in refunds table */}
+      {isRefundsTable && (
+        <div style={{ fontSize: '13px', color: '#6b7280' }}>
+          {DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
+        </div>
+      )}
+
       {/* Purchase Date / Refund Date */}
       <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {lead.outcome === 'refund' && lead.refund_date
-          ? DateHelpers.formatTimeWithRelative(lead.refund_date)
-          : DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
+        {isRefundsTable 
+          ? (lead.refund_date ? DateHelpers.formatTimeWithRelative(lead.refund_date) : 'N/A')
+          : (lead.outcome === 'refund' && lead.refund_date
+              ? DateHelpers.formatTimeWithRelative(lead.refund_date)
+              : DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A')}
       </div>
 
       {/* Offer Name */}
@@ -1423,7 +1573,7 @@ function PurchaseItem({ lead, setterMap = {} }) {
 
       {/* Commission */}
       <div style={{ fontSize: '13px', color: lead.outcome === 'refund' ? '#ef4444' : '#10b981', fontWeight: '600', textAlign: 'center' }}>
-        {lead.commission ? `$${lead.commission.toFixed(2)}` : 'N/A'}
+        {lead.commission !== null && lead.commission !== undefined ? `$${lead.commission.toFixed(2)}` : 'N/A'}
       </div>
 
       {/* Edit Closer Note */}
