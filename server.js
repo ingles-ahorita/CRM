@@ -19,7 +19,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler, aiSetterHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -45,6 +45,7 @@ async function loadHandlers() {
   kajabiWebhookHandler = await loadHandler('./api/kajabi-webhook.js', 'kajabi-webhook');
   rubenShiftToggleHandler = await loadHandler('./api/ruben-shift-toggle.js', 'ruben-shift-toggle');
   aiSetterHandler = await loadHandler('./api/ai-setter.js', 'ai-setter');
+  storeFbclidHandler = await loadHandler('./api/store-fbclid.js', 'store-fbclid');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -126,6 +127,11 @@ app.post('/api/ai-setter', async (req, res) => {
   return adaptVercelHandler(aiSetterHandler)(req, res);
 });
 
+app.post('/api/store-fbclid', async (req, res) => {
+  if (!storeFbclidHandler) await loadHandlers();
+  return adaptVercelHandler(storeFbclidHandler)(req, res);
+});
+
 // Catch-all for unregistered API routes
 app.use('/api/*', (req, res) => {
   console.warn(`⚠️ Unregistered API route: ${req.method} ${req.path}`);
@@ -156,6 +162,7 @@ loadHandlers().then(() => {
     console.log(`   - GET  http://localhost:${PORT}/api/current-setter`);
     console.log(`   - POST http://localhost:${PORT}/api/calendly-webhook`);
     console.log(`   - POST http://localhost:${PORT}/api/kajabi-webhook`);
+    console.log(`   - POST http://localhost:${PORT}/api/store-fbclid`);
     console.log(`   - GET  http://localhost:${PORT}/api/test (test endpoint)`);
     console.log(`\n💡 Make sure Vite dev server (port 5173) proxies /api/* to this server`);
   });
