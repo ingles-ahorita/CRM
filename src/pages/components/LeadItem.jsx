@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabaseClient';
+import crypto from 'crypto';
 import {Modal, NotesModal, ViewNotesModal} from './Modal';
 import { TransferSetterModal } from './TransferSetterModal';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
@@ -797,7 +798,9 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           ]
         });
         console.log('✅ ManyChat user creation triggered for confirmed lead');
-        alert('Lead confirmed and sent to closer');
+        setTimeout(() => {
+          alert('Lead confirmed and sent to closer');
+        }, 0);
       } catch (error) {
         console.error('❌ Error creating ManyChat user:', error);
         // Log the error in the function_errors table
@@ -813,14 +816,26 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
         }
         // Don't block the update if user creation fails
       }
-    }
 
-    if (error) {
-      console.error('Error updating lead:', error);
-      return;
-    }
-  };
 
+      // Send to N8N webhook via backend proxy
+      try {
+        await fetch('/api/n8n-webhook', {
+          method: 'POST',
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event: 'lead_confirmed',
+            calendly_id: leadData.calendly_id,
+            email: leadData.email,
+            phone: leadData.phone
+          })
+        });
+      } catch (webhookError) {
+        console.error('❌ Error sending to N8N webhook:', webhookError);
+        // Don't block the update if webhook fails
+      }
+
+  }}
 
 
   const StatusDropdown = ({ value, onChange, label, disabled = false, onClick = null, outcomeLog = null}) => {

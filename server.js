@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import 'dotenv/config'; // Loads .env by default
 import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 // Load .env.local if it exists (takes precedence)
 const __filename = fileURLToPath(import.meta.url);
@@ -14,12 +15,18 @@ dotenv.config({ path: envLocalPath, override: true });
 const app = express();
 const PORT = 3000;
 
+// Initialize Supabase client for database queries
+const supabase = createClient(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+);
+
 // Enable CORS
 app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -46,6 +53,7 @@ async function loadHandlers() {
   rubenShiftToggleHandler = await loadHandler('./api/ruben-shift-toggle.js', 'ruben-shift-toggle');
   aiSetterHandler = await loadHandler('./api/ai-setter.js', 'ai-setter');
   storeFbclidHandler = await loadHandler('./api/store-fbclid.js', 'store-fbclid');
+  metaConversionHandler = await loadHandler('./api/meta-conversion.js', 'meta-conversion');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -132,6 +140,73 @@ app.post('/api/store-fbclid', async (req, res) => {
   return adaptVercelHandler(storeFbclidHandler)(req, res);
 });
 
+app.post('/api/meta-conversion', async (req, res) => {
+  if (!metaConversionHandler) await loadHandlers();
+  return adaptVercelHandler(metaConversionHandler)(req, res);
+});
+
+// N8N webhook proxy endpoint
+app.post('/api/n8n-webhook', async (req, res) => {
+  try {
+    const { calendly_id, email, phone, event } = req.body;
+    
+    // Query fbclid_tracking table to get fbclid for this calendly_id
+    let fbclid = null;
+    if (calendly_id) {
+      try {
+        const { data, error } = await supabase
+          .from('fbclid_tracking')
+          .select('fbclid')
+          .eq('calendly_event_uri', calendly_id)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('⚠️ Error querying fbclid_tracking:', error.message);
+        } else if (data?.fbclid) {
+          fbclid = data.fbclid;
+          console.log('✅ Found fbclid for calendly_id:', calendly_id, 'fbclid:', fbclid);
+        } else {
+          console.log('ℹ️ No fbclid found for calendly_id:', calendly_id);
+        }
+      } catch (dbError) {
+        console.warn('⚠️ Database query error:', dbError.message);
+        // Continue without fbclid if query fails
+      }
+    }
+
+    // Build webhook payload with fbclid if found
+    const webhookPayload = {
+      event: event || 'lead_confirmed',
+      calendly_id,
+      email,
+      phone,
+      ...(fbclid && { fbclid }) // Only include fbclid if it exists
+    };
+
+    const webhookUrl = 'https://inglesahorita.app.n8n.cloud/webhook/1b560f1a-d0e7-4695-a15b-6501c47aa101';
+    
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(webhookPayload),
+    });
+
+    const data = await response.text();
+    
+    if (!response.ok) {
+      console.error('❌ N8N webhook error:', response.status, data);
+      return res.status(response.status).json({ error: 'Webhook request failed', details: data });
+    }
+
+    res.json({ success: true, data: data, fbclid_included: !!fbclid });
+  } catch (error) {
+    console.error('❌ Error proxying to N8N webhook:', error);
+    res.status(500).json({ error: 'Failed to proxy webhook request', details: error.message });
+  }
+});
+
 // Catch-all for unregistered API routes
 app.use('/api/*', (req, res) => {
   console.warn(`⚠️ Unregistered API route: ${req.method} ${req.path}`);
@@ -163,6 +238,7 @@ loadHandlers().then(() => {
     console.log(`   - POST http://localhost:${PORT}/api/calendly-webhook`);
     console.log(`   - POST http://localhost:${PORT}/api/kajabi-webhook`);
     console.log(`   - POST http://localhost:${PORT}/api/store-fbclid`);
+    console.log(`   - POST http://localhost:${PORT}/api/meta-conversion`);
     console.log(`   - GET  http://localhost:${PORT}/api/test (test endpoint)`);
     console.log(`\n💡 Make sure Vite dev server (port 5173) proxies /api/* to this server`);
   });
