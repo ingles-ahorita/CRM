@@ -21,6 +21,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 );
 
+// Trust proxy to get correct IP addresses
+app.set('trust proxy', true);
+
 // Enable CORS
 app.use(cors());
 app.use(express.json());
@@ -65,7 +68,10 @@ const adaptVercelHandler = (handler) => {
       url: req.url,
       headers: req.headers,
       body: req.body,
-      query: req.query
+      query: req.query,
+      ip: req.ip,
+      connection: req.connection,
+      socket: req.socket
     };
 
     const vercelRes = {
@@ -180,7 +186,8 @@ app.post('/api/n8n-webhook', async (req, res) => {
       calendly_id,
       email,
       phone,
-      ...(fbclid && { fbclid }) // Only include fbclid if it exists
+      ...(fbclid && { fbclid }),
+      ip_address: req.ip, 
     };
 
     const webhookUrl = 'https://inglesahorita.app.n8n.cloud/webhook/1b560f1a-d0e7-4695-a15b-6501c47aa101';
