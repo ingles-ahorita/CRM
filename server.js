@@ -158,21 +158,32 @@ app.post('/api/n8n-webhook', async (req, res) => {
     
     // Query fbclid_tracking table to get fbclid for this calendly_id
     let fbclid = null;
+    let ip_address = null;
     if (calendly_id) {
       try {
         const { data, error } = await supabase
           .from('fbclid_tracking')
-          .select('fbclid')
+          .select('fbclid, ip_address')
           .eq('calendly_event_uri', calendly_id)
           .maybeSingle();
 
         if (error) {
           console.warn('⚠️ Error querying fbclid_tracking:', error.message);
-        } else if (data?.fbclid) {
-          fbclid = data.fbclid;
-          console.log('✅ Found fbclid for calendly_id:', calendly_id, 'fbclid:', fbclid);
         } else {
-          console.log('ℹ️ No fbclid found for calendly_id:', calendly_id);
+          if (data?.fbclid) {
+            fbclid = data.fbclid;
+            console.log('✅ Found fbclid for calendly_id:', calendly_id, 'fbclid:', fbclid);
+          } else {
+            console.log('ℹ️ No fbclid found for calendly_id:', calendly_id);
+          }
+
+          if (data?.ip_adress) {
+            // You can assign this to a variable if you want to use it in the webhookPayload
+            ip_address = data.ip_adress;
+            console.log('✅ Found tracked ip_adress for calendly_id:', calendly_id, 'ip_adress:', data.ip_adress);
+          } else {
+            console.log('ℹ️ No tracked ip_adress found for calendly_id:', calendly_id);
+          }
         }
       } catch (dbError) {
         console.warn('⚠️ Database query error:', dbError.message);
@@ -187,7 +198,7 @@ app.post('/api/n8n-webhook', async (req, res) => {
       email,
       phone,
       ...(fbclid && { fbclid }),
-      ip_address: req.ip, 
+      ip_address: ip_address,
     };
 
     const webhookUrl = 'https://inglesahorita.app.n8n.cloud/webhook/1b560f1a-d0e7-4695-a15b-6501c47aa101';
