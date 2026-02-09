@@ -6,12 +6,51 @@ import ComparisonTable from './components/ComparisonTable';
 import PeriodSelector from './components/PeriodSelector';
 import { ViewNotesModal } from './components/Modal';
 import { Mail, Phone } from 'lucide-react';
+import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
 
+// Helper function to parse date string as UTC (matches SQL date_trunc behavior)
+function parseDateAsUTC(dateString) {
+  // If no timezone indicator, append 'Z' to force UTC parsing
+  const hasTimezone = dateString.includes('Z') || dateString.match(/[+-]\d{2}:?\d{2}$/);
+  const isoString = hasTimezone ? dateString : dateString + 'Z';
+  return parseISO(isoString);
+}
+
 // Mock function - replace with your actual Supabase fetch
+// Dates are normalized to DEFAULT_TIMEZONE for consistent filtering
 async function fetchStatsData(startDate, endDate) {
   console.log('startDate', startDate);
   console.log('endDate', endDate);
+  
+  // Parse dates as UTC if they don't have timezone indicators (matches SQL date_trunc behavior)
+  const startDateObj = parseDateAsUTC(startDate);
+  const endDateObj = parseDateAsUTC(endDate);
+  
+  let startUTC, endUTC;
+  
+  if (DateHelpers.DEFAULT_TIMEZONE === 'UTC') {
+    // For UTC, set start to beginning of UTC day and end to end of UTC day
+    startUTC = new Date(startDateObj);
+    startUTC.setUTCHours(0, 0, 0, 0);
+    endUTC = new Date(endDateObj);
+    endUTC.setUTCHours(23, 59, 59, 999);
+  } else {
+    // Normalize to timezone and convert back to UTC for database queries
+    const startDateNormalized = DateHelpers.normalizeToTimezone(startDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    const endDateNormalized = DateHelpers.normalizeToTimezone(endDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    
+    // Get start and end of day in normalized timezone, then convert to UTC
+    const startOfDayNormalized = new Date(startDateNormalized);
+    startOfDayNormalized.setHours(0, 0, 0, 0);
+    const endOfDayNormalized = new Date(endDateNormalized);
+    endOfDayNormalized.setHours(23, 59, 59, 999);
+    
+    // Convert normalized dates back to UTC for database queries
+    startUTC = DateHelpers.fromZonedTime(startOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+    endUTC = DateHelpers.fromZonedTime(endOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+  }
+  
   // Fetch 1: Get calls booked in the date range for main metrics
   const { data: bookedCalls, error: bookedError } = await supabase
     .from('calls')
@@ -31,8 +70,10 @@ async function fetchStatsData(startDate, endDate) {
       closers (id, name),
       leads (phone, medium)
     `)
-    .gte('call_date', startDate)
-    .lte('call_date', endDate);
+    .gte('call_date', startUTC.toISOString())
+    .lte('call_date', isNaN(endUTC) ? null : endUTC.toISOString());
+
+    console.log('bookedCalls', bookedCalls.length);
 
   if (bookedError) {
     console.error('Error fetching booked calls:', bookedError);
@@ -50,6 +91,7 @@ async function fetchStatsData(startDate, endDate) {
   }
 
   // Fetch bookings made in period with source breakdown
+  // Use same normalized UTC dates for consistency
   const { data: bookingsData, error: bookingsError } = await supabase
     .from('calls')
     .select(`
@@ -60,8 +102,8 @@ async function fetchStatsData(startDate, endDate) {
       setters (id, name),
       leads (phone, medium)
     `)
-    .gte('book_date', startDate)
-    .lte('book_date', endDate);
+    .gte('book_date', startUTC.toISOString())
+    .lte('book_date', endUTC.toISOString());
 
   if (bookingsError) {
     console.error('Error fetching bookings made in period:', bookingsError);
@@ -70,7 +112,7 @@ async function fetchStatsData(startDate, endDate) {
 
   const bookingsMadeinPeriod = bookingsData?.length || 0;
   const totalPickedUpFromBookings = bookingsData?.filter(b => b.picked_up === true).length || 0;
-  console.log('bookingsData', bookingsData);
+
   
   // Calculate bookings by source
   const bookingsBySource = {
@@ -89,7 +131,7 @@ async function fetchStatsData(startDate, endDate) {
     }
   });
 
-  console.log('bookingsMadeinPeriod', bookingsMadeinPeriod);
+
 
   // Use booked calls for main analysis
   const calls = bookedCalls;
@@ -112,9 +154,16 @@ const totalShowedUp = filteredCalls.filter(c => c.showed_up === true).length;
 const totalConfirmed = filteredCalls.filter(c => c.confirmed === true).length;
 
 // Use purchased calls count for total purchases (already filtered by date)
+// Both filteredCalls and purchasedCalls are filtered using UTC-normalized date ranges
+// This ensures conversion rate calculations are consistent with UTC timezone
 const totalPurchased = purchasedCalls.length;
-  // Group by closer
+  
+  // Group by closer - count show-ups and purchases
+  // IMPORTANT: Both show-ups (from call_date) and purchases (from purchase_date) 
+  // are filtered using the same UTC-normalized date ranges to ensure accurate conversion rates
   const closerStats = {};
+  
+  // Count show-ups from calls filtered by UTC-normalized call_date range
   filteredCalls.forEach(call => {
     if (call.closers) {
       const closerId = call.closers.id;
@@ -126,26 +175,46 @@ const totalPurchased = purchasedCalls.length;
           purchased: 0
         };
       }
+      // Count show-ups - call_date is already in UTC and filtered by UTC-normalized range
       if (call.showed_up) closerStats[closerId].showedUp++;
     }
   });
 
-  // Add purchases from purchased calls
+  // Count purchases from purchased calls filtered by UTC-normalized purchase_date range
   // IMPORTANT: Initialize closerStats for closers who have purchases but no showed up calls
+  // IMPORTANT: Match closerStats.jsx logic - count 'yes' outcomes and refunds with clawback < 100%
   purchasedCalls.forEach(call => {
     if (call.closers) {
       const closerId = call.closers.id;
-      if (!closerStats[closerId]) {
-        closerStats[closerId] = {
-          id: closerId,
-          name: call.closers.name,
-          showedUp: 0,
-          purchased: 0
-        };
+      
+      // Filter purchases: count 'yes' outcomes, and refunds only if clawback < 100%
+      let shouldCount = false;
+      if (call.outcome === 'yes') {
+        shouldCount = true;
+      } else if (call.outcome === 'refund') {
+        const clawbackPercentage = call.clawback ?? 100;
+        if (clawbackPercentage < 100) {
+          shouldCount = true; // Only count partial refunds (clawback < 100%)
+        }
       }
-      closerStats[closerId].purchased++;
+      
+      if (shouldCount) {
+        if (!closerStats[closerId]) {
+          closerStats[closerId] = {
+            id: closerId,
+            name: call.closers.name,
+            showedUp: 0,
+            purchased: 0
+          };
+        }
+        // Count purchases - purchase_date is already in UTC and filtered by UTC-normalized range
+        closerStats[closerId].purchased++;
+      }
     }
   });
+  
+  // Conversion rate = purchases / showUps
+  // Both counts are based on UTC-normalized date filtering, ensuring accurate conversion rates
 
   // Group by setter - calculate pick up rate and show up rate
   const setterStats = {};
@@ -228,8 +297,8 @@ const totalPurchased = purchasedCalls.length;
 
   // Group by country - use booked calls for activity metrics, purchased calls for sales
   const countryStats = {};
-  console.log('Booked calls for country analysis:', filteredCalls.length);
-  console.log('Purchased calls for country analysis:', purchasedCalls.length);
+  // console.log('Booked calls for country analysis:', filteredCalls.length);
+  // console.log('Purchased calls for country analysis:', purchasedCalls.length);
   
   // First, track bookings made in period by country
   bookingsData?.forEach(booking => {
@@ -321,7 +390,7 @@ const totalPurchased = purchasedCalls.length;
   // Sort countries by total purchased (sales)
   const sortedCountries = Object.values(countryStats).sort((a, b) => b.totalPurchased - a.totalPurchased);
   
-  console.log('Country statistics:', sortedCountries);
+  // console.log('Country statistics:', sortedCountries);
 
   // Group by source (Ads vs Organic)
   const sourceStats = {
@@ -739,11 +808,37 @@ async function fetchDailyStats(numDays = 30) {
 // Fetch purchases for date range
 // IMPORTANT: This function filters purchases by purchase_date from outcome_log table
 // All purchase counts in general stats use this function to ensure consistency
+// Dates are normalized to DEFAULT_TIMEZONE for consistent filtering
 async function fetchPurchasesForDateRange(startDate, endDate) {
-  console.log('fetchPurchasesForDateRange', startDate, endDate);
-  const startDateObj = new Date(startDate);
-  const endDateObj = new Date(endDate);
-  endDateObj.setHours(23, 59, 59, 999);
+  // console.log('fetchPurchasesForDateRange', startDate, endDate);
+  
+  // Parse dates as UTC if they don't have timezone indicators (matches SQL date_trunc behavior)
+  const startDateObj = parseDateAsUTC(startDate);
+  const endDateObj = parseDateAsUTC(endDate);
+  
+  let startUTC, endUTC;
+  
+  if (DateHelpers.DEFAULT_TIMEZONE === 'UTC') {
+    // For UTC, set start to beginning of UTC day and end to end of UTC day
+    startUTC = new Date(startDateObj);
+    startUTC.setUTCHours(0, 0, 0, 0);
+    endUTC = new Date(endDateObj);
+    endUTC.setUTCHours(23, 59, 59, 999);
+  } else {
+    // Normalize to timezone and convert back to UTC for database queries
+    const startDateNormalized = DateHelpers.normalizeToTimezone(startDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    const endDateNormalized = DateHelpers.normalizeToTimezone(endDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    
+    // Get start and end of day in normalized timezone, then convert to UTC
+    const startOfDayNormalized = new Date(startDateNormalized);
+    startOfDayNormalized.setHours(0, 0, 0, 0);
+    const endOfDayNormalized = new Date(endDateNormalized);
+    endOfDayNormalized.setHours(23, 59, 59, 999);
+    
+    // Convert normalized dates back to UTC for database queries
+    startUTC = DateHelpers.fromZonedTime(startOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+    endUTC = DateHelpers.fromZonedTime(endOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+  }
 
   let query = supabase
     .from('outcome_log')
@@ -760,13 +855,13 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       )
     `)
     .in('outcome', ['yes', 'refund'])
-    .gte('purchase_date', startDateObj.toISOString())
-    .lte('purchase_date', endDateObj.toISOString())
+    .gte('purchase_date', startUTC.toISOString())
+    .lte('purchase_date', endUTC.toISOString())
     .order('purchase_date', { ascending: false });
 
   const { data: outcomeLogs, error } = await query;
 
-  console.log('outcomeLogs', outcomeLogs);
+  // console.log('outcomeLogs', outcomeLogs);
 
   if (error) {
     console.error('Error fetching purchases:', error);
@@ -791,12 +886,14 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
   });
   
   // Transform the deduplicated outcome_log entries to match the expected lead format
+  // IMPORTANT: Include clawback field to filter refunds correctly (same logic as closerStats.jsx)
   const purchases = Array.from(outcomeLogsByCallId.values())
     .map(outcomeLog => ({
       ...outcomeLog.calls,
       outcome_log_id: outcomeLog.id,
       purchase_date: outcomeLog.purchase_date,
       outcome: outcomeLog.outcome,
+      clawback: outcomeLog.clawback,
       commission: outcomeLog.paid_second_installment ? outcomeLog.commission * 2 : outcomeLog.commission,
       offer_id: outcomeLog.offer_id,
       offer_name: outcomeLog.offers?.name || null,
@@ -1045,6 +1142,54 @@ export default function StatsDashboard() {
   const [closerMap, setCloserMap] = useState({});
   const [purchaseSetterFilter, setPurchaseSetterFilter] = useState('all');
   const [purchaseCloserFilter, setPurchaseCloserFilter] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(null);
+
+  // Generate list of available months (previous 6 months including current)
+  const generateAvailableMonths = () => {
+    const months = [];
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    
+    // Generate last 6 months (including current month)
+    for (let i = 0; i < 6; i++) {
+      const date = new Date(currentYear, currentMonth - i, 1);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const monthLabel = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      months.push({ value: monthKey, label: monthLabel });
+    }
+    
+    return months; // Most recent first
+  };
+
+  const availableMonths = generateAvailableMonths();
+
+  // Handler for month selection
+  const handleMonthSelect = (monthKey) => {
+    if (!monthKey) {
+      setSelectedMonth(null);
+      return;
+    }
+    
+    setSelectedMonth(monthKey);
+    
+    // Parse month and create date in UTC
+    const [year, monthNum] = monthKey.split('-');
+    const monthDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 15));
+    
+    // Get month range using date helpers
+    const monthRange = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+    
+    if (monthRange) {
+      const newStartDate = monthRange.startDate.toISOString();
+      const newEndDate = monthRange.endDate.toISOString();
+      setStartDate(newStartDate);
+      setEndDate(newEndDate);
+      loadStats(newStartDate, newEndDate);
+    }
+  };
 
   const parseDateLocal = (dateString) => {
     const [year, month, day] = dateString.split('-').map(Number);
@@ -1066,6 +1211,7 @@ export default function StatsDashboard() {
     newEnd.setDate(currentStart.getDate() + 6);
     newEnd.setHours(23, 59, 59, 999);
     
+    setSelectedMonth(null); // Clear month selection when navigating weeks
     setStartDate(formatDateLocal(currentStart));
     setEndDate(formatDateLocal(newEnd));
   };
@@ -1085,11 +1231,13 @@ export default function StatsDashboard() {
     newEnd.setDate(currentStart.getDate() + 6);
     newEnd.setHours(23, 59, 59, 999);
     
+    setSelectedMonth(null); // Clear month selection when navigating weeks
     setStartDate(formatDateLocal(currentStart));
     setEndDate(formatDateLocal(newEnd));
   };
 
   const goToCurrentWeek = () => {
+    setSelectedMonth(null); // Clear month selection when resetting to current week
     setStartDate(getStartOfWeek());
     setEndDate(getTodayLocal());
   };
@@ -1368,6 +1516,25 @@ export default function StatsDashboard() {
           {/* Date Range Filters - Only show if not in comparison view */}
           {comparisonView === 'none' && (
           <div className="bg-white p-6 rounded-lg shadow mb-6">
+            {/* Month Selector */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Month (Quick Filter)
+              </label>
+              <select
+                value={selectedMonth || ''}
+                onChange={(e) => handleMonthSelect(e.target.value || null)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">-- Select a month --</option>
+                {availableMonths.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
             <div className="flex gap-6 items-end">
               <div className="flex-1">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1379,6 +1546,7 @@ export default function StatsDashboard() {
                   onChange={(e) => {
                     const newStartDate = e.target.value + 'T00:00:00';
                     setStartDate(newStartDate);
+                    setSelectedMonth(null); // Clear month selection when manually changing dates
                     loadStats(newStartDate, endDate);
                   }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1394,6 +1562,7 @@ export default function StatsDashboard() {
                   onChange={(e) => {
                     const newEndDate = e.target.value + 'T23:59:59';
                     setEndDate(newEndDate);
+                    setSelectedMonth(null); // Clear month selection when manually changing dates
                     loadStats(startDate, newEndDate);
                   }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1908,11 +2077,15 @@ export default function StatsDashboard() {
         </div>
 
         {/* Conversion Rate by Closer */}
+        {/* IMPORTANT: Conversion rates are calculated using UTC-normalized date ranges
+            Show-ups are counted from calls filtered by UTC call_date
+            Purchases are counted from outcome_log filtered by UTC purchase_date
+            This ensures accurate conversion rates consistent with UTC timezone */}
         {stats && stats.closers && stats.closers.length > 0 && (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900">Conversion Rate by Closer</h2>
-            <p className="text-sm text-gray-500 mt-1">Purchased / Confirmed per closer</p>
+            <p className="text-sm text-gray-500 mt-1">Purchased / Showed Up per closer (UTC-normalized)</p>
           </div>
           
           <div className="overflow-x-auto">

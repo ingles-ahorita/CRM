@@ -4,15 +4,24 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { LeadItemCompact, LeadListHeader } from './components/LeadItem';
 import { NotesModal } from './components/Modal';
 import { Phone, Mail } from 'lucide-react';
+import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
+
+// Helper function to parse date string as UTC (matches SQL date_trunc behavior)
+function parseDateAsUTC(dateString) {
+  // If no timezone indicator, append 'Z' to force UTC parsing
+  const hasTimezone = dateString.includes('Z') || dateString.match(/[+-]\d{2}:?\d{2}$/);
+  const isoString = hasTimezone ? dateString : dateString + 'Z';
+  return parseISO(isoString);
+}
 
 export default function CloserStatsDashboard() {
   const { closer } = useParams(); 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const yearMonth = DateHelpers.getYearMonthInTimezone(new Date(), DateHelpers.DEFAULT_TIMEZONE);
+    return yearMonth ? yearMonth.monthKey : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   });
   const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
   const [purchases, setPurchases] = useState([]);
@@ -94,19 +103,19 @@ export default function CloserStatsDashboard() {
         // Split refunds into same-month and previous-month
         const sameMonth = refundsData.filter(refund => {
           if (!refund.purchase_date || !refund.refund_date) return false;
-          const purchaseDate = new Date(refund.purchase_date);
-          const refundDate = new Date(refund.refund_date);
-          const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
-          const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
-          return purchaseMonth === refundMonth;
+          return DateHelpers.isSameMonthInTimezone(
+            refund.purchase_date,
+            refund.refund_date,
+            DateHelpers.DEFAULT_TIMEZONE
+          );
         });
         const previousMonth = refundsData.filter(refund => {
           if (!refund.purchase_date || !refund.refund_date) return false;
-          const purchaseDate = new Date(refund.purchase_date);
-          const refundDate = new Date(refund.refund_date);
-          const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
-          const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
-          return purchaseMonth !== refundMonth;
+          return !DateHelpers.isSameMonthInTimezone(
+            refund.purchase_date,
+            refund.refund_date,
+            DateHelpers.DEFAULT_TIMEZONE
+          );
         });
         setSameMonthRefundsList(sameMonth);
         setPreviousMonthRefundsList(previousMonth);
@@ -269,7 +278,7 @@ export default function CloserStatsDashboard() {
                         Purchases
                       </th>
                       <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Revenue
+                        Base Commission
                       </th>
                       <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-green-50">
                         Conversion Rate
@@ -573,7 +582,7 @@ export default function CloserStatsDashboard() {
                   {sameMonthRefundsList.map(lead => (
                     <PurchaseItem
                       key={lead.id}
-                      lead={{...lead, commission: 0}}
+                      lead={lead}
                       setterMap={setterMap}
                     />
                   ))}
@@ -700,6 +709,8 @@ async function fetchMonthlyCloserStats(closer = null) {
     .select(`
       call_date, 
       showed_up,
+      is_reschedule,
+      lead_id,
       closers (id, name)
     `)
     .gte('call_date', '2025-10-01')
@@ -717,20 +728,31 @@ async function fetchMonthlyCloserStats(closer = null) {
     return [];
   }
 
-  // Fetch outcome_log entries for purchase calculations (only 'yes' outcomes)
+  // Filter out rescheduled leads to avoid double-counting
+  const rescheduledLeadIds = new Set(
+    calls.filter(c => c.is_reschedule === true).map(c => c.lead_id)
+  );
+
+  const filteredCalls = calls.filter(call => {
+    const keep = call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id);
+    return keep;
+  });
+
+  // Fetch outcome_log entries for purchase calculations (include 'yes' outcomes and refunds with clawback < 100%)
   let outcomeQuery = supabase
     .from('outcome_log')
     .select(`
       purchase_date,
       outcome,
       commission,
+      clawback,
       call_id,
       calls!inner!call_id (
         closer_id,
         closers (id, name)
       )
     `)
-    .eq('outcome', 'yes')
+    .in('outcome', ['yes', 'refund'])
     .not('purchase_date', 'is', null);
 
   // Filter by closer via the calls relationship
@@ -755,7 +777,7 @@ async function fetchMonthlyCloserStats(closer = null) {
     return [];
   }
 
-  return calculateMonthlyCloserData(calls, outcomeLogs || []);
+  return calculateMonthlyCloserData(filteredCalls, outcomeLogs || []);
 }
 
 function calculateMonthlyCloserData(calls, outcomeLogs) {
@@ -764,14 +786,15 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
   function getMonth(dateValue) {
     if (!dateValue) return null;
 
-    const date = new Date(dateValue);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const key = `${year}-${month}`;
+    // Use date-fns helper to normalize to timezone
+    const yearMonth = DateHelpers.getYearMonthInTimezone(dateValue, DateHelpers.DEFAULT_TIMEZONE);
+    if (!yearMonth) return null;
+    
+    const key = yearMonth.monthKey;
 
     if (!grouped[key]) {
       grouped[key] = {
-        month: `${year}-${month}`,
+        month: yearMonth.monthKey,
         showUps: 0,
         purchases: 0,
         revenue: 0,
@@ -792,12 +815,23 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
   outcomeLogs.forEach(outcomeLog => {
     if (!outcomeLog.purchase_date) return;
     const monthP = getMonth(outcomeLog.purchase_date);
+    
+    // Count 'yes' outcomes as purchases
     if (monthP && outcomeLog.outcome === 'yes') {
       console.log(monthP.month, outcomeLog.outcome);
       monthP.purchases++;
       // Add commission to revenue if available
       if (outcomeLog.commission) {
         monthP.revenue += outcomeLog.commission;
+      }
+    }
+    
+    // Count refunds with clawback < 100% as purchases (partial refunds)
+    if (monthP && outcomeLog.outcome === 'refund') {
+      const clawbackPercentage = outcomeLog.clawback ?? 100;
+      if (clawbackPercentage < 100) {
+        console.log(monthP.month, 'refund with clawback < 100%:', clawbackPercentage);
+        monthP.purchases++;
       }
     }
   });
@@ -812,11 +846,18 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
 async function fetchPurchases(closer = null, month = null) {
   if (!month) return [];
 
-  // Parse month (format: YYYY-MM)
+  // Parse month (format: YYYY-MM) and create a date in UTC for that month
   const [year, monthNum] = month.split('-');
-  // Create dates at start and end of month in UTC to avoid timezone issues
-  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
-  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
+  // Create date in UTC (15th of month) to avoid edge cases
+  const monthDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 15));
+  
+  // Use date-fns helper to get month range normalized to timezone
+  const monthRange = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+  
+  if (!monthRange) return [];
+  
+  const startDate = monthRange.startDate;
+  const endDate = monthRange.endDate;
   
   console.log('Date range filter:', {
     month,
@@ -825,8 +866,8 @@ async function fetchPurchases(closer = null, month = null) {
   });
 
   // Format dates for Supabase query (ensure they're in ISO format)
-  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
-  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
+  const startDateISO = startDate.toISOString();
+  const endDateISO = endDate.toISOString();
   
   // Now query outcome_log - include both 'yes' and 'refund' outcomes
   // We'll filter refunds to only include those in same month as purchase
@@ -886,17 +927,15 @@ async function fetchPurchases(closer = null, month = null) {
   // Now transform the deduplicated outcome_log entries
   let purchases = Array.from(outcomeLogsByCallId.values())
     .map(outcomeLog => {
-      // Check if refund happened in same month as purchase
+      // Check if refund happened in same month as purchase (normalized to timezone)
       const isSameMonthRefund = outcomeLog.outcome === 'refund' && 
         outcomeLog.purchase_date && 
         outcomeLog.refund_date &&
-        (() => {
-          const purchaseDate = new Date(outcomeLog.purchase_date);
-          const refundDate = new Date(outcomeLog.refund_date);
-          const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
-          const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
-          return purchaseMonth === refundMonth;
-        })();
+        DateHelpers.isSameMonthInTimezone(
+          outcomeLog.purchase_date, 
+          outcomeLog.refund_date, 
+          DateHelpers.DEFAULT_TIMEZONE
+        );
       
       // Check if clawback percentage is less than 100
       const clawbackPercentage = outcomeLog.clawback ?? 100;
@@ -940,11 +979,12 @@ async function fetchPurchases(closer = null, month = null) {
     if (purchase.outcome === 'refund') {
       if (!purchase.refund_date) return false;
       const purchaseDate = new Date(purchase.purchase_date);
-      const refundDate = new Date(purchase.refund_date);
-      const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
-      const refundMonth = refundDate.getFullYear() * 12 + refundDate.getMonth();
-      // Only include if same month
-      if (purchaseMonth !== refundMonth) return false;
+      // Only include if same month (normalized to timezone)
+      if (!DateHelpers.isSameMonthInTimezone(
+        purchase.purchase_date,
+        purchase.refund_date,
+        DateHelpers.DEFAULT_TIMEZONE
+      )) return false;
     }
     
     // Filter by date range (based on purchase_date)
