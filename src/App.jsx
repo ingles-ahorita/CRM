@@ -16,6 +16,7 @@ import TestSetterSchedule from './pages/TestSetterSchedule';
 import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
 import UTMStatsDashboard from './pages/utmStats';
+import UTMAnalyticsPage from './pages/utmAnalytics';
 import OffersPage from './pages/OffersPage';
 import UsersPage from './pages/UsersPage';
 import AISetterPage from './pages/AISetterPage';
@@ -44,6 +45,7 @@ function AppRoutes() {
       <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
       <Route path="/utm-stats" element={<UTMStatsDashboard/>}/>
+      <Route path="/utm-analytics" element={<UTMAnalyticsPage/>}/>
       <Route path="/shifts" element={
         <ProtectedRoute>
           <ShiftsPage />

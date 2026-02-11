@@ -27,6 +27,17 @@ useEffect(() => {
     );
   }
 
+  if (!data || data.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-8">
+        <div className="max-w-7xl mx-auto">
+          <h1 className="text-3xl font-bold text-gray-900 mb-8">Setter - Monthly recap</h1>
+          <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">No data found.</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
@@ -153,64 +164,90 @@ useEffect(() => {
 }
 
 
-async function fetchFortnightStats(setter = null) {
- let query = supabase
-  .from('calls')
-  .select(`
-    name,
-    book_date,
-    call_date, 
-    picked_up, 
-    showed_up, 
-    confirmed, 
-    purchased,
-    purchased_at,
-    setters (id, name),
-    closers (id, name)
-  `)
-  .gte('book_date', '2025-07-01')
-  .order('book_date', { ascending: true });
+const PAGE_SIZE = 1000;
 
-  // Filter by setter if provided
-  if (setter) {
-    query = query.eq('setter_id', setter);
+// Fetch all rows with pagination (Supabase default limit is 1000)
+async function fetchAllPaginated(buildQuery) {
+  const allRows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+
+    allRows.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
   }
 
-  const { data: calls, error } = await query;
+  return allRows;
+}
 
-  if (error) {
+async function fetchFortnightStats(setter = null) {
+  const buildCallsQuery = () => {
+    let query = supabase
+      .from('calls')
+      .select(`
+        name,
+        book_date,
+        call_date, 
+        picked_up, 
+        showed_up, 
+        confirmed, 
+        purchased,
+        purchased_at,
+        setters (id, name),
+        closers (id, name)
+      `)
+      .gte('book_date', '2025-07-01')
+      .order('book_date', { ascending: true });
+
+    if (setter) {
+      query = query.eq('setter_id', setter);
+    }
+    return query;
+  };
+
+  let calls = [];
+  try {
+    calls = await fetchAllPaginated(buildCallsQuery);
+  } catch (error) {
     console.error('Error fetching calls:', error);
     return [];
   }
 
-  // Fetch purchases from outcome_log table
-  let outcomeQuery = supabase
-    .from('outcome_log')
-    .select(`
-      purchase_date,
-      outcome,
-      call_id,
-      calls!inner!call_id (
-        setter_id,
-        setters (id, name)
-      )
-    `)
-    .eq('outcome', 'yes')
-    .not('purchase_date', 'is', null)
-    .gte('purchase_date', '2025-07-01');
+  const buildOutcomeQuery = () => {
+    let outcomeQuery = supabase
+      .from('outcome_log')
+      .select(`
+        purchase_date,
+        outcome,
+        call_id,
+        calls!inner!call_id (
+          setter_id,
+          setters (id, name)
+        )
+      `)
+      .eq('outcome', 'yes')
+      .not('purchase_date', 'is', null)
+      .gte('purchase_date', '2025-07-01');
 
-  // Filter by setter via the calls relationship
-  if (setter) {
-    outcomeQuery = outcomeQuery.eq('calls.setter_id', setter);
-  }
+    if (setter) {
+      outcomeQuery = outcomeQuery.eq('calls.setter_id', setter);
+    }
+    return outcomeQuery;
+  };
 
-  const { data: purchases, error: purchasesError } = await outcomeQuery;
-
-  if (purchasesError) {
+  let purchases = [];
+  try {
+    purchases = await fetchAllPaginated(buildOutcomeQuery);
+  } catch (purchasesError) {
     console.error('Error fetching purchases from outcome_log:', purchasesError);
   }
 
-  return calculateFortnightData(calls, purchases || []);
+  return calculateFortnightData(calls, purchases);
 }
 
 function calculateFortnightData(calls, purchases = []) {
@@ -291,12 +328,14 @@ function calculateFortnightData(calls, purchases = []) {
     }
   });
 
+  const setterName = calls.length > 0 && calls[0].setters ? calls[0].setters.name : '';
+
   return Object.values(grouped).map(item => ({
     ...item,
     pickUpRate: item.callsBooked > 0 ? (item.pickUps / item.callsBooked) * 100 : 0,
     showUpRate: item.confirmedPast > 0 ? (item.showUps / item.confirmedPast) * 100 : 0,
     total: (item.showUps * 4) + (item.purchases * 25),
-    setterName: calls[0].setters.name
+    setterName
   })).sort((a, b) => {
     // Sort by period (year-month), then by fortnight (A before B)
     if (a.period !== b.period) {
