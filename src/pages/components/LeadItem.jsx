@@ -140,8 +140,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
         {/* Emoji Column */}
         <div className="lead-emoji-column">
           {(() => {
-            const leadSource = lead.leads?.source || 'organic';
-            const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+            const callSource = lead.source_type || 'organic';
+            const isAds = callSource.toLowerCase().includes('ad') || callSource.toLowerCase().includes('ads');
             const callCampaign = lead.utm_campaign;
             return (
               <>
@@ -1262,8 +1262,8 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
         paddingTop: '2px'
       }}>
         {(() => {
-          const leadSource = lead.leads?.source || 'organic';
-          const isAds = leadSource.toLowerCase().includes('ad') || leadSource.toLowerCase().includes('ads');
+          const callSource = lead.source_type || 'organic';
+          const isAds = callSource.toLowerCase().includes('ad') || callSource.toLowerCase().includes('ads');
           const callCampaign = lead.utm_campaign;
           return (
             <>
