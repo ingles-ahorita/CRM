@@ -19,6 +19,7 @@ import UTMAnalyticsPage from './pages/utmAnalytics';
 import OffersPage from './pages/OffersPage';
 import UsersPage from './pages/UsersPage';
 import AISetterPage from './pages/AISetterPage';
+import KajabiPurchasesPage from './pages/KajabiPurchasesPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -44,6 +45,7 @@ function AppRoutes() {
       <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
       <Route path="/utm-stats" element={<UTMAnalyticsPage/>}/>
+      <Route path="/purchases" element={<KajabiPurchasesPage/>}/>
       <Route path="/shifts" element={
         <ProtectedRoute>
           <ShiftsPage />
