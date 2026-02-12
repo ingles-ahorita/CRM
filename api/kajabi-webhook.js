@@ -214,10 +214,36 @@ export default async function handler(req, res) {
     }
 
     const memberEmail = payload.payload.member_email.toLowerCase().trim();
+    const memberId = payload.payload.member_id != null ? String(payload.payload.member_id) : null;
     const firstName = payload.payload.member_first_name || '';
     const lastName = payload.payload.member_last_name || '';
     const memberName = payload.payload.member_name || '';
     const customerName = memberName || `${firstName} ${lastName}`.trim() || memberEmail;
+
+    // Try to find a lead with the same email (via calls) and set leads.customer_id = member_id
+    if (memberId) {
+      const { data: callWithEmail, error: callError } = await supabase
+        .from('calls')
+        .select('lead_id')
+        .ilike('email', memberEmail)
+        .limit(1)
+        .maybeSingle();
+
+      if (!callError && callWithEmail?.lead_id) {
+        const { error: leadUpdateError } = await supabase
+          .from('leads')
+          .update({ customer_id: memberId })
+          .eq('id', callWithEmail.lead_id);
+
+        if (leadUpdateError) {
+          console.error('Failed to set leads.customer_id for lead', callWithEmail.lead_id, leadUpdateError);
+        } else {
+          console.log('Set leads.customer_id =', memberId, 'for lead', callWithEmail.lead_id, '(email:', memberEmail, ')');
+        }
+      } else if (callError) {
+        console.error('Error looking up call by email:', callError);
+      }
+    }
 
     // Get offer_id from payload
     const offerId = payload.payload.offer_id;

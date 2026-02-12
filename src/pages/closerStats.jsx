@@ -878,7 +878,8 @@ async function fetchPurchases(closer = null, month = null) {
       calls!inner!call_id (
         *,
         closers (id, name),
-        setters (id, name)
+        setters (id, name),
+        leads (id, customer_id)
       ),
       offers!offer_id (
         id,
@@ -924,7 +925,7 @@ async function fetchPurchases(closer = null, month = null) {
     }
   });
   
-  // Now transform the deduplicated outcome_log entries
+  // Now transform the deduplicated outcome_log entries (preserve leads for customer_id indicator)
   let purchases = Array.from(outcomeLogsByCallId.values())
     .map(outcomeLog => {
       // Check if refund happened in same month as purchase (normalized to timezone)
@@ -1239,7 +1240,8 @@ async function fetchPurchaseLogRefunds(closer = null, month = null) {
       calls!inner!call_id (
         *,
         closers (id, name),
-        setters (id, name)
+        setters (id, name),
+        leads (id, customer_id)
       ),
       offers!offer_id (
         id,
@@ -1344,7 +1346,8 @@ async function fetchRefundsList(closer = null, month = null) {
       calls!inner!call_id (
         *,
         closers (id, name),
-        setters (id, name)
+        setters (id, name),
+        leads (id, customer_id)
       ),
       offers!offer_id (
         id,
@@ -1455,7 +1458,8 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
       calls!inner!call_id (
         *,
         closers (id, name),
-        setters (id, name)
+        setters (id, name),
+        leads (id, customer_id)
       ),
       offers!offer_id (
         id,
@@ -1570,6 +1574,9 @@ function PurchaseItem({ lead, setterMap = {}, isRefundsTable = false }) {
           }}
         >
           {lead.name || 'No name'}
+          <span title={lead.leads?.customer_id ? 'Has Kajabi ID in leads table' : 'No Kajabi ID in leads table'} style={{ marginLeft: 6 }}>
+            {lead.leads?.customer_id ? '✅' : '❌'}
+          </span>
         </a>
         <div style={{
           fontSize: '12px',
@@ -1583,9 +1590,9 @@ function PurchaseItem({ lead, setterMap = {}, isRefundsTable = false }) {
           marginBottom: '2px'
         }}>
           <Mail size={12} />
-          <a 
+            <a 
             style={{ color: '#6b7280', textDecoration: 'none' }} 
-            href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`} 
+            href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`}
             target="_blank" 
             rel="noopener noreferrer"
           >

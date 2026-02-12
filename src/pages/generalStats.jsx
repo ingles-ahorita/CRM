@@ -847,7 +847,8 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       calls!inner!closer_notes_call_id_fkey (
         *,
         closers (id, name),
-        setters (id, name)
+        setters (id, name),
+        leads (id, customer_id)
       ),
       offers!offer_id (
         id,
@@ -890,6 +891,7 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
   const purchases = Array.from(outcomeLogsByCallId.values())
     .map(outcomeLog => ({
       ...outcomeLog.calls,
+      leads: outcomeLog.calls.leads,
       outcome_log_id: outcomeLog.id,
       purchase_date: outcomeLog.purchase_date,
       outcome: outcomeLog.outcome,
@@ -949,6 +951,9 @@ function PurchaseItem({ lead, setterMap = {}, closerMap = {} }) {
           }}
         >
           {lead.name || 'No name'}
+          <span title={lead.leads?.customer_id ? 'Has Kajabi ID in leads table' : 'No Kajabi ID in leads table'} style={{ marginLeft: 6 }}>
+            {lead.leads?.customer_id ? '✅' : '❌'}
+          </span>
         </a>
         <div style={{
           fontSize: '12px',

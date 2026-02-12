@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, LayoutDashboard, BarChart3, Calendar, TrendingUp, Gift, Users, Bot } from 'lucide-react';
+import { Menu, LayoutDashboard, BarChart3, Calendar, TrendingUp, Gift, Users, Bot, List } from 'lucide-react';
 import { useSimpleAuth } from '../useSimpleAuth';
 
 const menuItems = [
   { path: '/management', label: 'Management', icon: LayoutDashboard },
+  { path: '/leads-list', label: 'All Leads', icon: List },
   { path: '/metrics', label: 'Metrics', icon: BarChart3 },
   { path: '/utm-stats', label: 'Organic Stats', icon: TrendingUp },
   { path: '/schedules', label: 'Setters schedules', icon: Calendar },

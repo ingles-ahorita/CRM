@@ -6,10 +6,26 @@ import { useNavigate } from 'react-router-dom';
 
 
 
+const defaultHeaderState = {
+  showSearch: false,
+  searchTerm: '',
+  activeTab: 'today',
+  sortBy: 'book_date',
+  sortOrder: 'desc',
+  startDate: '',
+  endDate: '',
+  setterFilter: '',
+  closerFilter: '',
+  filters: {},
+};
+
 export default function Header({ state, setState, mode = 'full' }) {
    const navigate = useNavigate();
     const searchInputRef = useRef(null);
     const [on, setOn] = useState(false);
+
+  const hasState = state != null && setState != null;
+  const safeState = state ?? defaultHeaderState;
 
       const logout = () => {
     localStorage.clear();
@@ -17,6 +33,7 @@ export default function Header({ state, setState, mode = 'full' }) {
   };
 
     const toggleFilter = (filterName) => {
+  if (!setState) return;
   setState(prev => ({
     ...prev,
     filters: {
@@ -27,12 +44,13 @@ export default function Header({ state, setState, mode = 'full' }) {
 };
 
 const updateHeaderState = (updates) => {
+  if (!setState) return;
   setState(prev => ({ ...prev, ...updates }));
 };
 
 
 
-    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters, startDate, endDate, setterFilter, closerFilter } = state;
+    const { showSearch, searchTerm, activeTab, sortBy, sortOrder, filters, startDate, endDate, setterFilter, closerFilter } = safeState;
     return (
         <div style={{ marginBottom: '24px' }}>
 
@@ -67,9 +85,10 @@ const updateHeaderState = (updates) => {
         }}
       >
         <LogOut size={18} />
-      </button> 
+      </button>
 
-
+          {hasState && (
+          <>
           {/* Tabs */}
           <div style={{ 
             display: 'flex', 
@@ -574,6 +593,8 @@ const updateHeaderState = (updates) => {
     {state.isShiftActive ? 'End Shift' : 'Start Shift'}
   </button>)}
 </div>
+        </>
+          )}
         </div>
     )
 }

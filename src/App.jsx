@@ -20,6 +20,7 @@ import OffersPage from './pages/OffersPage';
 import UsersPage from './pages/UsersPage';
 import AISetterPage from './pages/AISetterPage';
 import KajabiPurchasesPage from './pages/KajabiPurchasesPage';
+import AllLeadsPage from './pages/AllLeadsPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -46,6 +47,7 @@ function AppRoutes() {
       <Route path="/metrics" element={<StatsDashboard/>}/>
       <Route path="/utm-stats" element={<UTMAnalyticsPage/>}/>
       <Route path="/purchases" element={<KajabiPurchasesPage/>}/>
+      <Route path="/leads-list" element={<ProtectedRoute><AllLeadsPage /></ProtectedRoute>}/>
       <Route path="/shifts" element={
         <ProtectedRoute>
           <ShiftsPage />
