@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { fetchPurchases as fetchKajabiPurchases, fetchTransaction, fetchCustomer } from '../lib/kajabiApi';
+import { fetchPurchases as fetchKajabiPurchases } from '../lib/kajabiApi';
 import * as DateHelpers from '../utils/dateHelpers';
 
 export default function CloserDashboard() {
@@ -122,17 +122,17 @@ export default function CloserDashboard() {
   async function loadMultipayPurchasesLastMonth() {
     const now = new Date();
     const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-    const startDate = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth(), 1, 0, 0, 0, 0));
+    const firstDayLastMonth = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth(), 1, 0, 0, 0, 0));
     const endDate = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + 1, 0, 23, 59, 59, 999));
-    const startTs = startDate.getTime();
+    const startTs = firstDayLastMonth.getTime();
     const endTs = endDate.getTime();
     const oneMonthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
     const allInRange = [];
     let page = 1;
     const perPage = 100;
-    let hasMore = true;
-    while (hasMore) {
+    let done = false;
+    while (!done) {
       const result = await fetchKajabiPurchases({ page, perPage, sort: '-created_at' });
       const data = result.data || [];
       if (data.length === 0) break;
@@ -142,11 +142,11 @@ export default function CloserDashboard() {
         const ts = new Date(createdAt).getTime();
         if (ts >= startTs && ts <= endTs) allInRange.push(p);
       }
-      if (data.length < perPage || (data.length && new Date(data[data.length - 1].attributes?.created_at).getTime() < startTs))
-        hasMore = false;
-      else
-        page++;
-      if (page > 50) break;
+      const oldestInBatch = data[data.length - 1].attributes?.created_at;
+      const oldestTs = oldestInBatch ? new Date(oldestInBatch).getTime() : 0;
+      if (oldestTs > 0 && oldestTs < startTs) done = true;
+      else if (data.length < perPage) done = true;
+      else page++;
     }
 
     const multipayOnly = allInRange.filter(
@@ -154,23 +154,24 @@ export default function CloserDashboard() {
     );
 
     const customerIds = [...new Set(multipayOnly.map((p) => p.relationships?.customer?.data?.id).filter(Boolean))];
-    const customerMap = {};
-    await Promise.all(
-      customerIds.map(async (id) => {
-        try {
-          const c = await fetchCustomer(id);
-          if (c) customerMap[id] = c;
-        } catch {
-          customerMap[id] = { name: null, email: null };
-        }
-      })
-    );
+    const leadByCustomerId = {};
+    if (customerIds.length > 0) {
+      const ids = customerIds.map((id) => String(id));
+      const { data: leadRows } = await supabase
+        .from('leads')
+        .select('id, name, email, customer_id')
+        .in('customer_id', ids);
+      (leadRows || []).forEach((row) => {
+        const cid = row.customer_id != null ? String(row.customer_id) : null;
+        if (cid) leadByCustomerId[cid] = { name: row.name ?? null, email: row.email ?? null };
+      });
+    }
 
     return multipayOnly.map((p) => {
       const attrs = p.attributes || {};
       const createdAt = attrs.created_at;
       const customerId = p.relationships?.customer?.data?.id;
-      const customer = customerId ? customerMap[customerId] : null;
+      const lead = customerId ? leadByCustomerId[String(customerId)] : null;
       const createdTs = createdAt ? new Date(createdAt).getTime() : 0;
       const isPastOneMonth = createdTs > 0 && createdTs < oneMonthAgo;
       const paymentsMade = attrs.multipay_payments_made != null ? Number(attrs.multipay_payments_made) : 0;
@@ -180,8 +181,8 @@ export default function CloserDashboard() {
       else if (paymentsMade === 2) status = 'green';
 
       return {
-        name: customer?.name ?? '—',
-        email: customer?.email ?? '—',
+        name: lead?.name ?? '—',
+        email: lead?.email ?? '—',
         date: createdAt ? new Date(createdAt).toLocaleDateString('en-US', { dateStyle: 'medium' }) : '—',
         status
       };
@@ -246,24 +247,25 @@ export default function CloserDashboard() {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">
-            Kajabi multipay (last month) – gray / red (1 payment, &gt;1 month) / green (2 payments)
+        <div className="bg-white rounded-lg shadow p-4 max-w-sm">
+          <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+            Kajabi multipay (last month)
           </h2>
-          <ul className="space-y-2">
+          <p className="text-xs text-gray-400 mb-2">Gray / red (1 pay, &gt;1 mo) / green (2 pay)</p>
+          <ul className="space-y-1">
             {multipayPurchases.length === 0 ? (
-              <li className="text-gray-500 text-sm">No multipay purchases in last month</li>
+              <li className="text-gray-500 text-xs py-1">No multipay in last month</li>
             ) : (
               multipayPurchases.map((row, i) => (
                 <li
                   key={i}
-                  className={`flex justify-between items-center text-sm py-2 px-3 rounded ${
+                  className={`flex items-center gap-2 text-xs py-1.5 px-2 rounded ${
                     row.status === 'gray' ? 'bg-gray-100' : row.status === 'red' ? 'bg-red-50' : 'bg-green-50'
                   }`}
                 >
-                  <span className="font-medium text-gray-900">{row.name}</span>
-                  <span className="text-gray-600 truncate mx-2">{row.email}</span>
-                  <span className="text-gray-500 text-xs">{row.date}</span>
+                  <span className="font-medium text-gray-900 truncate min-w-0 flex-1" title={row.name}>{row.name}</span>
+                  <span className="text-gray-500 truncate max-w-[100px]" title={row.email}>{row.email}</span>
+                  <span className="text-gray-400 whitespace-nowrap shrink-0">{row.date}</span>
                 </li>
               ))
             )}

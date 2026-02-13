@@ -32,7 +32,9 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
 
     // Kajabi purchase link (closer mode, outcome yes/lock_in/refund)
     const [selectedKajabiPurchaseId, setSelectedKajabiPurchaseId] = useState(null);
+    const [selectedKajabiCustomerId, setSelectedKajabiCustomerId] = useState(null);
     const [selectedPurchaseDisplay, setSelectedPurchaseDisplay] = useState(null);
+    const [selectedPurchaseDetailsLoading, setSelectedPurchaseDetailsLoading] = useState(false);
     const [isDetectedSale, setIsDetectedSale] = useState(false);
     const [suggestedPurchases, setSuggestedPurchases] = useState([]);
     const [suggestedPurchaseCustomerMap, setSuggestedPurchaseCustomerMap] = useState({});
@@ -111,7 +113,9 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
         setOutcome('');
         setSelectedOffer(null);
         setSelectedKajabiPurchaseId(null);
+        setSelectedKajabiCustomerId(null);
         setSelectedPurchaseDisplay(null);
+        setSelectedPurchaseDetailsLoading(false);
         setIsDetectedSale(false);
         setSkipAutoDetect(false);
         setSuggestedPurchases([]);
@@ -255,11 +259,13 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
   useEffect(() => {
     if (!selectedKajabiPurchaseId || selectedPurchaseDisplay !== null) return;
     let cancelled = false;
+    setSelectedPurchaseDetailsLoading(true);
     fetchPurchase(selectedKajabiPurchaseId)
       .then((purchase) => {
         if (cancelled || !purchase) return;
         const customerId = purchase.relationships?.customer?.data?.id;
         const amount_in_cents = purchase.attributes?.amount_in_cents;
+        if (!cancelled) setSelectedKajabiCustomerId(customerId ?? null);
         if (!customerId) {
           setSelectedPurchaseDisplay({ name: null, email: null, amount_in_cents });
           return;
@@ -276,6 +282,9 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
       })
       .catch(() => {
         if (!cancelled) setSelectedPurchaseDisplay({ name: null, email: null, amount_in_cents: null });
+      })
+      .finally(() => {
+        if (!cancelled) setSelectedPurchaseDetailsLoading(false);
       });
     return () => { cancelled = true; };
   }, [selectedKajabiPurchaseId, selectedPurchaseDisplay]);
@@ -599,6 +608,20 @@ if (idToUse) {
       }
       lead.purchased = purchasedValue;
     }
+
+    // When linking a purchase, if the lead has no customer_id, set it from the purchase
+    if (selectedKajabiPurchaseId && (lead?.lead_id != null) && lead?.leads != null && !lead.leads.customer_id) {
+      let customerIdToSet = selectedKajabiCustomerId;
+      if (!customerIdToSet) {
+        try {
+          const purchase = await fetchPurchase(selectedKajabiPurchaseId);
+          customerIdToSet = purchase?.relationships?.customer?.data?.id ?? null;
+        } catch (_) {}
+      }
+      if (customerIdToSet) {
+        await supabase.from('leads').update({ customer_id: String(customerIdToSet) }).eq('id', lead.lead_id);
+      }
+    }
   } else {
     // INSERT: create new note
     const { data, error } = await supabase
@@ -659,6 +682,20 @@ if (idToUse) {
         if (purchaseError) {
           console.error('Error updating purchase status:', purchaseError);
         }
+      }
+    }
+
+    // When linking a purchase, if the lead has no customer_id, set it from the purchase
+    if (mode === 'closer' && selectedKajabiPurchaseId && (lead?.lead_id != null) && lead?.leads != null && !lead.leads.customer_id) {
+      let customerIdToSet = selectedKajabiCustomerId;
+      if (!customerIdToSet) {
+        try {
+          const purchase = await fetchPurchase(selectedKajabiPurchaseId);
+          customerIdToSet = purchase?.relationships?.customer?.data?.id ?? null;
+        } catch (_) {}
+      }
+      if (customerIdToSet) {
+        await supabase.from('leads').update({ customer_id: String(customerIdToSet) }).eq('id', lead.lead_id);
       }
     }
   }
@@ -1052,6 +1089,104 @@ if (idToUse) {
           </div>
         )}
 
+        {/* Link outcome to Kajabi purchase (yes / lock_in / refund) - below purchase date */}
+        {mode === 'closer' && (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') && (
+          <div style={{ gridColumn: '1 / -1', marginTop: '8px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+            <label style={{ ...labelStyle, display: 'block', marginBottom: '8px' }}>🔗 Kajabi purchase</label>
+            {(suggestLoading && !selectedKajabiPurchaseId) || (selectedKajabiPurchaseId && selectedPurchaseDetailsLoading) ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: '32px' }}>
+                <span className="notes-modal-kajabi-spinner" />
+                <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                  {selectedKajabiPurchaseId ? 'Loading purchase details…' : 'Loading suggestions…'}
+                </span>
+              </div>
+            ) : selectedKajabiPurchaseId ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '14px', color: '#374151' }}>
+                    {isDetectedSale ? 'Detected sale' : 'Linked purchase'}: #{selectedKajabiPurchaseId}
+                    {selectedPurchaseDisplay && (
+                      <>
+                        {' · '}
+                        {(selectedPurchaseDisplay.name ?? selectedPurchaseDisplay.email) ? [selectedPurchaseDisplay.name, selectedPurchaseDisplay.email].filter(Boolean).join(' · ') : '—'}
+                        {selectedPurchaseDisplay.amount_in_cents != null && ` · $${(selectedPurchaseDisplay.amount_in_cents / 100).toFixed(2)}`}
+                      </>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedKajabiPurchaseId(null); setSelectedKajabiCustomerId(null); setSelectedPurchaseDisplay(null); setSelectedPurchaseDetailsLoading(false); setIsDetectedSale(false); setSkipAutoDetect(true); }}
+                  style={{ padding: '6px 12px', fontSize: '13px', backgroundColor: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
+                  >
+                    Change
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ marginBottom: '10px' }}>
+                  {suggestError ? (
+                    <span style={{ fontSize: '13px', color: '#b91c1c' }}>{suggestError}</span>
+                  ) : suggestedPurchases.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600' }}>Suggestions by email:</span>
+                      {suggestedPurchases.slice(0, 10).map((p) => {
+                        const created = p.attributes?.created_at
+                          ? new Date(p.attributes.created_at).toLocaleDateString('en-GB')
+                          : '—';
+                        const customerId = p.relationships?.customer?.data?.id;
+                        const customer = customerId ? suggestedPurchaseCustomerMap[customerId] : null;
+                        const name = customer?.name ?? '';
+                        const email = customer?.email ?? '';
+                        const customerLabel = (name && email) ? `${name} · ${email}` : (name || email || '—');
+                        return (
+                          <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', backgroundColor: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                            <span style={{ fontSize: '13px' }}>{created} · ID {p.id} · {customerLabel} · {p.attributes?.amount_in_cents ? `$${p.attributes.amount_in_cents / 100}` : '—'}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedKajabiPurchaseId(p.id);
+                                setSelectedKajabiCustomerId(p.relationships?.customer?.data?.id ?? null);
+                                setSelectedPurchaseDisplay({
+                                  name: customer?.name ?? null,
+                                  email: customer?.email ?? null,
+                                  amount_in_cents: p.attributes?.amount_in_cents ?? null,
+                                });
+                                setIsDetectedSale(false);
+                              }}
+                              style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: '#001749ff', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                            >
+                              Link
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {suggestedPurchases.length > 10 && <span style={{ fontSize: '12px', color: '#6b7280' }}>+ {suggestedPurchases.length - 10} more (use Search for a purchase to find others)</span>}
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '13px', color: '#6b7280' }}>No purchases found for this email.</span>
+                  )}
+                </div>
+                <div style={{ marginTop: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPurchaseSearchQuery('');
+                      setPurchaseSearchCustomers([]);
+                      setPurchaseSearchSelectedCustomerId(null);
+                      setPurchaseSearchPurchases([]);
+                      setPurchaseSearchModalOpen(true);
+                    }}
+                    style={{ padding: '8px 14px', fontSize: '13px', backgroundColor: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
+                  >
+                    Search for a purchase
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Refund Date - Only show when outcome is refund */}
         {mode === 'closer' && outcome === 'refund' && (
           <div>
@@ -1123,98 +1258,6 @@ if (idToUse) {
                     defaultValue={noteData?.notes || ''} 
                     style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
         </div>
-
-        {/* Link outcome to Kajabi purchase (yes / lock_in / refund) */}
-        {mode === 'closer' && (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') && (
-          <div style={{ gridColumn: '1 / -1', marginTop: '8px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <label style={{ ...labelStyle, display: 'block', marginBottom: '8px' }}>🔗 Kajabi purchase</label>
-            {selectedKajabiPurchaseId ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '14px', color: '#374151' }}>
-                    {isDetectedSale ? 'Detected sale' : 'Linked purchase'}: #{selectedKajabiPurchaseId}
-                    {selectedPurchaseDisplay && (
-                      <>
-                        {' · '}
-                        {(selectedPurchaseDisplay.name ?? selectedPurchaseDisplay.email) ? [selectedPurchaseDisplay.name, selectedPurchaseDisplay.email].filter(Boolean).join(' · ') : '—'}
-                        {selectedPurchaseDisplay.amount_in_cents != null && ` · $${(selectedPurchaseDisplay.amount_in_cents / 100).toFixed(2)}`}
-                      </>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedKajabiPurchaseId(null); setSelectedPurchaseDisplay(null); setIsDetectedSale(false); setSkipAutoDetect(true); }}
-                  style={{ padding: '6px 12px', fontSize: '13px', backgroundColor: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
-                  >
-                    Change
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div style={{ marginBottom: '10px' }}>
-                  {suggestLoading ? (
-                    <span style={{ fontSize: '13px', color: '#6b7280' }}>Suggesting purchases by email…</span>
-                  ) : suggestError ? (
-                    <span style={{ fontSize: '13px', color: '#b91c1c' }}>{suggestError}</span>
-                  ) : suggestedPurchases.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600' }}>Suggestions by email:</span>
-                      {suggestedPurchases.slice(0, 10).map((p) => {
-                        const created = p.attributes?.created_at
-                          ? new Date(p.attributes.created_at).toLocaleDateString('en-GB')
-                          : '—';
-                        const customerId = p.relationships?.customer?.data?.id;
-                        const customer = customerId ? suggestedPurchaseCustomerMap[customerId] : null;
-                        const name = customer?.name ?? '';
-                        const email = customer?.email ?? '';
-                        const customerLabel = (name && email) ? `${name} · ${email}` : (name || email || '—');
-                        return (
-                          <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', backgroundColor: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                            <span style={{ fontSize: '13px' }}>{created} · ID {p.id} · {customerLabel} · {p.attributes?.amount_in_cents ? `$${p.attributes.amount_in_cents / 100}` : '—'}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedKajabiPurchaseId(p.id);
-                                setSelectedPurchaseDisplay({
-                                  name: customer?.name ?? null,
-                                  email: customer?.email ?? null,
-                                  amount_in_cents: p.attributes?.amount_in_cents ?? null,
-                                });
-                                setIsDetectedSale(false);
-                              }}
-                              style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: '#001749ff', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
-                            >
-                              Link
-                            </button>
-                          </div>
-                        );
-                      })}
-                      {suggestedPurchases.length > 10 && <span style={{ fontSize: '12px', color: '#6b7280' }}>+ {suggestedPurchases.length - 10} more (use Search for a purchase to find others)</span>}
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: '13px', color: '#6b7280' }}>No purchases found for this email.</span>
-                  )}
-                </div>
-                <div style={{ marginTop: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPurchaseSearchQuery('');
-                      setPurchaseSearchCustomers([]);
-                      setPurchaseSearchSelectedCustomerId(null);
-                      setPurchaseSearchPurchases([]);
-                      setPurchaseSearchModalOpen(true);
-                    }}
-                    style={{ padding: '8px 14px', fontSize: '13px', backgroundColor: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
-                  >
-                    Search for a purchase
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
 
       </form>
       </div>
@@ -1320,6 +1363,7 @@ if (idToUse) {
                             type="button"
                             onClick={() => {
                               setSelectedKajabiPurchaseId(p.id);
+                              setSelectedKajabiCustomerId(p.relationships?.customer?.data?.id ?? null);
                               setSelectedPurchaseDisplay({
                                 name: searchCustomer?.name ?? null,
                                 email: searchCustomer?.email ?? null,

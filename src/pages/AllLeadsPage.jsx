@@ -1,256 +1,191 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { findCustomerByEmail } from '../lib/kajabiApi';
+import { listCustomers } from '../lib/kajabiApi';
+import LinkKajabiCustomerModal from './components/LinkKajabiCustomerModal';
 
 /**
- * Very simple page:
- * - Shows all calls whose outcome = 'yes'
- * - Button to try to find & STORE the Kajabi customer id into leads.customer_id
- * - Toggle to show only calls where no customer id was found/stored yet
+ * Lists Kajabi customers (name, email, created_at desc).
+ * Filter by linked / unlinked (customer_id exists in leads table or not).
+ * Link button opens LinkKajabiCustomerModal; on success we only update that row to linked.
  */
 export default function AllLeadsPage() {
-  const navigate = useNavigate();
-  const [rows, setRows] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
-  const [onlyWithoutKajabi, setOnlyWithoutKajabi] = useState(false);
+  const [linkFilter, setLinkFilter] = useState('all'); // 'all' | 'linked' | 'unlinked'
+  const [linkModalCustomer, setLinkModalCustomer] = useState(null);
 
   useEffect(() => {
-    loadOutcomeYesCalls();
+    loadCustomers();
   }, []);
 
-  async function loadOutcomeYesCalls() {
+  async function loadCustomers() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: e } = await supabase
-        .from('outcome_log')
-        .select(`
-          id,
-          outcome,
-          calls!call_id (
-            id,
-            lead_id,
-            email,
-            name,
-            book_date,
-            leads (
-              id,
-              customer_id
-            )
-          )
-        `)
-        .eq('outcome', 'yes')
-        .order('id', { ascending: false });
+      const allCustomers = [];
+      let page = 1;
+      const perPage = 100;
+      let hasMore = true;
+      while (hasMore) {
+        const result = await listCustomers({ page, perPage, sort: '-created_at' });
+        const data = result.data || [];
+        allCustomers.push(...data);
+        if (data.length < perPage) hasMore = false;
+        else page++;
+        if (page > 20) break; // cap at 2000
+      }
 
-      if (e) throw e;
+      const customerIds = allCustomers.map((c) => String(c.id));
+      const linkedIds = new Set();
+      if (customerIds.length > 0) {
+        const { data: leadRows } = await supabase
+          .from('leads')
+          .select('customer_id')
+          .not('customer_id', 'is', null);
+        (leadRows || []).forEach((row) => {
+          if (row.customer_id != null) linkedIds.add(String(row.customer_id));
+        });
+      }
 
-      const mapped = (data || [])
-        .filter((row) => row.calls)
-        .map((row) => ({
-          outcomeLogId: row.id,
-          callId: row.calls.id,
-          leadId: row.calls.lead_id,
-          email: row.calls.email,
-          name: row.calls.name,
-          bookDate: row.calls.book_date,
-          kajabiId: row.calls.leads?.customer_id ?? null,
-          status: null,
-          error: null,
-        }));
-
-      setRows(mapped);
+      setCustomers(
+        allCustomers.map((c) => ({
+          id: c.id,
+          name: c.name ?? '—',
+          email: c.email ?? '—',
+          created_at: c.created_at ?? null,
+          linked: linkedIds.has(String(c.id)),
+        }))
+      );
     } catch (e) {
-      setError(e.message || 'Failed to load calls with outcome = yes');
-      setRows([]);
+      setError(e.message || 'Failed to load Kajabi customers');
+      setCustomers([]);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleFindAndStoreKajabiIds() {
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const updated = [...rows];
+  const displayCustomers =
+    linkFilter === 'all'
+      ? customers
+      : linkFilter === 'linked'
+        ? customers.filter((c) => c.linked)
+        : customers.filter((c) => !c.linked);
 
-      for (let i = 0; i < updated.length; i++) {
-        const row = updated[i];
+  const linkedCount = customers.filter((c) => c.linked).length;
 
-        // Skip if we already have a Kajabi ID stored
-        if (row.kajabiId) {
-          continue;
-        }
-
-        if (!row.email) {
-          row.status = 'no_email';
-          continue;
-        }
-
-        try {
-          const customer = await findCustomerByEmail(row.email);
-
-          if (customer) {
-            // Store in leads.customer_id
-            const { error: updError } = await supabase
-              .from('leads')
-              .update({ customer_id: customer.id })
-              .eq('id', row.leadId);
-
-            if (updError) {
-              row.status = 'update_error';
-              row.error = updError.message;
-            } else {
-              row.kajabiId = customer.id;
-              row.status = 'stored';
-              row.error = null;
-            }
-          } else {
-            row.status = 'not_found';
-            row.error = null;
-          }
-        } catch (e) {
-          row.status = 'search_error';
-          row.error = e.message || String(e);
-        }
-      }
-
-      setRows(updated);
-    } catch (e) {
-      setSaveError(e.message || 'Failed to process leads');
-    } finally {
-      setSaving(false);
-    }
+  function handleLinked(customerId) {
+    setCustomers((prev) =>
+      prev.map((c) => (String(c.id) === String(customerId) ? { ...c, linked: true } : c))
+    );
+    setLinkModalCustomer(null);
   }
-
-  const displayRows = onlyWithoutKajabi
-    ? rows.filter((r) => !r.kajabiId)
-    : rows;
-
-  const totalWithKajabi = rows.filter((r) => r.kajabiId).length;
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Outcome = yes calls</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Kajabi customers</h1>
         <p className="text-sm text-gray-500 mb-4">
-          This page shows all calls whose closer outcome is <strong>yes</strong>. Use the button to look up the Kajabi
-          customer by email and store the id into <code>leads.customer_id</code>.
+          Customers from Kajabi, sorted by created_at descending. Link connects a Kajabi customer to a lead (stores{' '}
+          <code>customer_id</code> in leads table).
         </p>
 
         <div className="mb-4 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-gray-700">Filter:</span>
           <button
             type="button"
-            onClick={handleFindAndStoreKajabiIds}
-            disabled={saving || rows.length === 0}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium disabled:opacity-50 hover:bg-indigo-700"
+            onClick={() => setLinkFilter('all')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              linkFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
           >
-            {saving ? 'Finding & storing Kajabi IDs…' : 'Find & store Kajabi IDs (leads.customer_id)'}
+            All
           </button>
-
-          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              className="rounded border-gray-300"
-              checked={onlyWithoutKajabi}
-              onChange={(e) => setOnlyWithoutKajabi(e.target.checked)}
-            />
-            Show only calls without Kajabi customer ID
-          </label>
-
+          <button
+            type="button"
+            onClick={() => setLinkFilter('linked')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              linkFilter === 'linked' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            Linked
+          </button>
+          <button
+            type="button"
+            onClick={() => setLinkFilter('unlinked')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              linkFilter === 'unlinked' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            Unlinked
+          </button>
           <span className="text-sm text-gray-600">
-            {rows.length} call(s) with outcome = yes · {totalWithKajabi} have a Kajabi ID stored
+            {customers.length} customer(s) · {linkedCount} linked
           </span>
         </div>
 
-        {saveError && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
-            {saveError}
-          </div>
-        )}
-
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
-            {error}
-          </div>
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">{error}</div>
         )}
 
         {loading ? (
-          <div className="py-12 text-center text-gray-500">Loading calls…</div>
+          <div className="py-12 text-center text-gray-500">Loading Kajabi customers…</div>
         ) : (
           <div className="bg-white rounded-lg shadow overflow-hidden overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-100">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Call id</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Lead id</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Name</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Kajabi ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Book date</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Created</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Linked</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Action</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {displayRows.length === 0 ? (
+                {displayCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                      No calls to show.
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                      No customers to show.
                     </td>
                   </tr>
                 ) : (
-                  displayRows.map((row) => (
-                    <tr key={row.outcomeLogId} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/lead/${row.leadId}`)}
-                          className="text-indigo-600 hover:underline font-mono"
-                        >
-                          {row.callId}
-                        </button>
+                  displayCustomers.map((row) => (
+                    <tr key={row.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-900">{row.name}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{row.email}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {row.created_at ? new Date(row.created_at).toLocaleDateString('en-US', { dateStyle: 'medium' }) : '—'}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/lead/${row.leadId}`)}
-                          className="text-indigo-600 hover:underline font-mono"
-                        >
-                          {row.leadId ?? '—'}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{row.name || '—'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{row.email || '—'}</td>
-                      <td className="px-4 py-3 text-sm">
-                        {row.kajabiId ? (
-                          <a
-                            href={`https://app.kajabi.com/admin/sites/2147813413/customers/${row.kajabiId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-indigo-600 hover:underline font-mono"
-                          >
-                            {row.kajabiId}
-                          </a>
+                        {row.linked ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                            Yes
+                          </span>
                         ) : (
-                          <span className="text-gray-400">—</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                            No
+                          </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {row.status === 'stored'
-                          ? 'Stored'
-                          : row.status === 'not_found'
-                          ? 'Not found'
-                          : row.status === 'no_email'
-                          ? 'No email'
-                          : row.status === 'update_error' || row.status === 'search_error'
-                          ? 'Error'
-                          : ''}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {row.bookDate ? new Date(row.bookDate).toLocaleDateString() : '—'}
+                      <td className="px-4 py-3 text-sm">
+                        {row.linked ? (
+                          <span className="text-gray-400 text-xs">—</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLinkModalCustomer({
+                                customerId: row.id,
+                                name: row.name,
+                                email: row.email,
+                              })
+                            }
+                            className="text-indigo-600 hover:underline font-medium text-sm"
+                          >
+                            Link to lead
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -260,6 +195,15 @@ export default function AllLeadsPage() {
           </div>
         )}
       </div>
+
+      {linkModalCustomer && (
+        <LinkKajabiCustomerModal
+          open={true}
+          customer={linkModalCustomer}
+          onClose={() => setLinkModalCustomer(null)}
+          onLinked={() => handleLinked(linkModalCustomer.customerId)}
+        />
+      )}
     </div>
   );
 }

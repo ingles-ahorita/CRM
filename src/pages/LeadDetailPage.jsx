@@ -4,6 +4,7 @@
   import { fetchAll } from '../utils/fetchLeads';
   import { fetchTransactions, fetchOffer, fetchCustomer } from '../lib/kajabiApi';
   import { supabase } from '../lib/supabaseClient';
+  import LinkKajabiCustomerModal from './components/LinkKajabiCustomerModal';
 
   export default function LeadDetail() {
     const { leadID } = useParams();
@@ -28,6 +29,7 @@
     const [kajabiIdInput, setKajabiIdInput] = useState('');
     const [kajabiIdSaving, setKajabiIdSaving] = useState(false);
     const [kajabiIdError, setKajabiIdError] = useState(null);
+    const [linkKajabiModalOpen, setLinkKajabiModalOpen] = useState(false);
 
     useEffect(() => {
       fetchAll(
@@ -188,9 +190,13 @@
                 <button
                 type="button"
                 onClick={() => {
-                  setKajabiIdInput(lead.leads?.customer_id ?? '');
-                  setKajabiIdError(null);
-                  setKajabiIdModalOpen(true);
+                  if (lead.leads?.customer_id) {
+                    setKajabiIdInput(lead.leads.customer_id);
+                    setKajabiIdError(null);
+                    setKajabiIdModalOpen(true);
+                  } else {
+                    setLinkKajabiModalOpen(true);
+                  }
                 }}
                 style={{
                   padding: '6px 14px',
@@ -246,6 +252,17 @@
                   </div>
                 </div>
               </div>
+            )}
+            {linkKajabiModalOpen && (
+              <LinkKajabiCustomerModal
+                open={true}
+                lead={{ leadId: lead.lead_id, name: lead.name, email: lead.leads?.email ?? '' }}
+                onClose={() => setLinkKajabiModalOpen(false)}
+                onLinked={() => {
+                  setLinkKajabiModalOpen(false);
+                  fetchAll(undefined, undefined, undefined, undefined, setDataState, null, null, null, leadID);
+                }}
+              />
             )}
             {!kajabiId ? (
               <p style={{ fontSize: 14, color: '#6b7280' }}>No Kajabi customer ID linked for this lead. Use the button above or the All Leads page to find and store it.</p>

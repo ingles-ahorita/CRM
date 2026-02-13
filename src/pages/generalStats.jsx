@@ -7,7 +7,7 @@ import PeriodSelector from './components/PeriodSelector';
 import { ViewNotesModal } from './components/Modal';
 import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
-import { fetchPurchases as fetchKajabiPurchases, fetchOffer, fetchCustomer as fetchKajabiCustomer, fetchTransaction } from '../lib/kajabiApi';
+import { fetchPurchases as fetchKajabiPurchases, fetchOffer, fetchCustomer as fetchKajabiCustomer, fetchTransaction, listCustomers, listOffers, fetchTransactions } from '../lib/kajabiApi';
 import LinkKajabiCustomerModal from './components/LinkKajabiCustomerModal';
 
 const LOCK_IN_OFFER_ID = '2150523894';
@@ -961,31 +961,38 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
   const customerIds = [...new Set(allInRange.map((p) => p.relationships?.customer?.data?.id).filter(Boolean))].map(String);
   const kajabiOfferIds = [...new Set(allInRange.map((p) => p.relationships?.offer?.data?.id).filter(Boolean))];
 
+  // 1 list fetch for offers; then fetch individually any we need that weren't in the list.
   const kajabiOfferMap = {};
-  await Promise.all(
-    kajabiOfferIds.map(async (offerId) => {
-      try {
-        const offer = await fetchOffer(offerId);
-        if (offer) kajabiOfferMap[offerId] = offer.internal_title ?? offer.id;
-      } catch {
-        kajabiOfferMap[offerId] = offerId;
-      }
-    })
-  );
+  const { data: offersList } = await listOffers({ page: 1, perPage: 100 });
+  (offersList || []).forEach((o) => {
+    if (o?.id) kajabiOfferMap[String(o.id)] = o.internal_title ?? o.id;
+  });
+  const missingOfferIds = kajabiOfferIds.filter((id) => !kajabiOfferMap[String(id)]);
+  if (missingOfferIds.length > 0) {
+    const results = await Promise.all(missingOfferIds.map((id) => fetchOffer(id).catch(() => null)));
+    missingOfferIds.forEach((id, i) => {
+      const offer = results[i];
+      if (offer) kajabiOfferMap[String(id)] = offer.internal_title ?? offer.id;
+      else kajabiOfferMap[String(id)] = id;
+    });
+  }
 
+  // 1 list fetch for customers; then fetch individually any we need that weren't in the list.
   const kajabiCustomerById = {};
-  await Promise.all(
-    customerIds.map(async (cid) => {
-      try {
-        const c = await fetchKajabiCustomer(cid);
-        if (c) kajabiCustomerById[cid] = c;
-      } catch {
-        kajabiCustomerById[cid] = { name: null, email: null };
-      }
-    })
-  );
+  const { data: customersList } = await listCustomers({ page: 1, perPage: 200, sort: '-created_at' });
+  (customersList || []).forEach((c) => {
+    if (c?.id) kajabiCustomerById[String(c.id)] = { name: c.name ?? null, email: c.email ?? null, contact_id: c.contact_id ?? null };
+  });
+  const missingCustomerIds = customerIds.filter((cid) => !kajabiCustomerById[String(cid)]);
+  if (missingCustomerIds.length > 0) {
+    const results = await Promise.all(missingCustomerIds.map((cid) => fetchKajabiCustomer(cid).catch(() => ({ name: null, email: null, contact_id: null }))));
+    missingCustomerIds.forEach((cid, i) => {
+      const c = results[i];
+      if (c) kajabiCustomerById[String(cid)] = { name: c.name ?? null, email: c.email ?? null, contact_id: c.contact_id ?? null };
+    });
+  }
 
-  // Amount paid: sum of transaction amounts per purchase (from relationships.transactions).
+  // Amount paid: 1 list fetch for transactions; then fetch individually any we need that weren't in the list.
   const purchaseToTxIds = {};
   const allTxIds = new Set();
   for (const p of allInRange) {
@@ -997,14 +1004,22 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
     }
   }
   const txById = {};
-  const BATCH = 10;
+  const { data: txList } = await fetchTransactions({ page: 1, perPage: 200, sort: '-created_at' });
+  (txList || []).forEach((t) => {
+    if (!t?.id) return;
+    const attrs = t.attributes || {};
+    txById[String(t.id)] = {
+      amount_in_cents: attrs.amount_in_cents != null ? Number(attrs.amount_in_cents) : null,
+      currency: attrs.currency || 'USD',
+    };
+  });
   const txIdArray = [...allTxIds];
-  for (let i = 0; i < txIdArray.length; i += BATCH) {
-    const batch = txIdArray.slice(i, i + BATCH);
-    const results = await Promise.all(batch.map((id) => fetchTransaction(id)));
-    batch.forEach((id, j) => {
-      const t = results[j];
-      if (t) txById[id] = t;
+  const missingTxIds = txIdArray.filter((id) => !txById[String(id)]);
+  if (missingTxIds.length > 0) {
+    const results = await Promise.all(missingTxIds.map((id) => fetchTransaction(id)));
+    missingTxIds.forEach((id, i) => {
+      const t = results[i];
+      if (t) txById[String(id)] = { amount_in_cents: t.amount_in_cents, currency: t.currency || 'USD' };
     });
   }
   const amountPaidByPurchaseId = {};

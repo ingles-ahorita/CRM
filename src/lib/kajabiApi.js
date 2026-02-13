@@ -8,6 +8,11 @@
 const KAJABI_BASE = import.meta.env.DEV ? '/kajabi-api/v1' : '/api/kajabi-proxy/v1';
 const KAJABI_SITE_ID = import.meta.env.VITE_KAJABI_SITE_ID || '2147813413';
 
+function loggedFetch(url, options) {
+  console.log('Ftech!!!!!!!! [Kajabi]', url);
+  return fetch(url, options);
+}
+
 /**
  * Get access token for Kajabi API.
  * For now: return a hardcoded token. Later: call POST /v1/oauth/token with client_credentials.
@@ -58,7 +63,7 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
   if (customerId) params.set('filter[customer_id]', customerId);
   params.set('filter[site_id]', KAJABI_SITE_ID);
   const url = `${KAJABI_BASE}/purchases?${params}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -89,7 +94,7 @@ export async function fetchPurchase(id) {
   if (!id) return null;
   const token = await getAccessToken();
   const url = `${KAJABI_BASE}/purchases/${encodeURIComponent(id)}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -111,7 +116,7 @@ export async function fetchCustomer(id) {
   if (!id) return { name: null, email: null, contact_id: null };
   const token = await getAccessToken();
   const url = `${KAJABI_BASE}/customers/${encodeURIComponent(id)}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -132,6 +137,57 @@ export async function fetchCustomer(id) {
     name: attrs.name ?? null,
     email: attrs.email ?? null,
     contact_id: contactId != null ? String(contactId) : null,
+  };
+}
+
+/**
+ * List customers (paginated, sorted desc by created_at). Use for bulk lookup instead of many fetchCustomer(id).
+ * GET https://api.kajabi.com/v1/customers
+ * @param {Object} options
+ * @param {number} [options.page=1]
+ * @param {number} [options.perPage=50]
+ * @param {string} [options.sort='-created_at']
+ * @returns {Promise<{ data: Array<{ id: string, name?: string, email?: string, contact_id?: string, created_at?: string }>, links: object, meta?: object }>}
+ */
+export async function listCustomers({ page = 1, perPage = 100, sort = '-created_at' } = {}) {
+  const token = await getAccessToken();
+  const params = new URLSearchParams({
+    'page[number]': String(page),
+    'page[size]': String(perPage),
+    sort,
+    'fields[customers]': 'name,email,created_at',
+  });
+  params.set('filter[site_id]', KAJABI_SITE_ID);
+  const url = `${KAJABI_BASE}/customers?${params}`;
+  const res = await loggedFetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.api+json',
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Kajabi API ${res.status}: ${text}`);
+  }
+
+  const json = await res.json();
+  const data = (json.data || []).map((c) => {
+    const attrs = c.attributes || {};
+    const contactId = c.relationships?.contact?.data?.id;
+    return {
+      id: c.id,
+      name: attrs.name ?? null,
+      email: attrs.email ?? null,
+      contact_id: contactId != null ? String(contactId) : null,
+      created_at: attrs.created_at ?? null,
+    };
+  });
+  return {
+    data,
+    links: json.links || {},
+    meta: json.meta,
   };
 }
 
@@ -158,7 +214,7 @@ export async function searchCustomers({ search, siteId, page = 1, perPage = 25 }
   });
   params.set('filter[site_id]', String(siteId ?? KAJABI_SITE_ID));
   const url = `${KAJABI_BASE}/customers?${params}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -205,7 +261,7 @@ export async function findCustomerByEmail(email) {
   });
   params.set('filter[site_id]', KAJABI_SITE_ID);
   const url = `${KAJABI_BASE}/customers?${params}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -249,7 +305,7 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
   if (customerId) params.set('filter[customer_id]', customerId);
   if (sort) params.set('sort', sort);
   const url = `${KAJABI_BASE}/transactions?${params}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -280,7 +336,7 @@ export async function fetchTransaction(id) {
   if (!id) return null;
   const token = await getAccessToken();
   const url = `${KAJABI_BASE}/transactions/${encodeURIComponent(id)}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -298,6 +354,47 @@ export async function fetchTransaction(id) {
 }
 
 /**
+ * List offers (paginated). Use for bulk lookup instead of many fetchOffer(id).
+ * GET https://api.kajabi.com/v1/offers
+ * @param {Object} options
+ * @param {number} [options.page=1]
+ * @param {number} [options.perPage=50]
+ * @returns {Promise<{ data: Array<{ id: string, internal_title?: string }>, links: object, meta?: object }>}
+ */
+export async function listOffers({ page = 1, perPage = 50 } = {}) {
+  const token = await getAccessToken();
+  const params = new URLSearchParams({
+    'page[number]': String(page),
+    'page[size]': String(perPage),
+    'fields[offers]': 'internal_title',
+  });
+  const url = `${KAJABI_BASE}/offers?${params}`;
+  const res = await loggedFetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.api+json',
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Kajabi API ${res.status}: ${text}`);
+  }
+
+  const json = await res.json();
+  const data = (json.data || []).map((o) => ({
+    id: o.id,
+    internal_title: o.attributes?.internal_title ?? null,
+  }));
+  return {
+    data,
+    links: json.links || {},
+    meta: json.meta,
+  };
+}
+
+/**
  * Fetch a single offer by id (for title/name).
  * GET https://api.kajabi.com/v1/offers/{id}
  * @param {string} id - Offer id
@@ -308,7 +405,7 @@ export async function fetchOffer(id) {
   const token = await getAccessToken();
   const params = new URLSearchParams({ 'fields[offers]': 'internal_title' });
   const url = `${KAJABI_BASE}/offers/${encodeURIComponent(id)}?${params}`;
-  const res = await fetch(url, {
+  const res = await loggedFetch(url, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
