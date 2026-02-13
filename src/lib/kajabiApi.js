@@ -4,7 +4,8 @@
  * @see https://developers.kajabi.com/api-reference/purchases/list-purchases
  */
 
-const KAJABI_BASE = 'https://api.kajabi.com/v1';
+// In dev use same-origin path so Vite proxies to api.kajabi.com (avoids CORS).
+const KAJABI_BASE = import.meta.env.DEV ? '/kajabi-api/v1' : 'https://api.kajabi.com/v1';
 const KAJABI_SITE_ID = import.meta.env.VITE_KAJABI_SITE_ID || '2147813413';
 
 /**

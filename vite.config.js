@@ -20,6 +20,12 @@ export default defineConfig({
             console.log('Proxying request:', req.method, req.url, '->', options.target + req.url);
           });
         }
+      },
+      '/kajabi-api': {
+        target: 'https://api.kajabi.com',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/kajabi-api/, '')
       }
     }
   }
