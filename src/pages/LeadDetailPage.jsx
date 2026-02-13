@@ -260,7 +260,7 @@
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
-                      <th style={{ padding: '8px 12px' }}>Purchase ID</th>
+                      <th style={{ padding: '8px 12px' }}>Transaction ID</th>
                       <th style={{ padding: '8px 12px' }}>Customer (Kajabi)</th>
                       <th style={{ padding: '8px 12px' }}>Customer ID</th>
                       <th style={{ padding: '8px 12px' }}>Amount</th>

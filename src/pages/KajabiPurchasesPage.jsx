@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchPurchases, fetchCustomer, searchCustomers, fetchOffer } from '../lib/kajabiApi';
 import { supabase } from '../lib/supabaseClient';
+import { NotesModal } from './components/Modal';
+import { StatusBadge } from './components/LeadItem';
 
 const SEARCH_DEBOUNCE_MS = 400;
 const LINK_SEARCH_DEBOUNCE_MS = 300;
@@ -35,6 +37,8 @@ export default function KajabiPurchasesPage() {
 
   const [linkedCustomerIds, setLinkedCustomerIds] = useState(new Set());
   const [linkedCustomerLeadIdMap, setLinkedCustomerLeadIdMap] = useState({});
+  const [linkedPurchaseIdsFromOutcome, setLinkedPurchaseIdsFromOutcome] = useState(new Set());
+  const [linkedPurchaseIdsFromOutcomeLockIn, setLinkedPurchaseIdsFromOutcomeLockIn] = useState(new Set());
   const [linkedLoading, setLinkedLoading] = useState(false);
   const [offerMap, setOfferMap] = useState({});
 
@@ -46,6 +50,16 @@ export default function KajabiPurchasesPage() {
   const [linkSelectedLead, setLinkSelectedLead] = useState(null);
   const [linkSaving, setLinkSaving] = useState(false);
   const linkSearchTimeoutRef = useRef(null);
+
+  const [findCallModalOpen, setFindCallModalOpen] = useState(false);
+  const [findCallPurchase, setFindCallPurchase] = useState(null);
+  const [findCallCalls, setFindCallCalls] = useState([]);
+  const [findCallLoading, setFindCallLoading] = useState(false);
+  const [closerNoteOpen, setCloserNoteOpen] = useState(false);
+  const [closerNoteLead, setCloserNoteLead] = useState(null);
+  const [closerNoteCallId, setCloserNoteCallId] = useState(null);
+  const [closerNoteInitialPurchaseId, setCloserNoteInitialPurchaseId] = useState(null);
+  const [closerNoteInitialPurchaseDisplay, setCloserNoteInitialPurchaseDisplay] = useState(null);
 
   const [activeTab, setActiveTab] = useState('purchases'); // 'purchases' | 'lockins'
   const getCurrentMonthKey = () => {
@@ -207,6 +221,76 @@ export default function KajabiPurchasesPage() {
     return () => { cancelled = true; };
   }, [displayPurchases]);
 
+  // Purchase ids linked via outcome_log outcome = 'yes'
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('outcome_log')
+      .select('kajabi_purchase_id')
+      .eq('outcome', 'yes')
+      .not('kajabi_purchase_id', 'is', null)
+      .then(({ data, error: e }) => {
+        if (cancelled) return;
+        if (e) {
+          setLinkedPurchaseIdsFromOutcome(new Set());
+          return;
+        }
+        const ids = new Set((data || []).map((r) => String(r.kajabi_purchase_id)).filter(Boolean));
+        setLinkedPurchaseIdsFromOutcome(ids);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Purchase ids linked via outcome_log outcome = 'lock_in' (count as linked only on lock-ins/payoffs tabs)
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('outcome_log')
+      .select('kajabi_purchase_id')
+      .eq('outcome', 'lock_in')
+      .not('kajabi_purchase_id', 'is', null)
+      .then(({ data, error: e }) => {
+        if (cancelled) return;
+        if (e) {
+          setLinkedPurchaseIdsFromOutcomeLockIn(new Set());
+          return;
+        }
+        const ids = new Set((data || []).map((r) => String(r.kajabi_purchase_id)).filter(Boolean));
+        setLinkedPurchaseIdsFromOutcomeLockIn(ids);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // When Find call modal opens with a purchase that has customerId, fetch calls for that lead
+  useEffect(() => {
+    if (!findCallModalOpen || !findCallPurchase?.customerId) {
+      setFindCallCalls([]);
+      return;
+    }
+    const leadId = linkedCustomerLeadIdMap[String(findCallPurchase.customerId)];
+    if (!leadId) {
+      setFindCallCalls([]);
+      return;
+    }
+    let cancelled = false;
+    setFindCallLoading(true);
+    supabase
+      .from('calls')
+      .select('id, name, email, book_date, closer_note_id, setter_note_id, closer_id, setter_id, timezone, picked_up, confirmed, showed_up, purchased, outcome_log!call_id(id, outcome)')
+      .eq('lead_id', leadId)
+      .order('book_date', { ascending: false })
+      .limit(100)
+      .then(({ data, error: e }) => {
+        if (cancelled) return;
+        if (e) setFindCallCalls([]);
+        else setFindCallCalls(data || []);
+      })
+      .finally(() => {
+        if (!cancelled) setFindCallLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [findCallModalOpen, findCallPurchase?.customerId, linkedCustomerLeadIdMap]);
+
   useEffect(() => {
     const offerIds = [...new Set(
       displayPurchases
@@ -299,14 +383,15 @@ export default function KajabiPurchasesPage() {
     ? tabPurchases.filter((p) => monthKey(p.attributes?.created_at) === selectedMonth)
     : tabPurchases;
 
-  const linkedPurchases = filteredTabPurchases.filter((p) => {
-    const customerId = p.relationships?.customer?.data?.id;
-    return customerId && linkedCustomerIds.has(String(customerId));
-  });
-  const unlinkedPurchases = filteredTabPurchases.filter((p) => {
-    const customerId = p.relationships?.customer?.data?.id;
-    return !customerId || !linkedCustomerIds.has(String(customerId));
-  });
+  const isPurchaseLinked = (p) => {
+    const linkedByYes = linkedPurchaseIdsFromOutcome.has(String(p.id));
+    const linkedByLockIn = linkedPurchaseIdsFromOutcomeLockIn.has(String(p.id));
+    if (linkedByYes) return true;
+    if (activeTab === 'lockins' || activeTab === 'payoffs') return linkedByLockIn;
+    return false;
+  };
+  const linkedPurchases = filteredTabPurchases.filter(isPurchaseLinked);
+  const unlinkedPurchases = filteredTabPurchases.filter((p) => !isPurchaseLinked(p));
 
   const linkedByMonth = {};
   linkedPurchases.forEach((p) => {
@@ -316,28 +401,29 @@ export default function KajabiPurchasesPage() {
   });
   const monthsSorted = Object.keys(linkedByMonth).sort().reverse();
 
-  const renderPurchaseRow = (p, { isUnlinked = false } = {}) => {
+  const stripEmoji = (str) => (str == null || str === '') ? str : String(str).replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}]/gu, '').trim() || str;
+  const renderPurchaseRow = (p) => {
     const attrs = p.attributes || {};
     const rels = p.relationships || {};
     const customerId = rels.customer?.data?.id;
     const customer = customerId ? displayCustomerMap[customerId] : null;
     const offerId = rels.offer?.data?.id;
     const offerTitle = offerId ? (offerMap[offerId] ?? '…') : '—';
-    const isLinked = customerId && linkedCustomerIds.has(String(customerId));
+    const isLinked = isPurchaseLinked(p);
     const leadId = customerId ? linkedCustomerLeadIdMap[String(customerId)] : null;
     const goToLead = leadId ? () => navigate(`/lead/${leadId}`) : undefined;
-    const customerName = customer?.name ?? '—';
+    const customerName = stripEmoji(customer?.name ?? '—');
     const customerEmail = customer?.email ?? '—';
     const customerIdStr = rels.customer?.data?.id || '—';
     const cellCls = 'px-2 py-1.5 text-xs whitespace-nowrap';
-    const rowCls = isUnlinked ? 'bg-orange-50 hover:bg-orange-100' : 'hover:bg-gray-50';
+    const rowCls = !isLinked ? 'bg-orange-50 hover:bg-orange-100' : 'hover:bg-gray-50';
     return (
       <tr key={p.id} className={rowCls}>
         <td className={`${cellCls} text-gray-900 font-mono`}>{p.id}</td>
         <td className={`${cellCls} text-gray-900`}>
           {customersLoadingDisplay ? (
             '…'
-          ) : isLinked && goToLead ? (
+          ) : goToLead ? (
             <button type="button" onClick={goToLead} className="text-indigo-600 hover:underline text-left font-medium">
               {customerName}
             </button>
@@ -348,7 +434,7 @@ export default function KajabiPurchasesPage() {
         <td className={`${cellCls} text-gray-600`}>
           {customersLoadingDisplay ? (
             '…'
-          ) : isLinked && goToLead ? (
+          ) : goToLead ? (
             <button type="button" onClick={goToLead} className="text-indigo-600 hover:underline text-left">
               {customerEmail}
             </button>
@@ -360,29 +446,43 @@ export default function KajabiPurchasesPage() {
         <td className={`${cellCls} text-gray-600`}>{formatDate(attrs.created_at)}</td>
         <td className={`${cellCls} text-gray-600`}>{offerTitle}</td>
         <td className={`${cellCls} text-gray-500 font-mono`}>{customerIdStr}</td>
-        <td className={`${cellCls} text-center`} title={customerId ? (linkedCustomerIds.has(String(customerId)) ? 'Lead exists in DB – click name/email to open' : 'Not linked – click to search and link a lead') : '—'}>
+        <td className={`${cellCls} text-center`} title={isLinked ? 'Linked via outcome log' : (customerId ? 'Not linked – click to search and link a lead' : '—')}>
           {linkedLoading ? (
             <span className="text-gray-400">…</span>
-          ) : customerId ? (
-            linkedCustomerIds.has(String(customerId)) ? (
-              <span className="text-green-600">✅</span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setLinkModalCustomer({ customerId, name: customer?.name ?? '—', email: customer?.email ?? '—' });
-                  setLinkSearchQuery('');
-                  setLinkSearchResults([]);
-                  setLinkSelectedLead(null);
-                  setLinkModalOpen(true);
-                }}
-                className="text-amber-600 hover:underline cursor-pointer"
-              >
-                ❌
-              </button>
-            )
+          ) : isLinked ? (
+            <span className="text-green-600">Linked</span>
+          ) : !customerId ? (
+            <button
+              type="button"
+              onClick={() => {
+                setLinkModalCustomer({ customerId: null, name: customer?.name ?? '—', email: customer?.email ?? '—' });
+                setLinkSearchQuery('');
+                setLinkSearchResults([]);
+                setLinkSelectedLead(null);
+                setLinkModalOpen(true);
+              }}
+              className="text-amber-600 hover:underline cursor-pointer"
+            >
+              Not linked
+            </button>
           ) : (
-            '—'
+            <button
+              type="button"
+              onClick={() => {
+                setFindCallPurchase({
+                  purchaseId: p.id,
+                  customerId,
+                  name: customer?.name ?? '—',
+                  email: customer?.email ?? '—',
+                  amount_in_cents: p.attributes?.amount_in_cents ?? null,
+                });
+                setFindCallCalls([]);
+                setFindCallModalOpen(true);
+              }}
+              className="text-amber-600 hover:underline cursor-pointer"
+            >
+              Not linked
+            </button>
           )}
         </td>
       </tr>
@@ -566,7 +666,7 @@ export default function KajabiPurchasesPage() {
                             {tableHeader}
                           </thead>
                           <tbody className="divide-y divide-gray-200">
-                            {unlinkedPurchases.map((p) => renderPurchaseRow(p, { isUnlinked: true }))}
+                            {unlinkedPurchases.map((p) => renderPurchaseRow(p))}
                           </tbody>
                         </table>
                       </div>
@@ -631,16 +731,140 @@ export default function KajabiPurchasesPage() {
           </>
         )}
 
+        {/* Find call modal: pick a call to open closer note and link this purchase */}
+        {findCallModalOpen && findCallPurchase && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setFindCallModalOpen(false)}>
+            <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">Link purchase to a call</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Purchase #{findCallPurchase.purchaseId} · {findCallPurchase.name} · {findCallPurchase.email}
+                </p>
+              </div>
+              <div className="p-4 flex-1 overflow-auto">
+                {!linkedCustomerLeadIdMap[String(findCallPurchase.customerId)] ? (
+                  <div>
+                    <p className="text-sm text-gray-700 mb-3">This customer is not linked to a lead. Link them to a lead first, then you can pick a call to attach this purchase to.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLinkModalCustomer({ customerId: findCallPurchase.customerId, name: findCallPurchase.name, email: findCallPurchase.email });
+                        setLinkSearchQuery('');
+                        setLinkSearchResults([]);
+                        setLinkSelectedLead(null);
+                        setLinkModalOpen(true);
+                        setFindCallModalOpen(false);
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700"
+                    >
+                      Link customer to a lead
+                    </button>
+                  </div>
+                ) : findCallLoading ? (
+                  <p className="text-sm text-gray-500">Loading calls…</p>
+                ) : findCallCalls.length === 0 ? (
+                  <p className="text-sm text-gray-500">No calls found for this lead.</p>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Select a call to open the outcome note and link this purchase:</p>
+                    <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-auto">
+                      {findCallCalls.map((call) => (
+                        <button
+                          key={call.id}
+                          type="button"
+                          onClick={() => {
+                            setCloserNoteLead(call);
+                            setCloserNoteCallId(call.id);
+                            setCloserNoteInitialPurchaseId(findCallPurchase.purchaseId);
+                            setCloserNoteInitialPurchaseDisplay({
+                              name: findCallPurchase.name,
+                              email: findCallPurchase.email,
+                              amount_in_cents: findCallPurchase.amount_in_cents,
+                            });
+                            setFindCallModalOpen(false);
+                            setFindCallPurchase(null);
+                            setCloserNoteOpen(true);
+                          }}
+                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 flex flex-col gap-0.5"
+                        >
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-gray-900">{call.name || '—'}</span>
+                            <span className="flex items-center gap-1">
+                              <StatusBadge value={call.picked_up} label="P" title="Picked Up" />
+                              <StatusBadge value={call.confirmed} label="C" title="Confirmed" />
+                              <StatusBadge value={call.showed_up} label="S" title="Showed Up" />
+                              <StatusBadge value={call.purchased} label="$" title="Purchased" outcomeLog={call.outcome_log} />
+                            </span>
+                          </div>
+                          <span className="text-gray-500 text-xs">
+                            {call.book_date ? new Date(call.book_date).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                            {call.closer_note_id ? ' · has note' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="p-4 border-t border-gray-200 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => { setFindCallModalOpen(false); setFindCallPurchase(null); }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Closer note modal (from Find call flow) – save with kajabi_purchase_id to link */}
+        {closerNoteLead && (
+          <NotesModal
+            isOpen={closerNoteOpen}
+            onClose={() => {
+              setCloserNoteOpen(false);
+              setCloserNoteLead(null);
+              setCloserNoteCallId(null);
+              setCloserNoteInitialPurchaseId(null);
+              setCloserNoteInitialPurchaseDisplay(null);
+              Promise.all([
+                supabase.from('outcome_log').select('kajabi_purchase_id').eq('outcome', 'yes').not('kajabi_purchase_id', 'is', null),
+                supabase.from('outcome_log').select('kajabi_purchase_id').eq('outcome', 'lock_in').not('kajabi_purchase_id', 'is', null),
+              ]).then(([yesRes, lockInRes]) => {
+                const yesIds = new Set((yesRes.data || []).map((r) => String(r.kajabi_purchase_id)).filter(Boolean));
+                const lockInIds = new Set((lockInRes.data || []).map((r) => String(r.kajabi_purchase_id)).filter(Boolean));
+                setLinkedPurchaseIdsFromOutcome(yesIds);
+                setLinkedPurchaseIdsFromOutcomeLockIn(lockInIds);
+              });
+            }}
+            lead={closerNoteLead}
+            callId={closerNoteCallId}
+            mode="closer"
+            initialKajabiPurchaseId={closerNoteInitialPurchaseId}
+            initialPurchaseDisplay={closerNoteInitialPurchaseDisplay}
+          />
+        )}
+
         {linkModalOpen && linkModalCustomer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => !linkSaving && setLinkModalOpen(false)}>
             <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
               <div className="p-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">Link Kajabi customer to a lead</h3>
-                <p className="text-sm text-gray-600 mt-1">
-                  Kajabi customer: <strong>{linkModalCustomer.name}</strong> ({linkModalCustomer.email}) · ID {linkModalCustomer.customerId}
-                </p>
+                {linkModalCustomer.customerId ? (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Kajabi customer: <strong>{linkModalCustomer.name}</strong> ({linkModalCustomer.email}) · ID {linkModalCustomer.customerId}
+                  </p>
+                ) : (
+                  <p className="text-sm text-amber-700 mt-1">This purchase has no customer in Kajabi. Link is not available.</p>
+                )}
               </div>
               <div className="p-4 flex-1 overflow-auto">
+                {!linkModalCustomer.customerId ? (
+                  <p className="text-sm text-gray-500">Cannot link: no Kajabi customer on this purchase.</p>
+                ) : (
+                  <>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Search leads in database (by name or email)</label>
                 <input
                   type="text"
@@ -668,7 +892,7 @@ export default function KajabiPurchasesPage() {
                     )}
                   </div>
                 )}
-                {linkSelectedLead && (
+                {linkSelectedLead && linkModalCustomer.customerId && (
                   <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <p className="text-sm font-medium text-amber-900">Confirm link</p>
                     <p className="text-sm text-amber-800 mt-1">
@@ -676,6 +900,8 @@ export default function KajabiPurchasesPage() {
                     </p>
                     <p className="text-xs text-amber-700 mt-2">This will set leads.customer_id = {linkModalCustomer.customerId} for that lead.</p>
                   </div>
+                )}
+                  </>
                 )}
               </div>
               <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
@@ -688,7 +914,7 @@ export default function KajabiPurchasesPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={!linkSelectedLead || linkSaving}
+                  disabled={!linkModalCustomer.customerId || !linkSelectedLead || linkSaving}
                   onClick={handleLinkConfirm}
                   className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >

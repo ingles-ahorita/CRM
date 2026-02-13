@@ -1541,8 +1541,8 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
   );
 }
 
-// Helper component for status badges
-function StatusBadge({ value, label, title, outcomeLog }) {
+// Helper component for status badges (exported for use in KajabiPurchasesPage Find call list)
+export function StatusBadge({ value, label, title, outcomeLog }) {
   const getColor = () => {
     // Only apply lock_in color for label === '$' and lock_in outcome
     if (

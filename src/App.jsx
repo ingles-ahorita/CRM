@@ -10,6 +10,7 @@ import ProtectedRoute from './pages/components/ProtectedRoute';
 import FortnightDashboard from './pages/setterStats';
 import StatsDashboard from './pages/generalStats';
 import CloserStatsDashboard from './pages/closerStats';
+import CloserDashboard from './pages/CloserDashboard';
 import ShiftsPage from './pages/ShiftsPage';
 import SchedulePage from './pages/schedules/SchedulePage';
 import TestSetterSchedule from './pages/TestSetterSchedule';
@@ -44,6 +45,7 @@ function AppRoutes() {
       <Route path="/setter/:setter" element={<Setter />} />
       <Route path="/stats/:setter" element={<FortnightDashboard/>} />
       <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
+      <Route path="/closer-dashboard/:closer" element={<CloserDashboard/>} />
       <Route path="/metrics" element={<StatsDashboard/>}/>
       <Route path="/utm-stats" element={<UTMAnalyticsPage/>}/>
       <Route path="/purchases" element={<KajabiPurchasesPage/>}/>

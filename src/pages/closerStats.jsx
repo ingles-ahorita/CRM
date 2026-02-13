@@ -3,9 +3,9 @@ import { supabase } from '../lib/supabaseClient';
 import { useParams, useNavigate } from 'react-router-dom';
 import { LeadItemCompact, LeadListHeader } from './components/LeadItem';
 import { NotesModal } from './components/Modal';
-import { Phone, Mail } from 'lucide-react';
 import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
+import { fetchPurchases as fetchKajabiPurchases, fetchTransaction } from '../lib/kajabiApi';
 
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
 function parseDateAsUTC(dateString) {
@@ -45,6 +45,8 @@ export default function CloserStatsDashboard() {
   const [previousMonthRefundsList, setPreviousMonthRefundsList] = useState([]);
   const [setterMap, setSetterMap] = useState({});
   const [closerMap, setCloserMap] = useState({});
+  const [purchaseAmountMap, setPurchaseAmountMap] = useState({});
+  const [purchaseAmountMapLoading, setPurchaseAmountMapLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -175,9 +177,48 @@ export default function CloserStatsDashboard() {
       setPurchasesForCommissionLoading(false);
     };
     loadPurchasesForCommission();
-  }, [closer, selectedMonth]); 
+  }, [closer, selectedMonth]);
 
-  if (loading) {
+  // Fetch Kajabi amount-paid map for the selected month (for purchase log Amount column)
+  useEffect(() => {
+    if (!selectedMonth) {
+      setPurchaseAmountMapLoading(false);
+      return;
+    }
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const monthDate = new Date(Date.UTC(y, m - 1, 15));
+    const monthRange = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+    if (!monthRange) {
+      setPurchaseAmountMapLoading(false);
+      return;
+    }
+    setPurchaseAmountMapLoading(true);
+    const loadAmountMap = async () => {
+      try {
+        const map = await fetchKajabiAmountMapForDateRange(monthRange.startDate.toISOString(), monthRange.endDate.toISOString());
+        setPurchaseAmountMap(map);
+      } catch (e) {
+        console.error('Error loading Kajabi amount map:', e);
+        setPurchaseAmountMap({});
+      } finally {
+        setPurchaseAmountMapLoading(false);
+      }
+    };
+    loadAmountMap();
+  }, [selectedMonth]); 
+
+  const isPurchasesViewReady = !purchasesLoading && !purchaseLogRefundsLoading && !purchaseAmountMapLoading;
+  const isRefundsViewReady = !refundsListLoading;
+  const isSecondInstallmentsViewReady = !secondInstallmentsListLoading;
+  const isPageReady =
+    !loading &&
+    !purchasesForCommissionLoading &&
+    (viewMode === 'stats' ||
+      (viewMode === 'purchases' && isPurchasesViewReady) ||
+      (viewMode === 'refunds' && isRefundsViewReady) ||
+      (viewMode === 'secondInstallments' && isSecondInstallmentsViewReady));
+
+  if (!isPageReady) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-xl text-gray-600">Loading...</div>
@@ -188,13 +229,22 @@ export default function CloserStatsDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-7xl mx-auto">
-        <button 
-          onClick={() => navigate(-1)} 
-          style={{ backgroundColor: '#727272ff', marginBottom: 12, color: 'white', padding: '5px 7px' }}
-        >
-          ← Back
-        </button>
-        
+        <div className="flex items-center gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            style={{ backgroundColor: '#727272ff', color: 'white', padding: '5px 7px', borderRadius: 4 }}
+          >
+            ← Back
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate(`/closer-dashboard/${closer}`)}
+            style={{ backgroundColor: '#4f46e5', color: 'white', padding: '5px 10px', borderRadius: 4 }}
+          >
+            Dashboard
+          </button>
+        </div>
         <h1 className="text-3xl font-bold text-gray-900 mb-4">
           {data[0]?.closerName || 'Closer'} - Monthly Stats
         </h1>
@@ -452,11 +502,11 @@ export default function CloserStatsDashboard() {
                 <div className="p-8 text-center text-gray-500">No purchases found for this month.</div>
               ) : (
                 <div>
-                  {/* Purchase Log Header */}
+                  {/* Purchase Log Header - matches general stats + Commission + Notes */}
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr',
                       gap: '16px',
                       padding: '12px 16px',
                       backgroundColor: '#f3f4f6',
@@ -468,10 +518,13 @@ export default function CloserStatsDashboard() {
                       letterSpacing: '0.5px'
                     }}
                   >
-                    <div>Contact Info</div>
-                    <div>Setter</div>
+                    <div>Name</div>
+                    <div>Email</div>
                     <div>Purchase Date</div>
                     <div>Offer</div>
+                    <div>Amount</div>
+                    <div>Closer</div>
+                    <div>Setter</div>
                     <div style={{ textAlign: 'center' }}>Commission</div>
                     <div style={{ textAlign: 'center' }}>Notes</div>
                   </div>
@@ -480,6 +533,7 @@ export default function CloserStatsDashboard() {
                       key={lead.id}
                       lead={lead}
                       setterMap={setterMap}
+                      amountMap={purchaseAmountMap}
                     />
                   ))}
                 </div>
@@ -502,11 +556,11 @@ export default function CloserStatsDashboard() {
                 <div className="p-8 text-center text-gray-500">No refunds from previous months found for this period.</div>
               ) : (
                 <div>
-                  {/* Refunds Log Header */}
+                  {/* Refunds Log Header - matches general + Refund Date + Commission + Notes */}
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr',
                       gap: '16px',
                       padding: '12px 16px',
                       backgroundColor: '#f3f4f6',
@@ -518,11 +572,14 @@ export default function CloserStatsDashboard() {
                       letterSpacing: '0.5px'
                     }}
                   >
-                    <div>Contact Info</div>
-                    <div>Setter</div>
+                    <div>Name</div>
+                    <div>Email</div>
                     <div>Purchase Date</div>
                     <div>Refund Date</div>
                     <div>Offer</div>
+                    <div>Amount</div>
+                    <div>Closer</div>
+                    <div>Setter</div>
                     <div style={{ textAlign: 'center' }}>Commission</div>
                     <div style={{ textAlign: 'center' }}>Notes</div>
                   </div>
@@ -531,6 +588,7 @@ export default function CloserStatsDashboard() {
                       key={lead.id}
                       lead={lead}
                       setterMap={setterMap}
+                      amountMap={purchaseAmountMap}
                       isRefundsTable={true}
                     />
                   ))}
@@ -556,11 +614,11 @@ export default function CloserStatsDashboard() {
                 <div className="p-8 text-center text-gray-500">No same-month refunds found.</div>
               ) : (
                 <div>
-                  {/* Same Month Refunds Header */}
+                  {/* Same Month Refunds Header - matches general + Refund Date + Commission + Notes */}
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr',
                       gap: '16px',
                       padding: '12px 16px',
                       backgroundColor: '#f3f4f6',
@@ -572,10 +630,14 @@ export default function CloserStatsDashboard() {
                       letterSpacing: '0.5px'
                     }}
                   >
-                    <div>Contact Info</div>
-                    <div>Setter</div>
+                    <div>Name</div>
+                    <div>Email</div>
+                    <div>Purchase Date</div>
                     <div>Refund Date</div>
                     <div>Offer</div>
+                    <div>Amount</div>
+                    <div>Closer</div>
+                    <div>Setter</div>
                     <div style={{ textAlign: 'center' }}>Commission</div>
                     <div style={{ textAlign: 'center' }}>Notes</div>
                   </div>
@@ -584,6 +646,8 @@ export default function CloserStatsDashboard() {
                       key={lead.id}
                       lead={lead}
                       setterMap={setterMap}
+                      amountMap={purchaseAmountMap}
+                      isRefundsTable={true}
                     />
                   ))}
                 </div>
@@ -606,11 +670,11 @@ export default function CloserStatsDashboard() {
                 <div className="p-8 text-center text-gray-500">No refunds from previous months found.</div>
               ) : (
                 <div>
-                  {/* Previous Month Refunds Header */}
+                  {/* Previous Month Refunds Header - matches general + Refund Date + Commission + Notes */}
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                      gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr',
                       gap: '16px',
                       padding: '12px 16px',
                       backgroundColor: '#f3f4f6',
@@ -622,11 +686,14 @@ export default function CloserStatsDashboard() {
                       letterSpacing: '0.5px'
                     }}
                   >
-                    <div>Contact Info</div>
-                    <div>Setter</div>
+                    <div>Name</div>
+                    <div>Email</div>
                     <div>Purchase Date</div>
                     <div>Refund Date</div>
                     <div>Offer</div>
+                    <div>Amount</div>
+                    <div>Closer</div>
+                    <div>Setter</div>
                     <div style={{ textAlign: 'center' }}>Commission</div>
                     <div style={{ textAlign: 'center' }}>Notes</div>
                   </div>
@@ -635,6 +702,7 @@ export default function CloserStatsDashboard() {
                       key={lead.id}
                       lead={lead}
                       setterMap={setterMap}
+                      amountMap={purchaseAmountMap}
                       isRefundsTable={true}
                     />
                   ))}
@@ -662,11 +730,11 @@ export default function CloserStatsDashboard() {
               <div className="p-8 text-center text-gray-500">No second installments found for the previous month.</div>
             ) : (
               <div>
-                {/* Second Installments Log Header */}
+                {/* Second Installments Log Header - matches general + Commission + Notes */}
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+                    gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr',
                     gap: '16px',
                     padding: '12px 16px',
                     backgroundColor: '#f3f4f6',
@@ -678,10 +746,13 @@ export default function CloserStatsDashboard() {
                     letterSpacing: '0.5px'
                   }}
                 >
-                  <div>Contact Info</div>
-                  <div>Setter</div>
+                  <div>Name</div>
+                  <div>Email</div>
                   <div>Purchase Date</div>
                   <div>Offer</div>
+                  <div>Amount</div>
+                  <div>Closer</div>
+                  <div>Setter</div>
                   <div style={{ textAlign: 'center' }}>Commission</div>
                   <div style={{ textAlign: 'center' }}>Notes</div>
                 </div>
@@ -690,6 +761,7 @@ export default function CloserStatsDashboard() {
                     key={lead.id}
                     lead={lead}
                     setterMap={setterMap}
+                    amountMap={purchaseAmountMap}
                   />
                 ))}
               </div>
@@ -841,6 +913,107 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
     conversionRate: item.showUps > 0 ? (item.purchases / item.showUps) * 100 : 0,
     closerName: calls[0]?.closers?.name || outcomeLogs[0]?.calls?.closers?.name || 'Unknown Closer'
   })).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+/**
+ * Fetch Kajabi amount paid (sum of transactions) per purchase for a date range.
+ * Returns a map: key = `${customerId}|${offerId}|${dateYYYY-MM-DD}` -> { amount_formatted }.
+ * Used to show amount paid in closer stats purchase log (same as general stats).
+ */
+async function fetchKajabiAmountMapForDateRange(startDateISO, endDateISO) {
+  const startDateObj = parseDateAsUTC(startDateISO);
+  const endDateObj = parseDateAsUTC(endDateISO);
+  let startUTC, endUTC;
+  if (DateHelpers.DEFAULT_TIMEZONE === 'UTC') {
+    startUTC = new Date(startDateObj);
+    startUTC.setUTCHours(0, 0, 0, 0);
+    endUTC = new Date(endDateObj);
+    endUTC.setUTCHours(23, 59, 59, 999);
+  } else {
+    const startDateNormalized = DateHelpers.normalizeToTimezone(startDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    const endDateNormalized = DateHelpers.normalizeToTimezone(endDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    const startOfDayNormalized = new Date(startDateNormalized);
+    startOfDayNormalized.setHours(0, 0, 0, 0);
+    const endOfDayNormalized = new Date(endDateNormalized);
+    endOfDayNormalized.setHours(23, 59, 59, 999);
+    startUTC = DateHelpers.fromZonedTime(startOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+    endUTC = DateHelpers.fromZonedTime(endOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+  }
+  const startTs = startUTC.getTime();
+  const endTs = endUTC.getTime();
+
+  const allInRange = [];
+  let page = 1;
+  const perPage = 100;
+  let hasMore = true;
+  while (hasMore) {
+    const result = await fetchKajabiPurchases({ page, perPage, sort: '-created_at' });
+    const data = result.data || [];
+    if (data.length === 0) break;
+    for (const p of data) {
+      const createdAt = p.attributes?.created_at;
+      if (!createdAt) continue;
+      const ts = new Date(createdAt).getTime();
+      if (ts >= startTs && ts <= endTs) allInRange.push(p);
+    }
+    if (data.length < perPage || (data.length && new Date(data[data.length - 1].attributes?.created_at).getTime() < startTs))
+      hasMore = false;
+    else
+      page++;
+    if (page > 50) break;
+  }
+
+  const purchaseToTxIds = {};
+  const allTxIds = new Set();
+  for (const p of allInRange) {
+    const list = p.relationships?.transactions?.data ?? [];
+    const ids = list.map((t) => t.id).filter(Boolean);
+    if (ids.length) {
+      purchaseToTxIds[p.id] = ids;
+      ids.forEach((id) => allTxIds.add(id));
+    }
+  }
+  const txById = {};
+  const BATCH = 10;
+  const txIdArray = [...allTxIds];
+  for (let i = 0; i < txIdArray.length; i += BATCH) {
+    const batch = txIdArray.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map((id) => fetchTransaction(id)));
+    batch.forEach((id, j) => {
+      const t = results[j];
+      if (t) txById[id] = t;
+    });
+  }
+
+  const formatAmount = (cents, currency = 'USD') => {
+    if (cents == null) return '—';
+    const value = (cents / 100).toFixed(2);
+    return currency === 'USD' ? `$${value}` : `${value} ${currency}`;
+  };
+
+  const amountMap = {};
+  for (const p of allInRange) {
+    const customerId = p.relationships?.customer?.data?.id;
+    const createdAt = p.attributes?.created_at;
+    if (!customerId || !createdAt) continue;
+    const dateKey = createdAt.slice(0, 10);
+    const ids = purchaseToTxIds[p.id] || [];
+    let totalCents = 0;
+    let currency = 'USD';
+    for (const id of ids) {
+      const t = txById[id];
+      if (t && t.amount_in_cents != null) {
+        totalCents += t.amount_in_cents;
+        if (t.currency) currency = t.currency;
+      }
+    }
+    const key = `${String(customerId)}|${dateKey}`;
+    amountMap[key] = {
+      amount_formatted: formatAmount(totalCents, currency),
+      purchase_date: createdAt
+    };
+  }
+  return amountMap;
 }
 
 async function fetchPurchases(closer = null, month = null) {
@@ -1525,15 +1698,42 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
   return secondInstallments;
 }
 
-// Purchase Item Component - Simplified for purchase log
-function PurchaseItem({ lead, setterMap = {}, isRefundsTable = false }) {
+// Purchase Item Component - Matches general stats purchase log layout (Name, Email, Purchase Date, Offer, Amount, Closer, Setter) + Commission + Notes
+function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = false }) {
   const navigate = useNavigate();
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const hasValidCustomerId = !!lead.leads?.customer_id;
+  const rowBg = hasValidCustomerId ? 'white' : '#fff7ed';
+  const rowBgHover = hasValidCustomerId ? '#f9fafb' : '#ffedd5';
 
-  // Determine grid columns based on table type
-  const gridColumns = isRefundsTable 
-    ? '2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr' // Includes purchase date
-    : '2fr 1.2fr 1.2fr 1.5fr 1fr 1fr'; // Standard purchase table
+  const gridColumns = isRefundsTable
+    ? '2fr 2fr 1.5fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr' // + Refund Date
+    : '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr'; // Name, Email, Purchase Date, Offer, Amount, Closer, Setter, Commission, Notes
+
+  const closerName = lead.closers?.name ?? '—';
+  const setterName = setterMap[lead.setter_id] ?? lead.setters?.name ?? 'N/A';
+
+  const customerId = lead.leads?.customer_id;
+  const dateStr = lead.purchase_date ? String(lead.purchase_date).slice(0, 10) : '';
+  const tryKeys = dateStr && customerId
+    ? [
+        `${String(customerId)}|${dateStr}`,
+        (() => {
+          const d = new Date(dateStr + 'T12:00:00Z');
+          d.setUTCDate(d.getUTCDate() - 1);
+          const prev = d.toISOString().slice(0, 10);
+          return `${String(customerId)}|${prev}`;
+        })(),
+        (() => {
+          const d = new Date(dateStr + 'T12:00:00Z');
+          d.setUTCDate(d.getUTCDate() + 1);
+          const next = d.toISOString().slice(0, 10);
+          return `${String(customerId)}|${next}`;
+        })()
+      ]
+    : [];
+  const kajabiData = tryKeys.length ? (amountMap[tryKeys[0]] ?? amountMap[tryKeys[1]] ?? amountMap[tryKeys[2]]) : undefined;
+  const displayPurchaseDate = kajabiData?.purchase_date ?? lead.purchase_date;
 
   return (
     <div
@@ -1543,141 +1743,97 @@ function PurchaseItem({ lead, setterMap = {}, isRefundsTable = false }) {
         gap: '16px',
         alignItems: 'center',
         padding: '12px 16px',
-        backgroundColor: 'white',
+        backgroundColor: rowBg,
         borderBottom: '1px solid #e5e7eb',
         fontSize: '14px',
         transition: 'background-color 0.2s'
       }}
-      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
-      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = rowBgHover; }}
+      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = rowBg; }}
     >
-      {/* Contact Info */}
-      <div style={{ overflow: 'hidden', flex: 1 }}>
+      {/* Name - link to lead */}
+      <div style={{ fontWeight: '600', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         <a
-          href={`/lead/${lead.lead_id}`} 
-          target="_blank"
-          onClick={(e) => {
-            if (!e.metaKey && !e.ctrlKey) {
-              e.preventDefault();
-              navigate(`/lead/${lead.lead_id}`);
-            }
-          }}
-          style={{
-            fontWeight: '600',
-            color: '#111827',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            marginBottom: '4px',
-            display: 'block'
-          }}
+          href={`/lead/${lead.lead_id}`}
+          onClick={(e) => { e.preventDefault(); navigate(`/lead/${lead.lead_id}`); }}
+          style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
         >
-          {lead.name || 'No name'}
-          <span title={lead.leads?.customer_id ? 'Has Kajabi ID in leads table' : 'No Kajabi ID in leads table'} style={{ marginLeft: 6 }}>
-            {lead.leads?.customer_id ? '✅' : '❌'}
-          </span>
+          {lead.name || '—'}
         </a>
-        <div style={{
-          fontSize: '12px',
-          color: '#6b7280',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          marginBottom: '2px'
-        }}>
-          <Mail size={12} />
-            <a 
-            style={{ color: '#6b7280', textDecoration: 'none' }} 
-            href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`}
-            target="_blank" 
-            rel="noopener noreferrer"
-          >
-            {lead.email || 'No email'}
-          </a>
-        </div>
-        <div style={{
-          fontSize: '12px',
-          color: '#6b7280',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px'
-        }}>
-          <Phone size={12} />
-          <a
-            href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || ''}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#6b7280', textDecoration: 'none' }}
-          >
-            {lead.phone || 'No phone'}
-          </a>
-        </div>
       </div>
-
-      {/* Setter */}
-      <div
-        onClick={() => navigate(`/setter/${lead.setter_id}`)}
-        style={{
-          color: '#001749ff',
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          fontSize: '13px'
-        }}
-      >
-        {setterMap[lead.setter_id] || 'N/A'}
+      {/* Email - link to lead */}
+      <div style={{ color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <a
+          href={`/lead/${lead.lead_id}`}
+          onClick={(e) => { e.preventDefault(); navigate(`/lead/${lead.lead_id}`); }}
+          style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
+        >
+          {lead.email || '—'}
+        </a>
       </div>
-
-      {/* Purchase Date - Show in refunds table */}
+      {/* Purchase Date - from Kajabi when available, else CRM */}
       {isRefundsTable && (
         <div style={{ fontSize: '13px', color: '#6b7280' }}>
-          {DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
+          {displayPurchaseDate ? DateHelpers.formatTimeWithRelative(displayPurchaseDate) : '—'}
         </div>
       )}
-
-      {/* Purchase Date / Refund Date */}
+      {/* Purchase Date / Refund Date - purchase date from Kajabi when available; refund date from CRM */}
       <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {isRefundsTable 
-          ? (lead.refund_date ? DateHelpers.formatTimeWithRelative(lead.refund_date) : 'N/A')
+        {isRefundsTable
+          ? (lead.refund_date ? DateHelpers.formatTimeWithRelative(lead.refund_date) : '—')
           : (lead.outcome === 'refund' && lead.refund_date
               ? DateHelpers.formatTimeWithRelative(lead.refund_date)
-              : DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A')}
+              : displayPurchaseDate ? DateHelpers.formatTimeWithRelative(displayPurchaseDate) : '—')}
       </div>
-
-      {/* Offer Name */}
-      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {lead.offer_name || 'N/A'}
+      {/* Offer */}
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {lead.offer_name || '—'}
         {lead.outcome === 'refund' && (
-          <span style={{
-            backgroundColor: '#ef4444',
-            color: 'white',
-            padding: '2px 8px',
-            borderRadius: '4px',
-            fontSize: '10px',
-            fontWeight: '600',
-            textTransform: 'uppercase'
-          }}>
+          <span style={{ backgroundColor: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '600', textTransform: 'uppercase' }}>
             REFUND
           </span>
         )}
       </div>
-
+      {/* Amount - from Kajabi transactions (same as general stats) */}
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>
+        {kajabiData?.amount_formatted ?? '—'}
+      </div>
+      {/* Closer - clickable to closer-stats */}
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>
+        {lead.closer_id != null ? (
+          <a
+            href={`/closer-stats/${lead.closer_id}`}
+            onClick={(e) => { e.preventDefault(); navigate(`/closer-stats/${lead.closer_id}`); }}
+            style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
+          >
+            {closerName}
+          </a>
+        ) : (
+          closerName
+        )}
+      </div>
+      {/* Setter - clickable to /stats */}
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>
+        {lead.setter_id != null ? (
+          <a
+            href={`/stats/${lead.setter_id}`}
+            onClick={(e) => { e.preventDefault(); navigate(`/stats/${lead.setter_id}`); }}
+            style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
+          >
+            {setterName}
+          </a>
+        ) : (
+          setterName
+        )}
+      </div>
       {/* Commission */}
       <div style={{ fontSize: '13px', color: lead.outcome === 'refund' ? '#ef4444' : '#10b981', fontWeight: '600', textAlign: 'center' }}>
-        {lead.commission !== null && lead.commission !== undefined ? `$${lead.commission.toFixed(2)}` : 'N/A'}
+        {lead.commission != null ? `$${Number(lead.commission).toFixed(2)}` : '—'}
       </div>
-
-      {/* Edit Closer Note */}
-      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+      {/* Notes (Edit) */}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
         <button
+          type="button"
           onClick={() => setEditModalOpen(true)}
           style={{
             padding: '5px 12px',
@@ -1695,9 +1851,9 @@ function PurchaseItem({ lead, setterMap = {}, isRefundsTable = false }) {
         </button>
       </div>
 
-      <NotesModal 
-        isOpen={editModalOpen} 
-        onClose={() => setEditModalOpen(false)} 
+      <NotesModal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
         lead={lead}
         callId={lead.id}
         mode="closer"

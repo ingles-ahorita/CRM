@@ -5,9 +5,13 @@ import { getCountryFromPhone } from '../utils/phoneNumberParser';
 import ComparisonTable from './components/ComparisonTable';
 import PeriodSelector from './components/PeriodSelector';
 import { ViewNotesModal } from './components/Modal';
-import { Mail, Phone } from 'lucide-react';
 import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
+import { fetchPurchases as fetchKajabiPurchases, fetchOffer, fetchCustomer as fetchKajabiCustomer, fetchTransaction } from '../lib/kajabiApi';
+import LinkKajabiCustomerModal from './components/LinkKajabiCustomerModal';
+
+const LOCK_IN_OFFER_ID = '2150523894';
+const PAYOFF_OFFER_ID = '2150799973';
 
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
 function parseDateAsUTC(dateString) {
@@ -907,186 +911,339 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
   return purchases;
 }
 
-// Purchase Item Component for general stats
-function PurchaseItem({ lead, setterMap = {}, closerMap = {} }) {
-  const navigate = useNavigate();
-  const [viewModalOpen, setViewModalOpen] = useState(false);
+// Fetch pure Kajabi purchases for date range (no CRM data). Returns name, email, purchase_date, offer_name, amount.
+async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
+  const startDateObj = parseDateAsUTC(startDate);
+  const endDateObj = parseDateAsUTC(endDate);
+  let startUTC, endUTC;
+  if (DateHelpers.DEFAULT_TIMEZONE === 'UTC') {
+    startUTC = new Date(startDateObj);
+    startUTC.setUTCHours(0, 0, 0, 0);
+    endUTC = new Date(endDateObj);
+    endUTC.setUTCHours(23, 59, 59, 999);
+  } else {
+    const startDateNormalized = DateHelpers.normalizeToTimezone(startDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    const endDateNormalized = DateHelpers.normalizeToTimezone(endDateObj, DateHelpers.DEFAULT_TIMEZONE);
+    const startOfDayNormalized = new Date(startDateNormalized);
+    startOfDayNormalized.setHours(0, 0, 0, 0);
+    const endOfDayNormalized = new Date(endDateNormalized);
+    endOfDayNormalized.setHours(23, 59, 59, 999);
+    startUTC = DateHelpers.fromZonedTime(startOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+    endUTC = DateHelpers.fromZonedTime(endOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
+  }
 
+  const startTs = startUTC.getTime();
+  const endTs = endUTC.getTime();
+
+  const allInRange = [];
+  let page = 1;
+  const perPage = 100;
+  let hasMore = true;
+  while (hasMore) {
+    const result = await fetchKajabiPurchases({ page, perPage, sort: '-created_at' });
+    const data = result.data || [];
+    if (data.length === 0) break;
+    for (const p of data) {
+      const createdAt = p.attributes?.created_at;
+      if (!createdAt) continue;
+      const ts = new Date(createdAt).getTime();
+      if (ts >= startTs && ts <= endTs) allInRange.push(p);
+    }
+    if (data.length < perPage || (data.length && new Date(data[data.length - 1].attributes?.created_at).getTime() < startTs))
+      hasMore = false;
+    else
+      page++;
+    if (page > 50) break;
+  }
+
+  if (allInRange.length === 0) return [];
+
+  const customerIds = [...new Set(allInRange.map((p) => p.relationships?.customer?.data?.id).filter(Boolean))].map(String);
+  const kajabiOfferIds = [...new Set(allInRange.map((p) => p.relationships?.offer?.data?.id).filter(Boolean))];
+
+  const kajabiOfferMap = {};
+  await Promise.all(
+    kajabiOfferIds.map(async (offerId) => {
+      try {
+        const offer = await fetchOffer(offerId);
+        if (offer) kajabiOfferMap[offerId] = offer.internal_title ?? offer.id;
+      } catch {
+        kajabiOfferMap[offerId] = offerId;
+      }
+    })
+  );
+
+  const kajabiCustomerById = {};
+  await Promise.all(
+    customerIds.map(async (cid) => {
+      try {
+        const c = await fetchKajabiCustomer(cid);
+        if (c) kajabiCustomerById[cid] = c;
+      } catch {
+        kajabiCustomerById[cid] = { name: null, email: null };
+      }
+    })
+  );
+
+  // Amount paid: sum of transaction amounts per purchase (from relationships.transactions).
+  const purchaseToTxIds = {};
+  const allTxIds = new Set();
+  for (const p of allInRange) {
+    const list = p.relationships?.transactions?.data ?? [];
+    const ids = list.map((t) => t.id).filter(Boolean);
+    if (ids.length) {
+      purchaseToTxIds[p.id] = ids;
+      ids.forEach((id) => allTxIds.add(id));
+    }
+  }
+  const txById = {};
+  const BATCH = 10;
+  const txIdArray = [...allTxIds];
+  for (let i = 0; i < txIdArray.length; i += BATCH) {
+    const batch = txIdArray.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map((id) => fetchTransaction(id)));
+    batch.forEach((id, j) => {
+      const t = results[j];
+      if (t) txById[id] = t;
+    });
+  }
+  const amountPaidByPurchaseId = {};
+  for (const [purchaseId, ids] of Object.entries(purchaseToTxIds)) {
+    let totalCents = 0;
+    let currency = 'USD';
+    for (const id of ids) {
+      const t = txById[id];
+      if (t && t.amount_in_cents != null) {
+        totalCents += t.amount_in_cents;
+        if (t.currency) currency = t.currency;
+      }
+    }
+    amountPaidByPurchaseId[purchaseId] = { amount_in_cents: totalCents, currency };
+  }
+
+  // For each purchase: get outcome_log row where kajabi_purchase_id = purchase id (closer, setter, lead from that call).
+  const purchaseIds = allInRange.map((p) => String(p.id));
+  const outcomeLogByPurchaseId = {};
+  if (purchaseIds.length > 0) {
+    const { data: outcomeRows } = await supabase
+      .from('outcome_log')
+      .select('id, outcome, purchase_date, closer_id, setter_id, call_id, kajabi_purchase_id, closers(id, name), setters(id, name), calls!closer_notes_call_id_fkey(lead_id)')
+      .in('kajabi_purchase_id', purchaseIds);
+    if (outcomeRows && outcomeRows.length) {
+      outcomeRows.forEach((row) => {
+        const pid = row.kajabi_purchase_id != null ? String(row.kajabi_purchase_id) : null;
+        if (!pid) return;
+        outcomeLogByPurchaseId[pid] = {
+          outcome_log_id: row.id,
+          outcome: row.outcome,
+          purchase_date: row.purchase_date,
+          closer_id: row.closer_id ?? row.closers?.id ?? null,
+          closer_name: row.closers?.name ?? '—',
+          setter_id: row.setter_id ?? row.setters?.id ?? null,
+          setter_name: row.setters?.name ?? '—',
+          lead_id: row.calls?.lead_id ?? null,
+        };
+      });
+    }
+  }
+
+  // Lead id by Kajabi customer_id (from leads table). When customer is linked to a lead but purchase isn't,
+  // we still have lead_id so we show the lead link and only "link purchase" is needed (not "link customer").
+  const leadIdByCustomerId = {};
+  if (customerIds.length > 0) {
+    try {
+      const { data: leadRows, error: leadErr } = await supabase
+        .from('leads')
+        .select('id, customer_id')
+        .in('customer_id', customerIds);
+      if (!leadErr && leadRows && leadRows.length) {
+        leadRows.forEach((r) => {
+          const cid = r.customer_id != null ? String(r.customer_id) : null;
+          if (cid) leadIdByCustomerId[cid] = r.id;
+        });
+      }
+    } catch (_) {
+      // If leads fetch fails, continue with empty map so purchases still show
+    }
+  }
+
+  const formatAmount = (cents, currency = 'USD') => {
+    if (cents == null) return '—';
+    const value = (cents / 100).toFixed(2);
+    return currency === 'USD' ? `$${value}` : `${value} ${currency}`;
+  };
+
+  const purchases = allInRange.map((p) => {
+    const customerId = p.relationships?.customer?.data?.id;
+    const kajabiOfferId = p.relationships?.offer?.data?.id;
+    const attrs = p.attributes || {};
+    const createdAt = attrs.created_at;
+    const customer = customerId ? kajabiCustomerById[String(customerId)] : null;
+    const offerName = kajabiOfferId ? (kajabiOfferMap[kajabiOfferId] ?? kajabiOfferId) : null;
+    const paid = amountPaidByPurchaseId[p.id];
+    const amount_in_cents = paid ? paid.amount_in_cents : attrs.amount_in_cents;
+    const currency = paid ? paid.currency : (attrs.currency || 'USD');
+    const outcomeRow = outcomeLogByPurchaseId[String(p.id)];
+    const closer_id = outcomeRow?.closer_id ?? null;
+    const closer_name = outcomeRow ? outcomeRow.closer_name : 'x';
+    const setter_id = outcomeRow?.setter_id ?? null;
+    const setter_name = outcomeRow ? outcomeRow.setter_name : 'x';
+    // From outcome_log when linked; else from leads.customer_id so "customer linked, purchase not linked" shows lead link only
+    const lead_id = outcomeRow?.lead_id ?? (customerId ? leadIdByCustomerId[String(customerId)] : null) ?? null;
+    return {
+      _rowKey: p.id,
+      purchase_id: p.id,
+      customer_id: customerId,
+      contact_id: customer?.contact_id ?? null,
+      name: customer?.name ?? '—',
+      email: customer?.email ?? '—',
+      purchase_date: createdAt,
+      offer_id: kajabiOfferId,
+      offer_name: offerName ?? '—',
+      amount_in_cents,
+      currency,
+      amount_formatted: formatAmount(amount_in_cents, currency),
+      closer_id,
+      closer_name,
+      setter_id,
+      setter_name,
+      lead_id: lead_id ?? null,
+      isLinkedToOutcomeYes: outcomeRow?.outcome === 'yes',
+    };
+  });
+
+  purchases.sort((a, b) => new Date(b.purchase_date) - new Date(a.purchase_date));
+  return purchases;
+}
+
+// Pure Kajabi purchase row (no CRM fields). lead_id comes from outcome_log or leads.customer_id;
+// when customer is linked but purchase not linked we show lead link (only link purchase needed).
+function KajabiPurchaseRow({ row, onOpenLinkModal }) {
+  const navigate = useNavigate();
+  const nameContent = row.name || '—';
+  const emailContent = row.email || '—';
+  const hasCustomerNoLead = row.customer_id != null && row.lead_id == null;
+  const unlinkedEmoji = ' 🔗';
+  const nameEl = row.lead_id != null ? (
+    <a
+      href={`/lead/${row.lead_id}`}
+      onClick={(e) => { e.preventDefault(); navigate(`/lead/${row.lead_id}`); }}
+      style={{ color: '#111827', textDecoration: 'none', fontWeight: '600', cursor: 'pointer' }}
+    >
+      {nameContent}
+    </a>
+  ) : hasCustomerNoLead && onOpenLinkModal ? (
+    <button
+      type="button"
+      onClick={() => onOpenLinkModal({ customerId: row.customer_id, name: row.name ?? '—', email: row.email ?? '—' })}
+      style={{ color: '#111827', textDecoration: 'none', fontWeight: '600', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}
+    >
+      {nameContent}{unlinkedEmoji}
+    </button>
+  ) : row.contact_id ? (
+    <a
+      href={`https://app.kajabi.com/admin/contacts/${encodeURIComponent(row.contact_id)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: '#111827', textDecoration: 'none', fontWeight: '600' }}
+    >
+      {nameContent}
+    </a>
+  ) : (
+    nameContent
+  );
+  const emailEl = row.lead_id != null ? (
+    <a
+      href={`/lead/${row.lead_id}`}
+      onClick={(e) => { e.preventDefault(); navigate(`/lead/${row.lead_id}`); }}
+      style={{ color: '#6b7280', textDecoration: 'none', cursor: 'pointer' }}
+    >
+      {emailContent}
+    </a>
+  ) : hasCustomerNoLead && onOpenLinkModal ? (
+    <button
+      type="button"
+      onClick={() => onOpenLinkModal({ customerId: row.customer_id, name: row.name ?? '—', email: row.email ?? '—' })}
+      style={{ color: '#6b7280', textDecoration: 'none', cursor: 'pointer', background: 'none', border: 'none', padding: 0, font: 'inherit' }}
+    >
+      {emailContent}{unlinkedEmoji}
+    </button>
+  ) : row.contact_id ? (
+    <a
+      href={`https://app.kajabi.com/admin/contacts/${encodeURIComponent(row.contact_id)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{ color: '#6b7280', textDecoration: 'none' }}
+    >
+      {emailContent}
+    </a>
+  ) : (
+    <a
+      style={{ color: '#6b7280', textDecoration: 'none' }}
+      href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(row.email || '')}`}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {emailContent}
+    </a>
+  );
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
+        gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr',
         gap: '16px',
         alignItems: 'center',
         padding: '12px 16px',
-        backgroundColor: 'white',
+        backgroundColor: row.isLinkedToOutcomeYes ? 'white' : '#fff7ed',
         borderBottom: '1px solid #e5e7eb',
         fontSize: '14px',
         transition: 'background-color 0.2s'
       }}
-      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
-      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
+      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = row.isLinkedToOutcomeYes ? '#f9fafb' : '#ffedd5'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = row.isLinkedToOutcomeYes ? 'white' : '#fff7ed'; }}
     >
-      {/* Contact Info */}
-      <div style={{ overflow: 'hidden', flex: 1 }}>
-        <a
-          href={`/lead/${lead.lead_id}`} 
-          target="_blank"
-          onClick={(e) => {
-            if (!e.metaKey && !e.ctrlKey) {
-              e.preventDefault();
-              navigate(`/lead/${lead.lead_id}`);
-            }
-          }}
-          style={{
-            fontWeight: '600',
-            color: '#111827',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            marginBottom: '4px',
-            display: 'block'
-          }}
-        >
-          {lead.name || 'No name'}
-          <span title={lead.leads?.customer_id ? 'Has Kajabi ID in leads table' : 'No Kajabi ID in leads table'} style={{ marginLeft: 6 }}>
-            {lead.leads?.customer_id ? '✅' : '❌'}
-          </span>
-        </a>
-        <div style={{
-          fontSize: '12px',
-          color: '#6b7280',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          marginBottom: '2px'
-        }}>
-          <Mail size={12} />
-          <a 
-            style={{ color: '#6b7280', textDecoration: 'none' }} 
-            href={`https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(lead.email)}`} 
-            target="_blank" 
-            rel="noopener noreferrer"
-          >
-            {lead.email || 'No email'}
-          </a>
-        </div>
-        <div style={{
-          fontSize: '12px',
-          color: '#6b7280',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px'
-        }}>
-          <Phone size={12} />
+      <div style={{ fontWeight: '600', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {nameEl}
+      </div>
+      <div style={{ color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {emailEl}
+      </div>
+      <div style={{ fontSize: '13px', color: '#6b7280' }}>
+        {row.purchase_date ? DateHelpers.formatTimeWithRelative(row.purchase_date) : '—'}
+      </div>
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {row.offer_name || '—'}
+      </div>
+      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500' }}>
+        {row.amount_formatted || '—'}
+      </div>
+      <div style={{ fontSize: '13px', color: row.closer_name === 'x' ? '#9ca3af' : '#111827', fontWeight: '500' }}>
+        {row.closer_id != null ? (
           <a
-            href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || ''}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#6b7280', textDecoration: 'none' }}
+            href={`/closer-stats/${row.closer_id}`}
+            onClick={(e) => { e.preventDefault(); navigate(`/closer-stats/${row.closer_id}`); }}
+            style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
           >
-            {lead.phone || 'No phone'}
+            {row.closer_name ?? 'x'}
           </a>
-        </div>
-      </div>
-
-      {/* Setter */}
-      <div
-        onClick={() => navigate(`/setter/${lead.setter_id}`)}
-        style={{
-          color: '#001749ff',
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          fontSize: '13px'
-        }}
-      >
-        {setterMap[lead.setter_id] || 'N/A'}
-      </div>
-
-      {/* Closer */}
-      <div
-        onClick={() => navigate(`/closer/${lead.closer_id}`)}
-        style={{
-          color: '#001749ff',
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          fontSize: '13px'
-        }}
-      >
-        {closerMap[lead.closer_id] || 'N/A'}
-      </div>
-
-      {/* Call Date */}
-      <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {DateHelpers.formatTimeWithRelative(lead.call_date) || 'N/A'}
-      </div>
-
-      {/* Purchase Date */}
-      <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {DateHelpers.formatTimeWithRelative(lead.purchase_date) || 'N/A'}
-      </div>
-
-      {/* Offer Name */}
-      <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {lead.offer_name || 'N/A'}
-        {lead.outcome === 'refund' && (
-          <span style={{
-            backgroundColor: '#ef4444',
-            color: 'white',
-            padding: '2px 8px',
-            borderRadius: '4px',
-            fontSize: '10px',
-            fontWeight: '600',
-            textTransform: 'uppercase'
-          }}>
-            REFUND
-          </span>
+        ) : (
+          (row.closer_name ?? 'x')
         )}
       </div>
-
-      {/* Commission */}
-      <div style={{ fontSize: '13px', color: lead.outcome === 'refund' ? '#ef4444' : '#10b981', fontWeight: '600', textAlign: 'center' }}>
-        {lead.commission ? `$${lead.commission.toFixed(2)}` : 'N/A'}
+      <div style={{ fontSize: '13px', color: row.setter_name === 'x' ? '#9ca3af' : '#111827', fontWeight: '500' }}>
+        {row.setter_id != null ? (
+          <a
+            href={`/stats/${row.setter_id}`}
+            onClick={(e) => { e.preventDefault(); navigate(`/stats/${row.setter_id}`); }}
+            style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
+          >
+            {row.setter_name ?? 'x'}
+          </a>
+        ) : (
+          (row.setter_name ?? 'x')
+        )}
       </div>
-
-      {/* Notes */}
-      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-        <button
-          onClick={() => setViewModalOpen(true)}
-          style={{
-            padding: '5px 12px',
-            backgroundColor: (lead.setter_note_id) || (lead.closer_note_id) ? '#7053d0ff' : '#3f2f76ff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          📝 Notes
-        </button>
-      </div>
-
-      <ViewNotesModal 
-        isOpen={viewModalOpen} 
-        onClose={() => setViewModalOpen(false)} 
-        lead={lead}
-        callId={lead.id}
-      />
     </div>
   );
 }
@@ -1116,8 +1273,25 @@ export default function StatsDashboard() {
   };
 
   const navigate = useNavigate();
-  const [startDate, setStartDate] = useState(getStartOfWeek);
-  
+
+  const getCurrentMonthKey = () => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+  };
+
+  const getInitialMonthRange = () => {
+    const monthKey = getCurrentMonthKey();
+    const [y, m] = monthKey.split('-').map(Number);
+    const monthDate = new Date(Date.UTC(y, m - 1, 15));
+    const range = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+    if (range) return { start: range.startDate.toISOString(), end: range.endDate.toISOString() };
+    const monday = getStartOfWeek();
+    return { start: monday, end: `${new Date().toISOString().slice(0, 10)}T23:59:59.999Z` };
+  };
+
+  const initialRange = getInitialMonthRange();
+  const [startDate, setStartDate] = useState(initialRange.start);
+
   const getTodayLocal = () => {
     const today = new Date();
     today.setHours(23, 59, 59, 999); // Set to end of the day
@@ -1129,8 +1303,8 @@ export default function StatsDashboard() {
     const seconds = String(today.getSeconds()).padStart(2, '0');
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   };
-  
-  const [endDate, setEndDate] = useState(getTodayLocal());
+
+  const [endDate, setEndDate] = useState(initialRange.end);
   const [comparisonView, setComparisonView] = useState('none'); // 'none', 'weekly', 'monthly', 'daily'
   const [selectedDays, setSelectedDays] = useState(30); // For daily comparison
   const [weeklyStats, setWeeklyStats] = useState([]);
@@ -1143,11 +1317,14 @@ export default function StatsDashboard() {
   const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
   const [purchases, setPurchases] = useState([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkModalCustomer, setLinkModalCustomer] = useState(null);
   const [setterMap, setSetterMap] = useState({});
   const [closerMap, setCloserMap] = useState({});
-  const [purchaseSetterFilter, setPurchaseSetterFilter] = useState('all');
-  const [purchaseCloserFilter, setPurchaseCloserFilter] = useState('all');
-  const [selectedMonth, setSelectedMonth] = useState(null);
+  const [purchaseLogTab, setPurchaseLogTab] = useState('purchases'); // 'purchases' | 'lockins' | 'payoffs'
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
+  const [purchaseLogCloserFilter, setPurchaseLogCloserFilter] = useState('');
+  const [purchaseLogSetterFilter, setPurchaseLogSetterFilter] = useState('');
 
   // Generate list of available months (previous 6 months including current)
   const generateAvailableMonths = () => {
@@ -1325,6 +1502,7 @@ export default function StatsDashboard() {
       const { data: settersData } = await supabase
         .from('setters')
         .select('id, name')
+        .eq('active', true)
         .order('name');
       if (settersData) {
         const setterMapObj = {};
@@ -1336,6 +1514,7 @@ export default function StatsDashboard() {
       const { data: closersData } = await supabase
         .from('closers')
         .select('id, name')
+        .eq('active', true)
         .order('name');
       if (closersData) {
         const closerMapObj = {};
@@ -1347,13 +1526,18 @@ export default function StatsDashboard() {
     fetchMaps();
   }, []);
 
-  // Fetch purchases when view mode changes or date range changes
+  // Fetch purchases when view mode changes or date range changes (purchase log = Kajabi only)
   useEffect(() => {
     if (viewMode === 'purchases' && comparisonView === 'none') {
       const loadPurchases = async () => {
         setPurchasesLoading(true);
-        const purchasesData = await fetchPurchasesForDateRange(startDate, endDate);
-        setPurchases(purchasesData);
+        try {
+          const purchasesData = await fetchKajabiPurchasesForDateRange(startDate, endDate);
+          setPurchases(purchasesData);
+        } catch (e) {
+          console.error('Error loading Kajabi purchases:', e);
+          setPurchases([]);
+        }
         setPurchasesLoading(false);
       };
       loadPurchases();
@@ -1615,114 +1799,139 @@ export default function StatsDashboard() {
           />
         )}
 
-        {/* Purchase Log View - Only show if not in comparison view and viewMode is purchases */}
-        {comparisonView === 'none' && viewMode === 'purchases' && (
-          <div className="bg-white rounded-lg shadow">
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900">
-                    Purchase Log
-                  </h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {purchases.filter(p => {
-                      const matchesSetter = purchaseSetterFilter === 'all' || String(p.setter_id) === String(purchaseSetterFilter);
-                      const matchesCloser = purchaseCloserFilter === 'all' || String(p.closer_id) === String(purchaseCloserFilter);
-                      return matchesSetter && matchesCloser;
-                    }).length} purchase{purchases.filter(p => {
-                      const matchesSetter = purchaseSetterFilter === 'all' || String(p.setter_id) === String(purchaseSetterFilter);
-                      const matchesCloser = purchaseCloserFilter === 'all' || String(p.closer_id) === String(purchaseCloserFilter);
-                      return matchesSetter && matchesCloser;
-                    }).length !== 1 ? 's' : ''} found
+        {/* Purchase Log View - Kajabi only, with Purchases / Lock-ins / Payoffs tabs */}
+        {comparisonView === 'none' && viewMode === 'purchases' && (() => {
+          const lockInPurchases = purchases.filter((p) => String(p.offer_id) === LOCK_IN_OFFER_ID);
+          const payoffPurchases = purchases.filter((p) => String(p.offer_id) === PAYOFF_OFFER_ID);
+          const mainPurchases = purchases.filter(
+            (p) => String(p.offer_id) !== LOCK_IN_OFFER_ID && String(p.offer_id) !== PAYOFF_OFFER_ID
+          );
+          const tabPurchases = purchaseLogTab === 'lockins' ? lockInPurchases : purchaseLogTab === 'payoffs' ? payoffPurchases : mainPurchases;
+          const filteredTabPurchases = tabPurchases.filter(
+            (row) =>
+              (!purchaseLogCloserFilter || row.closer_name === purchaseLogCloserFilter) &&
+              (!purchaseLogSetterFilter || row.setter_name === purchaseLogSetterFilter)
+          );
+          return (
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Purchase Log (Kajabi)</h2>
+                <div className="flex flex-wrap items-center gap-4 mt-3">
+                  <div className="flex gap-1 border-b border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setPurchaseLogTab('purchases')}
+                      className={`px-4 py-2 text-sm font-medium rounded-t border border-b-0 -mb-px ${
+                        purchaseLogTab === 'purchases' ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Purchases
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPurchaseLogTab('lockins')}
+                      className={`px-4 py-2 text-sm font-medium rounded-t border border-b-0 -mb-px ${
+                        purchaseLogTab === 'lockins' ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Lock-ins
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPurchaseLogTab('payoffs')}
+                      className={`px-4 py-2 text-sm font-medium rounded-t border border-b-0 -mb-px ${
+                        purchaseLogTab === 'payoffs' ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Payoffs
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <span>Closer:</span>
+                    <select
+                      value={purchaseLogCloserFilter}
+                      onChange={(e) => setPurchaseLogCloserFilter(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 rounded-md bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+                    >
+                      <option value="">All</option>
+                      {(closersList || []).map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <span>Setter:</span>
+                    <select
+                      value={purchaseLogSetterFilter}
+                      onChange={(e) => setPurchaseLogSetterFilter(e.target.value)}
+                      className="px-3 py-1.5 border border-gray-300 rounded-md bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[120px]"
+                    >
+                      <option value="">All</option>
+                      {(settersList || []).map((s) => (
+                        <option key={s.id} value={s.name}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <p className="text-sm text-gray-500">
+                    {filteredTabPurchases.length} purchase{filteredTabPurchases.length !== 1 ? 's' : ''} in this tab
+                    {(purchaseLogCloserFilter || purchaseLogSetterFilter) && ` (filtered)`}
                   </p>
                 </div>
-                <div className="flex gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Filter by Setter
-                    </label>
-                    <select
-                      value={purchaseSetterFilter}
-                      onChange={(e) => setPurchaseSetterFilter(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-700 text-sm"
-                    >
-                      <option value="all">All Setters</option>
-                      {settersList.map(setter => (
-                        <option key={setter.id} value={setter.id}>
-                          {setter.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Filter by Closer
-                    </label>
-                    <select
-                      value={purchaseCloserFilter}
-                      onChange={(e) => setPurchaseCloserFilter(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-700 text-sm"
-                    >
-                      <option value="all">All Closers</option>
-                      {closersList.map(closer => (
-                        <option key={closer.id} value={closer.id}>
-                          {closer.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
               </div>
-            </div>
-            {purchasesLoading ? (
-              <div className="p-8 text-center text-gray-500">Loading purchases...</div>
-            ) : purchases.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No purchases found for this date range.</div>
-            ) : (
-              <div>
-                {/* Purchase Log Header */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 1.2fr 1.2fr 1.2fr 1.2fr 1.5fr 1fr 1fr',
-                    gap: '16px',
-                    padding: '12px 16px',
-                    backgroundColor: '#f3f4f6',
-                    borderBottom: '2px solid #e5e7eb',
-                    fontSize: '12px',
-                    fontWeight: '600',
-                    color: '#6b7280',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}
-                >
-                  <div>Contact Info</div>
-                  <div>Setter</div>
-                  <div>Closer</div>
-                  <div>Call Date</div>
-                  <div>Purchase Date</div>
-                  <div>Offer</div>
-                  <div style={{ textAlign: 'center' }}>Commission</div>
-                  <div style={{ textAlign: 'center' }}>Notes</div>
+              {purchasesLoading ? (
+                <div className="p-8 text-center text-gray-500">Loading purchases...</div>
+              ) : filteredTabPurchases.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  {purchases.length === 0
+                    ? 'No Kajabi purchases found for this date range.'
+                    : tabPurchases.length === 0
+                      ? `No ${purchaseLogTab === 'lockins' ? 'lock-ins' : purchaseLogTab === 'payoffs' ? 'payoffs' : 'other purchases'} in this date range.`
+                      : 'No purchases match the selected closer/setter filters.'}
                 </div>
-                {purchases
-                  .filter(purchase => {
-                    const matchesSetter = purchaseSetterFilter === 'all' || String(purchase.setter_id) === String(purchaseSetterFilter);
-                    const matchesCloser = purchaseCloserFilter === 'all' || String(purchase.closer_id) === String(purchaseCloserFilter);
-                    return matchesSetter && matchesCloser;
-                  })
-                  .map(lead => (
-                    <PurchaseItem
-                      key={lead.id}
-                      lead={lead}
-                      setterMap={setterMap}
-                      closerMap={closerMap}
+              ) : (
+                <div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr',
+                      gap: '16px',
+                      padding: '12px 16px',
+                      backgroundColor: '#f3f4f6',
+                      borderBottom: '2px solid #e5e7eb',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}
+                  >
+                    <div>Name</div>
+                    <div>Email</div>
+                    <div>Purchase Date</div>
+                    <div>Offer</div>
+                    <div>Amount</div>
+                    <div>Closer</div>
+                    <div>Setter</div>
+                  </div>
+                  {filteredTabPurchases.map((row) => (
+                    <KajabiPurchaseRow
+                      key={row._rowKey}
+                      row={row}
+                      onOpenLinkModal={(customer) => {
+                        setLinkModalCustomer(customer);
+                        setLinkModalOpen(true);
+                      }}
                     />
                   ))}
-              </div>
-            )}
-          </div>
-        )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Overall Metrics Grid - Only show if not in comparison view and in stats mode */}
         {comparisonView === 'none' && viewMode === 'stats' && (
@@ -2325,6 +2534,26 @@ export default function StatsDashboard() {
         )}
       </div>
     </div>
+    {linkModalOpen && linkModalCustomer && (
+      <LinkKajabiCustomerModal
+        open={linkModalOpen}
+        customer={linkModalCustomer}
+        onClose={() => {
+          setLinkModalOpen(false);
+          setLinkModalCustomer(null);
+        }}
+        onLinked={async () => {
+          setPurchasesLoading(true);
+          try {
+            const purchasesData = await fetchKajabiPurchasesForDateRange(startDate, endDate);
+            setPurchases(purchasesData);
+          } catch (e) {
+            console.error('Error refetching Kajabi purchases:', e);
+          }
+          setPurchasesLoading(false);
+        }}
+      />
+    )}
   </div>
   );
 }

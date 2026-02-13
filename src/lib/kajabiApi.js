@@ -79,6 +79,28 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
 }
 
 /**
+ * Fetch a single purchase by id (for amount and customer id).
+ * GET https://api.kajabi.com/v1/purchases/{id}
+ * @param {string} id - Purchase id
+ * @returns {Promise<{ id: string, attributes: object, relationships: object } | null>}
+ */
+export async function fetchPurchase(id) {
+  if (!id) return null;
+  const token = await getAccessToken();
+  const url = `${KAJABI_BASE}/purchases/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.api+json',
+    },
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+  return json.data || null;
+}
+
+/**
  * Fetch a single customer by id (name, email, and contact id for admin URL from relationships.contact.data.id).
  * GET https://api.kajabi.com/v1/customers/{id}
  * @param {string} id - Customer id
@@ -244,6 +266,33 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
     data: json.data || [],
     links: json.links || {},
     meta: json.meta,
+  };
+}
+
+/**
+ * Fetch a single transaction by id (for amount paid).
+ * GET https://api.kajabi.com/v1/transactions/{id}
+ * @param {string} id - Transaction id
+ * @returns {Promise<{ amount_in_cents: number | null, currency: string } | null>}
+ */
+export async function fetchTransaction(id) {
+  if (!id) return null;
+  const token = await getAccessToken();
+  const url = `${KAJABI_BASE}/transactions/${encodeURIComponent(id)}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.api+json',
+    },
+  });
+  if (!res.ok) return null;
+  const json = await res.json();
+  const attrs = json.data?.attributes || {};
+  const amount = attrs.amount_in_cents;
+  return {
+    amount_in_cents: amount != null ? Number(amount) : null,
+    currency: attrs.currency || 'USD',
   };
 }
 
