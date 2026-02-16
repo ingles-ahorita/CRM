@@ -794,7 +794,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                     minute: '2-digit'
                   })
                 : (leadData.call_date || '') + " (Tu hora local)"
-            }
+            },
+            { name: 'call_date', value: leadData.call_date }
           ]
         });
         console.log('✅ ManyChat user creation triggered for confirmed lead');
