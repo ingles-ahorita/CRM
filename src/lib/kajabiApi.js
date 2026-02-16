@@ -29,24 +29,11 @@ async function parseJsonResponse(res) {
 }
 
 /**
- * Get access token for Kajabi API.
- * For now: return a hardcoded token. Later: call POST /v1/oauth/token with client_credentials.
+ * Get access token for Kajabi API. Always reads from env so changes take effect.
  * @returns {Promise<string>}
  */
 export async function getAccessToken() {
-  // TODO: Replace with real token fetch, e.g.:
-  // const res = await fetch(`${KAJABI_BASE.replace('/v1','')}/oauth/token`, {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({
-  //     grant_type: 'client_credentials',
-  //     client_id: process.env.VITE_KAJABI_CLIENT_ID,
-  //     client_secret: process.env.VITE_KAJABI_CLIENT_SECRET,
-  //   }),
-  // });
-  // const data = await res.json();
-  // return data.access_token;
-  return Promise.resolve(getHardcodedToken());
+  return getHardcodedToken();
 }
 
 /**

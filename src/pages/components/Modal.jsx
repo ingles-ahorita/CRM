@@ -782,14 +782,19 @@ if (idToUse) {
           <span style={{ color: '#6b7280', fontSize: '14px' }}>Loading note...</span>
         </div>
       ) : ( <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '26px', paddingRight: '40px' }}>
-        <h2 style={{ fontSize: '30px', margin: 0 }}>
-          {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
-        </h2>
-        {lead.timezone && (
-          <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
-            Timezone: {lead.timezone} (UTC{DateHelpers.getUTCOffset(lead.timezone)})
-          </span>
+      <div style={{ marginBottom: '26px', paddingRight: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontSize: '30px', margin: 0 }}>
+            {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
+          </h2>
+          {lead.timezone && (
+            <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
+              Timezone: {lead.timezone} (UTC{DateHelpers.getUTCOffset(lead.timezone)})
+            </span>
+          )}
+        </div>
+        {lead.email && (
+          <p style={{ fontSize: '14px', color: '#6b7280', margin: '8px 0 0 0' }}>{lead.email}</p>
         )}
       </div>
 
@@ -969,14 +974,19 @@ if (idToUse) {
     </div>
   ) : (
     <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '26px', paddingRight: '40px' }}>
-        <h2 style={{ fontSize: '30px', margin: 0 }}>
-          {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
-        </h2>
-        {lead.timezone && (
-          <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
-            Timezone: {lead.timezone} (UTC{DateHelpers.getUTCOffset(lead.timezone)})
-          </span>
+      <div style={{ marginBottom: '26px', paddingRight: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontSize: '30px', margin: 0 }}>
+            {noteData ? 'Edit' : 'Add'} Note for <b>{lead.name}</b>
+          </h2>
+          {lead.timezone && (
+            <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '500', marginRight: '30px' }}>
+              Timezone: {lead.timezone} (UTC{DateHelpers.getUTCOffset(lead.timezone)})
+            </span>
+          )}
+        </div>
+        {lead.email && (
+          <p style={{ fontSize: '14px', color: '#6b7280', margin: '8px 0 0 0' }}>{lead.email}</p>
         )}
       </div>
 
@@ -1790,9 +1800,12 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
         </div>
       ) : (
         <>
-          <h2 style={{ fontSize: '30px', marginBottom: '26px' }}>
+          <h2 style={{ fontSize: '30px', marginBottom: lead.email ? '8px' : '26px' }}>
             Notes for <b>{lead.name}</b>
           </h2>
+          {lead.email && (
+            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '26px' }}>{lead.email}</p>
+          )}
 
           <div style={{ paddingLeft: '40px', paddingRight: '50px', paddingBottom: '20px' }}>
             
