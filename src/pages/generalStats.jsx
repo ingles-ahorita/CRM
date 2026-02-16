@@ -1142,7 +1142,11 @@ function KajabiPurchaseRow({ row, onOpenLinkModal }) {
   const nameEl = row.lead_id != null ? (
     <a
       href={`/lead/${row.lead_id}`}
-      onClick={(e) => { e.preventDefault(); navigate(`/lead/${row.lead_id}`); }}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.button === 1) return;
+        e.preventDefault();
+        navigate(`/lead/${row.lead_id}`);
+      }}
       style={{ color: '#111827', textDecoration: 'none', fontWeight: '600', cursor: 'pointer' }}
     >
       {nameContent}
@@ -1170,7 +1174,11 @@ function KajabiPurchaseRow({ row, onOpenLinkModal }) {
   const emailEl = row.lead_id != null ? (
     <a
       href={`/lead/${row.lead_id}`}
-      onClick={(e) => { e.preventDefault(); navigate(`/lead/${row.lead_id}`); }}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.button === 1) return;
+        e.preventDefault();
+        navigate(`/lead/${row.lead_id}`);
+      }}
       style={{ color: '#6b7280', textDecoration: 'none', cursor: 'pointer' }}
     >
       {emailContent}
