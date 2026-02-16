@@ -4,8 +4,7 @@
  * @see https://developers.kajabi.com/api-reference/purchases/list-purchases
  */
 
-// Avoid CORS: dev → Vite proxy /kajabi-api; production → Vercel serverless /api/kajabi-proxy
-const KAJABI_BASE = import.meta.env.DEV ? '/kajabi-api/v1' : '/api/kajabi-proxy/v1';
+const KAJABI_BASE = 'https://api.kajabi.com/v1';
 const KAJABI_SITE_ID = import.meta.env.VITE_KAJABI_SITE_ID || '2147813413';
 
 function loggedFetch(url, options) {
