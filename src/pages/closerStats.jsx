@@ -5,7 +5,7 @@ import { LeadItemCompact, LeadListHeader } from './components/LeadItem';
 import { NotesModal } from './components/Modal';
 import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
-import { fetchPurchases as fetchKajabiPurchases, fetchTransaction } from '../lib/kajabiApi';
+import { fetchPurchases as fetchKajabiPurchases, fetchTransactions as fetchKajabiTransactions } from '../lib/kajabiApi';
 
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
 function parseDateAsUTC(dateString) {
@@ -915,10 +915,13 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
   })).sort((a, b) => a.month.localeCompare(b.month));
 }
 
+const KAJABI_AMOUNT_PAGE_SIZE = 25;
+
 /**
  * Fetch Kajabi amount paid (sum of transactions) per purchase for a date range.
- * Returns a map: key = `${customerId}|${offerId}|${dateYYYY-MM-DD}` -> { amount_formatted }.
- * Used to show amount paid in closer stats purchase log (same as general stats).
+ * Optimized: list purchases and list transactions with page size 25, sort -created_at;
+ * stop paginating when the last item in the page is older than the range start.
+ * Returns a map: key = `${customerId}|${dateYYYY-MM-DD}` -> { amount_formatted, purchase_date }.
  */
 async function fetchKajabiAmountMapForDateRange(startDateISO, endDateISO) {
   const startDateObj = parseDateAsUTC(startDateISO);
@@ -942,47 +945,55 @@ async function fetchKajabiAmountMapForDateRange(startDateISO, endDateISO) {
   const startTs = startUTC.getTime();
   const endTs = endUTC.getTime();
 
-  const allInRange = [];
-  let page = 1;
-  const perPage = 100;
-  let hasMore = true;
-  while (hasMore) {
-    const result = await fetchKajabiPurchases({ page, perPage, sort: '-created_at' });
+  // 1) List purchases: page size 25, sort -created_at; stop when last item is older than range start
+  const allPurchasesInRange = [];
+  let purchasePage = 1;
+  for (;;) {
+    const result = await fetchKajabiPurchases({
+      page: purchasePage,
+      perPage: KAJABI_AMOUNT_PAGE_SIZE,
+      sort: '-created_at',
+    });
     const data = result.data || [];
     if (data.length === 0) break;
     for (const p of data) {
       const createdAt = p.attributes?.created_at;
       if (!createdAt) continue;
       const ts = new Date(createdAt).getTime();
-      if (ts >= startTs && ts <= endTs) allInRange.push(p);
+      if (ts >= startTs && ts <= endTs) allPurchasesInRange.push(p);
     }
-    if (data.length < perPage || (data.length && new Date(data[data.length - 1].attributes?.created_at).getTime() < startTs))
-      hasMore = false;
-    else
-      page++;
-    if (page > 50) break;
+    const lastCreatedAt = data[data.length - 1]?.attributes?.created_at;
+    if (!lastCreatedAt || new Date(lastCreatedAt).getTime() < startTs) break;
+    if (data.length < KAJABI_AMOUNT_PAGE_SIZE) break;
+    purchasePage++;
   }
 
-  const purchaseToTxIds = {};
-  const allTxIds = new Set();
-  for (const p of allInRange) {
-    const list = p.relationships?.transactions?.data ?? [];
-    const ids = list.map((t) => t.id).filter(Boolean);
-    if (ids.length) {
-      purchaseToTxIds[p.id] = ids;
-      ids.forEach((id) => allTxIds.add(id));
-    }
-  }
-  const txById = {};
-  const BATCH = 10;
-  const txIdArray = [...allTxIds];
-  for (let i = 0; i < txIdArray.length; i += BATCH) {
-    const batch = txIdArray.slice(i, i + BATCH);
-    const results = await Promise.all(batch.map((id) => fetchTransaction(id)));
-    batch.forEach((id, j) => {
-      const t = results[j];
-      if (t) txById[id] = t;
+  // 2) List transactions: page size 25, sort -created_at; stop when last item is older than range start
+  const txAmountById = {};
+  let txPage = 1;
+  for (;;) {
+    const result = await fetchKajabiTransactions({
+      page: txPage,
+      perPage: KAJABI_AMOUNT_PAGE_SIZE,
+      sort: '-created_at',
     });
+    const data = result.data || [];
+    if (data.length === 0) break;
+    for (const t of data) {
+      const id = t.id;
+      const attrs = t.attributes || {};
+      const amount = attrs.amount_in_cents;
+      if (id && amount != null) {
+        txAmountById[id] = {
+          amount_in_cents: Number(amount),
+          currency: attrs.currency || 'USD',
+        };
+      }
+    }
+    const lastCreatedAt = data[data.length - 1]?.attributes?.created_at;
+    if (!lastCreatedAt || new Date(lastCreatedAt).getTime() < startTs) break;
+    if (data.length < KAJABI_AMOUNT_PAGE_SIZE) break;
+    txPage++;
   }
 
   const formatAmount = (cents, currency = 'USD') => {
@@ -992,25 +1003,25 @@ async function fetchKajabiAmountMapForDateRange(startDateISO, endDateISO) {
   };
 
   const amountMap = {};
-  for (const p of allInRange) {
+  for (const p of allPurchasesInRange) {
     const customerId = p.relationships?.customer?.data?.id;
     const createdAt = p.attributes?.created_at;
     if (!customerId || !createdAt) continue;
-    const dateKey = createdAt.slice(0, 10);
-    const ids = purchaseToTxIds[p.id] || [];
+    const txIds = (p.relationships?.transactions?.data ?? []).map((t) => t.id).filter(Boolean);
     let totalCents = 0;
     let currency = 'USD';
-    for (const id of ids) {
-      const t = txById[id];
+    for (const id of txIds) {
+      const t = txAmountById[id];
       if (t && t.amount_in_cents != null) {
         totalCents += t.amount_in_cents;
         if (t.currency) currency = t.currency;
       }
     }
+    const dateKey = createdAt.slice(0, 10);
     const key = `${String(customerId)}|${dateKey}`;
     amountMap[key] = {
       amount_formatted: formatAmount(totalCents, currency),
-      purchase_date: createdAt
+      purchase_date: createdAt,
     };
   }
   return amountMap;
@@ -1076,6 +1087,14 @@ async function fetchPurchases(closer = null, month = null) {
     return [];
   }
 
+  // Purchase is "linked" when its purchase id appears in an outcome_log with outcome=yes
+  const linkedPurchaseIds = new Set();
+  (outcomeLogs || []).forEach((ol) => {
+    if (ol.outcome === 'yes' && ol.kajabi_purchase_id != null) {
+      linkedPurchaseIds.add(String(ol.kajabi_purchase_id));
+    }
+  });
+
   // First, deduplicate outcome_log entries by call_id BEFORE transforming
   // If multiple outcome_log entries exist for the same call_id, keep only the most recent one
   const outcomeLogsByCallId = new Map();
@@ -1135,7 +1154,10 @@ async function fetchPurchases(closer = null, month = null) {
         discount: outcomeLog.discount,
         // Keep purchased_at for backward compatibility, but use purchase_date
         purchased_at: outcomeLog.purchase_date,
-        purchased: true
+        purchased: true,
+        kajabi_purchase_id: outcomeLog.kajabi_purchase_id ?? null,
+        // Linked when this purchase id appears in an outcome_log with outcome=yes
+        isLinkedToYesOutcome: outcomeLog.kajabi_purchase_id != null && linkedPurchaseIds.has(String(outcomeLog.kajabi_purchase_id)),
       };
     });
 
@@ -1702,9 +1724,10 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
 function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = false }) {
   const navigate = useNavigate();
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const hasValidCustomerId = !!lead.leads?.customer_id;
-  const rowBg = hasValidCustomerId ? 'white' : '#fff7ed';
-  const rowBgHover = hasValidCustomerId ? '#f9fafb' : '#ffedd5';
+  // Orange row when purchase id is not found in any outcome_log with outcome=yes
+  const hasLinkedPurchase = lead.isLinkedToYesOutcome === true;
+  const rowBg = hasLinkedPurchase ? 'white' : '#fff7ed';
+  const rowBgHover = hasLinkedPurchase ? '#f9fafb' : '#ffedd5';
 
   const gridColumns = isRefundsTable
     ? '2fr 2fr 1.5fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr' // + Refund Date
@@ -1745,27 +1768,36 @@ function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = f
         padding: '12px 16px',
         backgroundColor: rowBg,
         borderBottom: '1px solid #e5e7eb',
+        borderLeft: hasLinkedPurchase ? undefined : '3px solid #ea580c',
         fontSize: '14px',
         transition: 'background-color 0.2s'
       }}
       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = rowBgHover; }}
       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = rowBg; }}
     >
-      {/* Name - link to lead */}
+      {/* Name - link to lead; cmd/ctrl/middle-click opens in new tab */}
       <div style={{ fontWeight: '600', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         <a
           href={`/lead/${lead.lead_id}`}
-          onClick={(e) => { e.preventDefault(); navigate(`/lead/${lead.lead_id}`); }}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.button === 1) return;
+            e.preventDefault();
+            navigate(`/lead/${lead.lead_id}`);
+          }}
           style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
         >
           {lead.name || '—'}
         </a>
       </div>
-      {/* Email - link to lead */}
+      {/* Email - link to lead; cmd/ctrl/middle-click opens in new tab */}
       <div style={{ color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         <a
           href={`/lead/${lead.lead_id}`}
-          onClick={(e) => { e.preventDefault(); navigate(`/lead/${lead.lead_id}`); }}
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.button === 1) return;
+            e.preventDefault();
+            navigate(`/lead/${lead.lead_id}`);
+          }}
           style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}
         >
           {lead.email || '—'}
