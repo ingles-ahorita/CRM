@@ -13,9 +13,13 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'Kajabi proxy: missing token' });
   }
 
-  // req.url is e.g. /api/kajabi-proxy/v1/transactions?page[number]=1
+  // req.url can be path-only (/api/kajabi-proxy/v1/...) or full URL (https://...)
+  const rawUrl = req.url || '';
+  const pathAndSearch = rawUrl.startsWith('http') ? new URL(rawUrl).pathname + (new URL(rawUrl).search || '') : rawUrl;
   const prefix = '/api/kajabi-proxy/';
-  const suffix = (req.url || '').startsWith(prefix) ? req.url.slice(prefix.length) : (req.query.path || []).join('/') || 'v1';
+  const suffix = pathAndSearch.startsWith(prefix)
+    ? pathAndSearch.slice(prefix.length)
+    : (Array.isArray(req.query.path) ? req.query.path.join('/') : (req.query.path || 'v1')) + (req.url && req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
   const url = `https://api.kajabi.com/${suffix}`;
 
   try {

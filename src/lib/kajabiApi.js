@@ -9,8 +9,24 @@ const KAJABI_BASE = import.meta.env.DEV ? '/kajabi-api/v1' : '/api/kajabi-proxy/
 const KAJABI_SITE_ID = import.meta.env.VITE_KAJABI_SITE_ID || '2147813413';
 
 function loggedFetch(url, options) {
-  console.log('Ftech!!!!!!!! [Kajabi]', url);
+  console.log('[Kajabi]', url);
   return fetch(url, options);
+}
+
+/** Parse response as JSON; if we got HTML (e.g. SPA fallback in production), throw a clear error. */
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (trimmed.startsWith('<')) {
+    throw new Error(
+      `Kajabi API got HTML instead of JSON (status ${res.status}). Check proxy/deploy: ${trimmed.slice(0, 80)}...`
+    );
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Kajabi API invalid JSON (status ${res.status}): ${e.message}`);
+  }
 }
 
 /**
@@ -76,7 +92,7 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
     throw new Error(`Kajabi API ${res.status}: ${text}`);
   }
 
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   return {
     data: json.data || [],
     links: json.links || {},
@@ -102,7 +118,7 @@ export async function fetchPurchase(id) {
     },
   });
   if (!res.ok) return null;
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   return json.data || null;
 }
 
@@ -129,7 +145,7 @@ export async function fetchCustomer(id) {
     throw new Error(`Kajabi API ${res.status}: ${text}`);
   }
 
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   const attrs = json.data?.attributes || {};
   // Same response: use relationships.contact.data.id for Kajabi admin URL (not attributes)
   const contactId = json.data?.relationships?.contact?.data?.id;
@@ -172,7 +188,7 @@ export async function listCustomers({ page = 1, perPage = 100, sort = '-created_
     throw new Error(`Kajabi API ${res.status}: ${text}`);
   }
 
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   const data = (json.data || []).map((c) => {
     const attrs = c.attributes || {};
     const contactId = c.relationships?.contact?.data?.id;
@@ -227,7 +243,7 @@ export async function searchCustomers({ search, siteId, page = 1, perPage = 25 }
     throw new Error(`Kajabi API ${res.status}: ${text}`);
   }
 
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   const data = (json.data || []).map((c) => {
     const attrs = c.attributes || {};
     return {
@@ -272,7 +288,7 @@ export async function findCustomerByEmail(email) {
     const text = await res.text();
     throw new Error(`Kajabi API ${res.status}: ${text}`);
   }
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   const list = json.data || [];
   const exact = list.find((c) => (c.attributes?.email ?? '').toLowerCase() === trimmed);
   const chosen = exact || list[0];
@@ -318,7 +334,7 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
     throw new Error(`Kajabi API ${res.status}: ${text}`);
   }
 
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   return {
     data: json.data || [],
     links: json.links || {},
@@ -344,7 +360,7 @@ export async function fetchTransaction(id) {
     },
   });
   if (!res.ok) return null;
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   const attrs = json.data?.attributes || {};
   const amount = attrs.amount_in_cents;
   return {
@@ -382,7 +398,7 @@ export async function listOffers({ page = 1, perPage = 50 } = {}) {
     throw new Error(`Kajabi API ${res.status}: ${text}`);
   }
 
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   const data = (json.data || []).map((o) => ({
     id: o.id,
     internal_title: o.attributes?.internal_title ?? null,
@@ -414,7 +430,7 @@ export async function fetchOffer(id) {
   });
 
   if (!res.ok) return null;
-  const json = await res.json();
+  const json = await parseJsonResponse(res);
   const attrs = json.data?.attributes || {};
   return {
     id: json.data?.id,
