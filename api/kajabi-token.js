@@ -42,7 +42,9 @@ async function requestToken(bodyParams) {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('CDN-Cache-Control', 'no-store');
   res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -50,6 +52,7 @@ export default async function handler(req, res) {
 
   const clientId = process.env.KAJABI_CLIENT_ID;
   const clientSecret = process.env.KAJABI_CLIENT_SECRET;
+  const isVercel = !!process.env.VERCEL;
 
   if (!clientId || !clientSecret) {
     console.error('Kajabi token: missing KAJABI_CLIENT_ID or KAJABI_CLIENT_SECRET (set in Vercel/server env)');
@@ -59,7 +62,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    if (isCacheValid()) {
+    // On Vercel, never use in-memory cache: each invocation can be a new isolate, and we avoid
+    // returning any token that could have been cached by edge/CDN for a previous GET.
+    if (!isVercel && isCacheValid()) {
       const expiresIn = serverTokenCache.expiresAtSec - Math.floor(Date.now() / 1000);
       return res.status(200).json({
         access_token: serverTokenCache.access_token,

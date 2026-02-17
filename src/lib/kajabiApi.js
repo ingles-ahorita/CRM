@@ -28,18 +28,26 @@ async function parseJsonResponse(res) {
   }
 }
 
-const TOKEN_API = '/api/kajabi-token';
+const TOKEN_PATH = '/api/kajabi-token';
 const TOKEN_REFRESH_BUFFER_MS = 60 * 1000; // refresh 1 min before expiry
 
 /** Cached token: { access_token, expiresAt } */
 let oauthTokenCache = null;
+
+/** Same-origin token URL; in production add cache-busting so CDN/browser never return a stale token. */
+function getTokenApiUrl() {
+  const base = typeof window !== 'undefined' ? window.location.origin : '';
+  const path = TOKEN_PATH;
+  const cacheBust = import.meta.env.PROD ? `?t=${Date.now()}` : '';
+  return `${base}${path}${cacheBust}`;
+}
 
 /**
  * Fetch access token from our API (server calls Kajabi OAuth; client never sees client_id/secret).
  * @returns {Promise<{ access_token: string, expires_in: number }>}
  */
 async function fetchTokenFromApi() {
-  const res = await fetch(TOKEN_API);
+  const res = await fetch(getTokenApiUrl());
   const data = await res.json();
   if (!res.ok) {
     const msg = data?.error && data?.detail ? `${data.error}: ${data.detail}` : data?.error || res.statusText;
