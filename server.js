@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -53,6 +53,7 @@ async function loadHandlers() {
   currentSetterHandler = await loadHandler('./api/current-setter.js', 'current-setter');
   calendlyWebhookHandler = await loadHandler('./api/calendly-webhook.js', 'calendly-webhook');
   kajabiWebhookHandler = await loadHandler('./api/kajabi-webhook.js', 'kajabi-webhook');
+  kajabiTokenHandler = await loadHandler('./api/kajabi-token.js', 'kajabi-token');
   rubenShiftToggleHandler = await loadHandler('./api/ruben-shift-toggle.js', 'ruben-shift-toggle');
   aiSetterHandler = await loadHandler('./api/ai-setter.js', 'ai-setter');
   storeFbclidHandler = await loadHandler('./api/store-fbclid.js', 'store-fbclid');
@@ -129,6 +130,11 @@ app.post('/api/calendly-webhook', async (req, res) => {
 app.post('/api/kajabi-webhook', async (req, res) => {
   if (!kajabiWebhookHandler) await loadHandlers();
   return adaptVercelHandler(kajabiWebhookHandler)(req, res);
+});
+
+app.get('/api/kajabi-token', async (req, res) => {
+  if (!kajabiTokenHandler) await loadHandlers();
+  return adaptVercelHandler(kajabiTokenHandler)(req, res);
 });
 
 app.post('/api/ruben-shift-toggle', async (req, res) => {
@@ -255,6 +261,7 @@ loadHandlers().then(() => {
     console.log(`   - GET  http://localhost:${PORT}/api/current-setter`);
     console.log(`   - POST http://localhost:${PORT}/api/calendly-webhook`);
     console.log(`   - POST http://localhost:${PORT}/api/kajabi-webhook`);
+    console.log(`   - GET  http://localhost:${PORT}/api/kajabi-token`);
     console.log(`   - POST http://localhost:${PORT}/api/store-fbclid`);
     console.log(`   - POST http://localhost:${PORT}/api/meta-conversion`);
     console.log(`   - GET  http://localhost:${PORT}/api/test (test endpoint)`);
