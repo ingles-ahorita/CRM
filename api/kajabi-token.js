@@ -24,7 +24,7 @@ async function requestToken(bodyParams) {
     body: body.toString(),
   });
   const data = await response.json().catch(() => ({}));
-  console.log('[Kajabi token] OAuth response', { grant_type: grantType, status: response.status, ok: response.ok });
+  console.warn('[Kajabi token] OAuth response', { grant_type: grantType, status: response.status, ok: response.ok });
   if (!response.ok) {
     return { ok: false, status: response.status, data };
   }
@@ -47,6 +47,7 @@ export default async function handler(req, res) {
   res.setHeader('CDN-Cache-Control', 'no-store');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+  res.setHeader('X-Kajabi-Token-Handled', '1'); // so you can confirm in DevTools → Network that this backend answered
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -56,7 +57,8 @@ export default async function handler(req, res) {
   const clientSecret = process.env.KAJABI_CLIENT_SECRET;
   const isVercel = !!process.env.VERCEL;
 
-  console.log('[Kajabi token] GET', { isVercel, clientIdSet: !!clientId, clientSecretSet: !!clientSecret });
+  // Use console.warn so this appears in Vercel Runtime Logs (search for "Kajabi token")
+  console.warn('[Kajabi token] GET', { isVercel, clientIdSet: !!clientId, clientSecretSet: !!clientSecret });
 
   if (!clientId || !clientSecret) {
     console.error('[Kajabi token] missing KAJABI_CLIENT_ID or KAJABI_CLIENT_SECRET (set in Vercel/server env)');
@@ -70,14 +72,14 @@ export default async function handler(req, res) {
     // returning any token that could have been cached by edge/CDN for a previous GET.
     if (!isVercel && isCacheValid()) {
       const expiresIn = serverTokenCache.expiresAtSec - Math.floor(Date.now() / 1000);
-      console.log('[Kajabi token] cache hit (local), expires_in', Math.max(1, expiresIn));
+      console.warn('[Kajabi token] cache hit (local), expires_in', Math.max(1, expiresIn));
       return res.status(200).json({
         access_token: serverTokenCache.access_token,
         expires_in: Math.max(1, expiresIn),
       });
     }
 
-    console.log('[Kajabi token] fetching from Kajabi OAuth', { isVercel, grant: serverTokenCache?.refresh_token ? 'refresh_token' : 'client_credentials' });
+    console.warn('[Kajabi token] fetching from Kajabi OAuth', { isVercel, grant: serverTokenCache?.refresh_token ? 'refresh_token' : 'client_credentials' });
 
     let result;
     if (serverTokenCache?.refresh_token) {
@@ -115,7 +117,7 @@ export default async function handler(req, res) {
       refresh_token: result.refresh_token || serverTokenCache?.refresh_token || null,
     };
 
-    console.log('[Kajabi token] success', { expires_in: result.expires_in, hasRefresh: !!serverTokenCache.refresh_token });
+    console.warn('[Kajabi token] success', { expires_in: result.expires_in, tokenLength: (result.access_token || '').length, hasRefresh: !!serverTokenCache.refresh_token });
 
     return res.status(200).json({
       access_token: result.access_token,

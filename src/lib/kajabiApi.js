@@ -4,11 +4,16 @@
  * @see https://developers.kajabi.com/api-reference/purchases/list-purchases
  */
 
+// Log once when this module loads so we know the Kajabi code path is active (browser console)
+if (typeof window !== 'undefined') {
+  console.warn('[Kajabi] module loaded');
+}
+
 const KAJABI_BASE = 'https://api.kajabi.com/v1';
 const KAJABI_SITE_ID = import.meta.env.VITE_KAJABI_SITE_ID || '2147813413';
 
 function loggedFetch(url, options) {
-  console.log('[Kajabi]', url);
+  console.warn('[Kajabi]', url);
   return fetch(url, options);
 }
 
@@ -48,22 +53,31 @@ function getTokenApiUrl() {
  */
 async function fetchTokenFromApi() {
   const url = getTokenApiUrl();
-  console.log('[Kajabi] token request', url.replace(/\?.*/, ''));
+  console.warn('[Kajabi] token request', url.replace(/\?.*/, ''));
   const res = await fetch(url);
-  const data = await res.json().catch(() => ({}));
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    console.warn('[Kajabi] token API response is not JSON', { status: res.status, contentType, preview: text.slice(0, 120) });
+    throw new Error(`Kajabi token API returned non-JSON (likely SPA fallback). Status ${res.status}. Check /api/kajabi-token is hit on this origin.`);
+  }
   if (!res.ok) {
-    console.error('[Kajabi] token API error', res.status, data);
+    console.warn('[Kajabi] token API error', res.status, data);
     const msg = data?.error && data?.detail ? `${data.error}: ${data.detail}` : data?.error || res.statusText;
     throw new Error(`Kajabi token API ${res.status}: ${msg}`);
   }
   const accessToken = data.access_token;
   const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 7200;
-  if (!accessToken) {
-    console.error('[Kajabi] token API response missing access_token', data);
-    throw new Error('Kajabi token API response missing access_token');
+  if (typeof accessToken !== 'string' || accessToken.trim() === '') {
+    console.warn('[Kajabi] token API response invalid access_token', { keys: Object.keys(data), hasAccessToken: 'access_token' in data });
+    throw new Error('Kajabi token API response missing or invalid access_token. Check server env KAJABI_CLIENT_ID/SECRET.');
   }
-  console.log('[Kajabi] token received', { expires_in: expiresIn });
-  return { access_token: accessToken, expires_in: expiresIn };
+  console.warn('[Kajabi] token received', { expires_in: expiresIn, tokenLength: accessToken.length });
+  return { access_token: accessToken.trim(), expires_in: expiresIn };
 }
 
 /**
@@ -74,21 +88,42 @@ async function fetchTokenFromApi() {
 export async function getAccessToken() {
   const now = Date.now();
   if (oauthTokenCache && oauthTokenCache.expiresAt > now + TOKEN_REFRESH_BUFFER_MS) {
-    console.log('[Kajabi] using cached token');
-    return oauthTokenCache.access_token;
+    const t = oauthTokenCache.access_token;
+    if (typeof t !== 'string' || t.trim() === '') {
+      console.warn('[Kajabi] cached token invalid, refetching');
+      oauthTokenCache = null;
+    } else {
+      console.warn('[Kajabi] using cached token', { tokenLength: t.length });
+      return t;
+    }
   }
-  console.log('[Kajabi] fetching new token');
+  console.warn('[Kajabi] fetching new token');
   const result = await fetchTokenFromApi();
+  const token = typeof result.access_token === 'string' ? result.access_token.trim() : '';
+  if (!token) {
+    console.warn('[Kajabi] got empty token from API');
+    throw new Error('Kajabi token API returned empty token.');
+  }
   oauthTokenCache = {
-    access_token: result.access_token,
+    access_token: token,
     expiresAt: now + result.expires_in * 1000 - TOKEN_REFRESH_BUFFER_MS,
   };
-  return oauthTokenCache.access_token;
+  return token;
 }
 
 /** Clear cached OAuth token (e.g. after 401). Next getAccessToken() will fetch a new one. */
 export function clearKajabiTokenCache() {
   oauthTokenCache = null;
+}
+
+/** Ensure token is a non-empty string; throw with a clear message if not. */
+function ensureToken(token, context = '') {
+  if (typeof token !== 'string' || token.trim() === '') {
+    const msg = `Kajabi request ${context}: no valid token (got ${typeof token}). Token API may be returning wrong shape or not being called.`;
+    console.warn('[Kajabi]', msg);
+    throw new Error(msg);
+  }
+  return token.trim();
 }
 
 /**
@@ -111,6 +146,8 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
   const url = `${KAJABI_BASE}/purchases?${params}`;
 
   const doRequest = async (token) => {
+    ensureToken(token, 'fetchPurchases');
+    console.warn('[Kajabi] fetchPurchases sending with token length', token.length);
     return loggedFetch(url, {
       method: 'GET',
       headers: {
@@ -123,15 +160,18 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
   let token = await getAccessToken();
   let res = await doRequest(token);
   if (res.status === 401) {
-    console.warn('[Kajabi] 401 on request, clearing token cache and retrying');
+    console.warn('[Kajabi] 401 on request (token length was ' + token.length + '), clearing cache and retrying');
     clearKajabiTokenCache();
     token = await getAccessToken();
+    ensureToken(token, 'fetchPurchases retry');
+    console.warn('[Kajabi] fetchPurchases retry with new token length', token.length);
     res = await doRequest(token);
   }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Kajabi API ${res.status}: ${text}`);
+    const detail = res.status === 401 ? ` (token length sent: ${token?.length ?? 'none'})` : '';
+    throw new Error(`Kajabi API ${res.status}: ${text}${detail}`);
   }
 
   const json = await parseJsonResponse(res);
@@ -364,6 +404,8 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
   const url = `${KAJABI_BASE}/transactions?${params}`;
 
   const doRequest = async (token) => {
+    ensureToken(token, 'fetchTransactions');
+    console.warn('[Kajabi] fetchTransactions sending with token length', token.length);
     return loggedFetch(url, {
       method: 'GET',
       headers: {
@@ -376,15 +418,17 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
   let token = await getAccessToken();
   let res = await doRequest(token);
   if (res.status === 401) {
-    console.warn('[Kajabi] 401 on request, clearing token cache and retrying');
+    console.warn('[Kajabi] 401 on request (token length was ' + token.length + '), clearing cache and retrying');
     clearKajabiTokenCache();
     token = await getAccessToken();
+    ensureToken(token, 'fetchTransactions retry');
     res = await doRequest(token);
   }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Kajabi API ${res.status}: ${text}`);
+    const detail = res.status === 401 ? ` (token length sent: ${token?.length ?? 'none'})` : '';
+    throw new Error(`Kajabi API ${res.status}: ${text}${detail}`);
   }
 
   const json = await parseJsonResponse(res);

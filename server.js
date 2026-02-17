@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, kajabiTokenPingHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -54,6 +54,7 @@ async function loadHandlers() {
   calendlyWebhookHandler = await loadHandler('./api/calendly-webhook.js', 'calendly-webhook');
   kajabiWebhookHandler = await loadHandler('./api/kajabi-webhook.js', 'kajabi-webhook');
   kajabiTokenHandler = await loadHandler('./api/kajabi-token.js', 'kajabi-token');
+  kajabiTokenPingHandler = await loadHandler('./api/kajabi-token-ping.js', 'kajabi-token-ping');
   rubenShiftToggleHandler = await loadHandler('./api/ruben-shift-toggle.js', 'ruben-shift-toggle');
   aiSetterHandler = await loadHandler('./api/ai-setter.js', 'ai-setter');
   storeFbclidHandler = await loadHandler('./api/store-fbclid.js', 'store-fbclid');
@@ -135,6 +136,11 @@ app.post('/api/kajabi-webhook', async (req, res) => {
 app.get('/api/kajabi-token', async (req, res) => {
   if (!kajabiTokenHandler) await loadHandlers();
   return adaptVercelHandler(kajabiTokenHandler)(req, res);
+});
+
+app.get('/api/kajabi-token-ping', async (req, res) => {
+  if (!kajabiTokenPingHandler) await loadHandlers();
+  return adaptVercelHandler(kajabiTokenPingHandler)(req, res);
 });
 
 app.post('/api/ruben-shift-toggle', async (req, res) => {
