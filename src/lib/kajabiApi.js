@@ -28,35 +28,52 @@ async function parseJsonResponse(res) {
   }
 }
 
+const TOKEN_API = '/api/kajabi-token';
+const TOKEN_REFRESH_BUFFER_MS = 60 * 1000; // refresh 1 min before expiry
+
+/** Cached token: { access_token, expiresAt } */
+let oauthTokenCache = null;
+
 /**
- * Get access token for Kajabi API.
- * For now: return a hardcoded token. Later: call POST /v1/oauth/token with client_credentials.
- * @returns {Promise<string>}
+ * Fetch access token from our API (server calls Kajabi OAuth; client never sees client_id/secret).
+ * @returns {Promise<{ access_token: string, expires_in: number }>}
  */
-export async function getAccessToken() {
-  // TODO: Replace with real token fetch, e.g.:
-  // const res = await fetch(`${KAJABI_BASE.replace('/v1','')}/oauth/token`, {
-  //   method: 'POST',
-  //   headers: { 'Content-Type': 'application/json' },
-  //   body: JSON.stringify({
-  //     grant_type: 'client_credentials',
-  //     client_id: process.env.VITE_KAJABI_CLIENT_ID,
-  //     client_secret: process.env.VITE_KAJABI_CLIENT_SECRET,
-  //   }),
-  // });
-  // const data = await res.json();
-  // return data.access_token;
-  return Promise.resolve(getHardcodedToken());
+async function fetchTokenFromApi() {
+  const res = await fetch(TOKEN_API);
+  const data = await res.json();
+  if (!res.ok) {
+    const msg = data?.error && data?.detail ? `${data.error}: ${data.detail}` : data?.error || res.statusText;
+    throw new Error(`Kajabi token API ${res.status}: ${msg}`);
+  }
+  const accessToken = data.access_token;
+  const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 7200;
+  if (!accessToken) {
+    throw new Error('Kajabi token API response missing access_token');
+  }
+  return { access_token: accessToken, expires_in: expiresIn };
 }
 
 /**
- * Hardcoded token – replace with your actual token or use env.
- * @returns {string}
+ * Get access token for Kajabi API. Fetches from /api/kajabi-token (server-side OAuth);
+ * caches until expiry, then fetches again. No token is stored in client env.
+ * @returns {Promise<string>}
  */
-function getHardcodedToken() {
-  // Paste your token here, or use env: import.meta.env.VITE_KAJABI_ACCESS_TOKEN
-  const token = import.meta.env.VITE_KAJABI_ACCESS_TOKEN || 'YOUR_KAJABI_ACCESS_TOKEN';
-  return token;
+export async function getAccessToken() {
+  const now = Date.now();
+  if (oauthTokenCache && oauthTokenCache.expiresAt > now + TOKEN_REFRESH_BUFFER_MS) {
+    return oauthTokenCache.access_token;
+  }
+  const result = await fetchTokenFromApi();
+  oauthTokenCache = {
+    access_token: result.access_token,
+    expiresAt: now + result.expires_in * 1000 - TOKEN_REFRESH_BUFFER_MS,
+  };
+  return oauthTokenCache.access_token;
+}
+
+/** Clear cached OAuth token (e.g. after 401). Next getAccessToken() will fetch a new one. */
+export function clearKajabiTokenCache() {
+  oauthTokenCache = null;
 }
 
 /**
@@ -69,7 +86,6 @@ function getHardcodedToken() {
  * @returns {Promise<{ data: Array<object>, links: object, meta?: object }>}
  */
 export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_at', customerId } = {}) {
-  const token = await getAccessToken();
   const params = new URLSearchParams({
     'page[number]': String(page),
     'page[size]': String(perPage),
@@ -78,13 +94,24 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
   if (customerId) params.set('filter[customer_id]', customerId);
   params.set('filter[site_id]', KAJABI_SITE_ID);
   const url = `${KAJABI_BASE}/purchases?${params}`;
-  const res = await loggedFetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.api+json',
-    },
-  });
+
+  const doRequest = async (token) => {
+    return loggedFetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.api+json',
+      },
+    });
+  };
+
+  let token = await getAccessToken();
+  let res = await doRequest(token);
+  if (res.status === 401) {
+    clearKajabiTokenCache();
+    token = await getAccessToken();
+    res = await doRequest(token);
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -311,7 +338,6 @@ export async function findCustomerByEmail(email) {
  * @returns {Promise<{ data: Array<object>, links: object, meta?: object }>}
  */
 export async function fetchTransactions({ page = 1, perPage = 25, sort = '-created_at', customerId } = {}) {
-  const token = await getAccessToken();
   const params = new URLSearchParams({
     'page[number]': String(page),
     'page[size]': String(perPage),
@@ -320,13 +346,24 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
   if (customerId) params.set('filter[customer_id]', customerId);
   if (sort) params.set('sort', sort);
   const url = `${KAJABI_BASE}/transactions?${params}`;
-  const res = await loggedFetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.api+json',
-    },
-  });
+
+  const doRequest = async (token) => {
+    return loggedFetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.api+json',
+      },
+    });
+  };
+
+  let token = await getAccessToken();
+  let res = await doRequest(token);
+  if (res.status === 401) {
+    clearKajabiTokenCache();
+    token = await getAccessToken();
+    res = await doRequest(token);
+  }
 
   if (!res.ok) {
     const text = await res.text();
