@@ -17,12 +17,14 @@ function isCacheValid() {
 
 async function requestToken(bodyParams) {
   const body = new URLSearchParams(bodyParams);
+  const grantType = bodyParams.grant_type || 'client_credentials';
   const response = await fetch(KAJABI_OAUTH_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
   });
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
+  console.log('[Kajabi token] OAuth response', { grant_type: grantType, status: response.status, ok: response.ok });
   if (!response.ok) {
     return { ok: false, status: response.status, data };
   }
@@ -54,8 +56,10 @@ export default async function handler(req, res) {
   const clientSecret = process.env.KAJABI_CLIENT_SECRET;
   const isVercel = !!process.env.VERCEL;
 
+  console.log('[Kajabi token] GET', { isVercel, clientIdSet: !!clientId, clientSecretSet: !!clientSecret });
+
   if (!clientId || !clientSecret) {
-    console.error('Kajabi token: missing KAJABI_CLIENT_ID or KAJABI_CLIENT_SECRET (set in Vercel/server env)');
+    console.error('[Kajabi token] missing KAJABI_CLIENT_ID or KAJABI_CLIENT_SECRET (set in Vercel/server env)');
     return res.status(503).json({
       error: 'Kajabi token not configured. Set KAJABI_CLIENT_ID and KAJABI_CLIENT_SECRET in project env.',
     });
@@ -66,11 +70,14 @@ export default async function handler(req, res) {
     // returning any token that could have been cached by edge/CDN for a previous GET.
     if (!isVercel && isCacheValid()) {
       const expiresIn = serverTokenCache.expiresAtSec - Math.floor(Date.now() / 1000);
+      console.log('[Kajabi token] cache hit (local), expires_in', Math.max(1, expiresIn));
       return res.status(200).json({
         access_token: serverTokenCache.access_token,
         expires_in: Math.max(1, expiresIn),
       });
     }
+
+    console.log('[Kajabi token] fetching from Kajabi OAuth', { isVercel, grant: serverTokenCache?.refresh_token ? 'refresh_token' : 'client_credentials' });
 
     let result;
     if (serverTokenCache?.refresh_token) {
@@ -94,7 +101,7 @@ export default async function handler(req, res) {
     }
 
     if (!result.ok) {
-      console.error('Kajabi token error:', result.status, result.data);
+      console.error('[Kajabi token] OAuth failed', { status: result.status, data: result.data });
       return res.status(result.status).json({
         error: 'Kajabi OAuth failed',
         detail: result.data?.errors?.[0]?.detail || result.data?.error_description || JSON.stringify(result.data),
@@ -108,12 +115,14 @@ export default async function handler(req, res) {
       refresh_token: result.refresh_token || serverTokenCache?.refresh_token || null,
     };
 
+    console.log('[Kajabi token] success', { expires_in: result.expires_in, hasRefresh: !!serverTokenCache.refresh_token });
+
     return res.status(200).json({
       access_token: result.access_token,
       expires_in: result.expires_in,
     });
   } catch (err) {
-    console.error('Kajabi token fetch error:', err);
+    console.error('[Kajabi token] fetch error', err.message, err.stack);
     return res.status(502).json({ error: 'Failed to fetch Kajabi token', details: err.message });
   }
 }

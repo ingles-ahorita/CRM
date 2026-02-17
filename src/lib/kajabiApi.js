@@ -47,17 +47,22 @@ function getTokenApiUrl() {
  * @returns {Promise<{ access_token: string, expires_in: number }>}
  */
 async function fetchTokenFromApi() {
-  const res = await fetch(getTokenApiUrl());
-  const data = await res.json();
+  const url = getTokenApiUrl();
+  console.log('[Kajabi] token request', url.replace(/\?.*/, ''));
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    console.error('[Kajabi] token API error', res.status, data);
     const msg = data?.error && data?.detail ? `${data.error}: ${data.detail}` : data?.error || res.statusText;
     throw new Error(`Kajabi token API ${res.status}: ${msg}`);
   }
   const accessToken = data.access_token;
   const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 7200;
   if (!accessToken) {
+    console.error('[Kajabi] token API response missing access_token', data);
     throw new Error('Kajabi token API response missing access_token');
   }
+  console.log('[Kajabi] token received', { expires_in: expiresIn });
   return { access_token: accessToken, expires_in: expiresIn };
 }
 
@@ -69,8 +74,10 @@ async function fetchTokenFromApi() {
 export async function getAccessToken() {
   const now = Date.now();
   if (oauthTokenCache && oauthTokenCache.expiresAt > now + TOKEN_REFRESH_BUFFER_MS) {
+    console.log('[Kajabi] using cached token');
     return oauthTokenCache.access_token;
   }
+  console.log('[Kajabi] fetching new token');
   const result = await fetchTokenFromApi();
   oauthTokenCache = {
     access_token: result.access_token,
@@ -116,6 +123,7 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
   let token = await getAccessToken();
   let res = await doRequest(token);
   if (res.status === 401) {
+    console.warn('[Kajabi] 401 on request, clearing token cache and retrying');
     clearKajabiTokenCache();
     token = await getAccessToken();
     res = await doRequest(token);
@@ -368,6 +376,7 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
   let token = await getAccessToken();
   let res = await doRequest(token);
   if (res.status === 401) {
+    console.warn('[Kajabi] 401 on request, clearing token cache and retrying');
     clearKajabiTokenCache();
     token = await getAccessToken();
     res = await doRequest(token);
