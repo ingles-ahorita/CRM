@@ -6,7 +6,18 @@ import ComparisonTable from './components/ComparisonTable';
 import PeriodSelector from './components/PeriodSelector';
 import { ViewNotesModal } from './components/Modal';
 import { parseISO } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import * as DateHelpers from '../utils/dateHelpers';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import { fetchPurchases as fetchKajabiPurchases, fetchOffer, fetchCustomer as fetchKajabiCustomer, fetchTransaction, listCustomers, listOffers, fetchTransactions } from '../lib/kajabiApi';
 import LinkKajabiCustomerModal from './components/LinkKajabiCustomerModal';
 
@@ -94,14 +105,14 @@ async function fetchStatsData(startDate, endDate) {
     return null;
   }
 
-  // Fetch bookings made in period with source breakdown
-  // Use same normalized UTC dates for consistency
+  // Fetch bookings made in period with source breakdown (incl. is_reschedule for chart)
   const { data: bookingsData, error: bookingsError } = await supabase
     .from('calls')
     .select(`
       picked_up,
       book_date,
       source_type,
+      is_reschedule,
       phone,
       setters (id, name),
       leads (phone, medium)
@@ -118,13 +129,15 @@ async function fetchStatsData(startDate, endDate) {
   const totalPickedUpFromBookings = bookingsData?.filter(b => b.picked_up === true).length || 0;
 
   
-  // Calculate bookings by source
+  // Calculate bookings by source (exclude rescheduled from organic/ads counts)
   const bookingsBySource = {
     organic: { total: 0, pickedUp: 0 },
     ads: { total: 0, pickedUp: 0 }
   };
   
   bookingsData?.forEach(booking => {
+    const isReschedule = booking.is_reschedule === true || booking.is_reschedule === 'true';
+    if (isReschedule) return;
     const source = booking.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     const sourceKey = isAds ? 'ads' : 'organic';
@@ -135,7 +148,42 @@ async function fetchStatsData(startDate, endDate) {
     }
   });
 
-
+  // Booked calls per day for chart (by book_date, organic / ads / rescheduled)
+  const tz = DateHelpers.DEFAULT_TIMEZONE;
+  const dayBuckets = {};
+  const addToBucket = (dayKey, key) => {
+    if (!dayBuckets[dayKey]) dayBuckets[dayKey] = { organic: 0, ads: 0, rescheduled: 0 };
+    dayBuckets[dayKey][key]++;
+  };
+  bookingsData?.forEach(booking => {
+    if (!booking.book_date) return;
+    const dayKey = formatInTimeZone(parseISO(booking.book_date.includes('Z') ? booking.book_date : booking.book_date + 'Z'), tz, 'yyyy-MM-dd');
+    const isReschedule = booking.is_reschedule === true || booking.is_reschedule === 'true';
+    if (isReschedule) {
+      addToBucket(dayKey, 'rescheduled');
+    } else {
+      const source = booking.source_type || 'organic';
+      const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+      addToBucket(dayKey, isAds ? 'ads' : 'organic');
+    }
+  });
+  const allDays = [];
+  const cursor = new Date(startUTC);
+  while (cursor <= endUTC) {
+    const dayKey = formatInTimeZone(cursor, tz, 'yyyy-MM-dd');
+    allDays.push(dayKey);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  const bookingsPerDay = allDays.map(date => {
+    const b = dayBuckets[date] || { organic: 0, ads: 0, rescheduled: 0 };
+    return {
+      date,
+      organic: b.organic,
+      ads: b.ads,
+      rescheduled: b.rescheduled,
+      total: b.organic + b.ads + b.rescheduled,
+    };
+  });
 
   // Use booked calls for main analysis
   const calls = bookedCalls;
@@ -567,6 +615,7 @@ const totalPurchased = purchasedCalls.length;
   return {
     bookingsMadeinPeriod,
     bookingsBySource,
+    bookingsPerDay,
     totalBooked,
     totalPickedUp,
     totalPickedUpFromBookings,
@@ -1348,6 +1397,7 @@ export default function StatsDashboard() {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
   const [purchaseLogCloserFilter, setPurchaseLogCloserFilter] = useState('');
   const [purchaseLogSetterFilter, setPurchaseLogSetterFilter] = useState('');
+  const [hideReschedulesInChart, setHideReschedulesInChart] = useState(false);
 
   // Generate list of available months (previous 6 months including current)
   const generateAvailableMonths = () => {
@@ -1964,6 +2014,80 @@ export default function StatsDashboard() {
               <div className="text-lg text-gray-600 font-medium">Loading metrics...</div>
             </div>
           )}
+        {/* Booked calls per day (organic / ads / rescheduled) */}
+        {stats?.bookingsPerDay?.length > 0 && (
+          <div className="bg-white p-6 rounded-lg shadow mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Booked calls per day</h2>
+              <button
+                type="button"
+                onClick={() => setHideReschedulesInChart((v) => !v)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition-colors ${
+                  hideReschedulesInChart
+                    ? 'bg-amber-100 text-amber-800 border-amber-300'
+                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
+                }`}
+              >
+                {hideReschedulesInChart ? 'Show reschedules' : 'Hide reschedules'}
+              </button>
+            </div>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={
+                    hideReschedulesInChart
+                      ? stats.bookingsPerDay.map((row) => ({
+                          date: row.date,
+                          organic: row.organic,
+                          ads: row.ads,
+                          rescheduled: 0,
+                          total: row.organic + row.ads,
+                        }))
+                      : stats.bookingsPerDay
+                  }
+                  margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => (v ? v.slice(5) : '')}
+                  />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length || !label) return null;
+                      const row = payload[0]?.payload;
+                      if (!row) return null;
+                      const total = hideReschedulesInChart ? row.organic + row.ads : row.total;
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-sm">
+                          <div className="font-medium text-gray-900 mb-1">{label}</div>
+                          <div className="text-green-600">Organic: {row.organic}</div>
+                          <div className="text-blue-600">Ads: {row.ads}</div>
+                          {!hideReschedulesInChart && (
+                            <div className="text-amber-600">Rescheduled: {row.rescheduled}</div>
+                          )}
+                          <div className="text-gray-700 border-t border-gray-100 mt-1 pt-1">
+                            {hideReschedulesInChart
+                              ? `Total (excl. rescheduled): ${total}`
+                              : `Total: ${total}`}
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Legend />
+                  <Bar dataKey="organic" name="Organic" stackId="booked" fill="#22c55e" />
+                  <Bar dataKey="ads" name="Ads" stackId="booked" fill="#3b82f6" />
+                  {!hideReschedulesInChart && (
+                    <Bar dataKey="rescheduled" name="Rescheduled" stackId="booked" fill="#f59e0b" />
+                  )}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Pick Up Rate */}
           <div className="bg-white p-6 rounded-lg shadow">
