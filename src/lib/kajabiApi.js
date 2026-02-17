@@ -171,7 +171,7 @@ export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_
   if (!res.ok) {
     const text = await res.text();
     const detail = res.status === 401 ? ` (token length sent: ${token?.length ?? 'none'})` : '';
-    throw new Error(`Kajabi API ${res.status}: ${text}${detail}`);
+    throw new Error(`Kajabi API ${res.status}: ${text}${detail} fetchPurchases`);
   }
 
   const json = await parseJsonResponse(res);
@@ -224,7 +224,7 @@ export async function fetchCustomer(id) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Kajabi API ${res.status}: ${text}`);
+    throw new Error(`Kajabi API ${res.status}: ${text} fetchCustomer`);
   }
 
   const json = await parseJsonResponse(res);
@@ -267,7 +267,7 @@ export async function listCustomers({ page = 1, perPage = 100, sort = '-created_
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Kajabi API ${res.status}: ${text}`);
+    throw new Error(`Kajabi API ${res.status}: ${text} listCustomers`);
   }
 
   const json = await parseJsonResponse(res);
@@ -322,7 +322,7 @@ export async function searchCustomers({ search, siteId, page = 1, perPage = 25 }
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Kajabi API ${res.status}: ${text}`);
+    throw new Error(`Kajabi API ${res.status}: ${text} searchCustomers`);
   }
 
   const json = await parseJsonResponse(res);
@@ -368,7 +368,7 @@ export async function findCustomerByEmail(email) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Kajabi API ${res.status}: ${text}`);
+    throw new Error(`Kajabi API ${res.status}: ${text} findCustomerByEmail`);
   }
   const json = await parseJsonResponse(res);
   const list = json.data || [];
@@ -428,7 +428,7 @@ export async function fetchTransactions({ page = 1, perPage = 25, sort = '-creat
   if (!res.ok) {
     const text = await res.text();
     const detail = res.status === 401 ? ` (token length sent: ${token?.length ?? 'none'})` : '';
-    throw new Error(`Kajabi API ${res.status}: ${text}${detail}`);
+    throw new Error(`Kajabi API ${res.status}: ${text}${detail} fetchTransactions`);
   }
 
   const json = await parseJsonResponse(res);
@@ -492,7 +492,7 @@ export async function listOffers({ page = 1, perPage = 50 } = {}) {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Kajabi API ${res.status}: ${text}`);
+    throw new Error(`Kajabi API ${res.status}: ${text} fetchOffer`);
   }
 
   const json = await parseJsonResponse(res);
