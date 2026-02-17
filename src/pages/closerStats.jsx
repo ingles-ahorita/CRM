@@ -530,7 +530,7 @@ export default function CloserStatsDashboard() {
                   </div>
                   {purchases.map(lead => (
                     <PurchaseItem
-                      key={lead.id}
+                      key={lead.outcome_log_id ?? lead.id}
                       lead={lead}
                       setterMap={setterMap}
                       amountMap={purchaseAmountMap}
@@ -1053,8 +1053,7 @@ async function fetchPurchases(closer = null, month = null) {
   const startDateISO = startDate.toISOString();
   const endDateISO = endDate.toISOString();
   
-  // Now query outcome_log - include both 'yes' and 'refund' outcomes
-  // We'll filter refunds to only include those in same month as purchase
+  // Purchase log list is based on outcome_log with outcome = 'yes' only (not Kajabi)
   let query = supabase
     .from('outcome_log')
     .select(`
@@ -1070,7 +1069,7 @@ async function fetchPurchases(closer = null, month = null) {
         name
       )
     `)
-    .in('outcome', ['yes', 'refund'])
+    .eq('outcome', 'yes')
     .gte('purchase_date', startDateISO)
     .lte('purchase_date', endDateISO)
     .order('purchase_date', { ascending: false });
@@ -1095,100 +1094,38 @@ async function fetchPurchases(closer = null, month = null) {
     }
   });
 
-  // First, deduplicate outcome_log entries by call_id BEFORE transforming
-  // If multiple outcome_log entries exist for the same call_id, keep only the most recent one
-  const outcomeLogsByCallId = new Map();
-  
-  (outcomeLogs || []).forEach(outcomeLog => {
-    // Must have a valid call
-    if (!outcomeLog.calls || !outcomeLog.calls.id) return;
-    
-    // Double-check closer_id if specified
-    if (closer && outcomeLog.calls.closer_id !== closer) {
-      return;
-    }
-    
-    const callId = outcomeLog.calls.id;
-    const existing = outcomeLogsByCallId.get(callId);
-    
-    // If no existing entry, or this outcome_log_id is newer, keep this one
-    if (!existing || outcomeLog.id > existing.id) {
-      outcomeLogsByCallId.set(callId, outcomeLog);
-    }
-  });
-  
-  // Now transform the deduplicated outcome_log entries (preserve leads for customer_id indicator)
-  let purchases = Array.from(outcomeLogsByCallId.values())
-    .map(outcomeLog => {
-      // Check if refund happened in same month as purchase (normalized to timezone)
-      const isSameMonthRefund = outcomeLog.outcome === 'refund' && 
-        outcomeLog.purchase_date && 
-        outcomeLog.refund_date &&
-        DateHelpers.isSameMonthInTimezone(
-          outcomeLog.purchase_date, 
-          outcomeLog.refund_date, 
-          DateHelpers.DEFAULT_TIMEZONE
-        );
-      
-      // Check if clawback percentage is less than 100
-      const clawbackPercentage = outcomeLog.clawback ?? 100;
-      const hasClawbackAdjustment = clawbackPercentage < 100;
-      
-      // For same-month refunds: if clawback < 100%, preserve the adjusted commission (positive)
-      // Otherwise, set to 0. For purchases and previous-month refunds, use the stored commission
-      let commission = outcomeLog.commission;
-      if (isSameMonthRefund && !hasClawbackAdjustment) {
-        commission = 0;
-      }
-      
-      return {
-        ...outcomeLog.calls,
-        // Add outcome_log fields that might be useful
-        outcome_log_id: outcomeLog.id,
-        purchase_date: outcomeLog.purchase_date,
-        refund_date: outcomeLog.refund_date,
-        outcome: outcomeLog.outcome,
-        commission: commission,
-        offer_id: outcomeLog.offer_id,
-        offer_name: outcomeLog.offers?.name || null,
-        discount: outcomeLog.discount,
-        // Keep purchased_at for backward compatibility, but use purchase_date
-        purchased_at: outcomeLog.purchase_date,
-        purchased: true,
-        kajabi_purchase_id: outcomeLog.kajabi_purchase_id ?? null,
-        // Linked when this purchase id appears in an outcome_log with outcome=yes
-        isLinkedToYesOutcome: outcomeLog.kajabi_purchase_id != null && linkedPurchaseIds.has(String(outcomeLog.kajabi_purchase_id)),
-      };
-    });
+  // outcome_log with outcome=yes: one row per entry (no dedup by call needed for yes-only list)
+  let purchases = (outcomeLogs || [])
+    .filter(outcomeLog => {
+      if (!outcomeLog.calls || !outcomeLog.calls.id) return false;
+      if (closer && outcomeLog.calls.closer_id !== closer) return false;
+      return true;
+    })
+    .map(outcomeLog => ({
+      ...outcomeLog.calls,
+      outcome_log_id: outcomeLog.id,
+      purchase_date: outcomeLog.purchase_date,
+      refund_date: outcomeLog.refund_date,
+      outcome: outcomeLog.outcome,
+      commission: outcomeLog.commission,
+      offer_id: outcomeLog.offer_id,
+      offer_name: outcomeLog.offers?.name || null,
+      discount: outcomeLog.discount,
+      purchased_at: outcomeLog.purchase_date,
+      purchased: true,
+      kajabi_purchase_id: outcomeLog.kajabi_purchase_id ?? null,
+      // Orange when no Kajabi purchase linked (kajabi_purchase_id set and in a yes outcome)
+      isLinkedToYesOutcome: outcomeLog.kajabi_purchase_id != null && linkedPurchaseIds.has(String(outcomeLog.kajabi_purchase_id)),
+    }));
 
-  // Filter by date range and closer - ensure all purchases are within the selected month and belong to the correct closer
+  // Filter by date range and closer
   purchases = purchases.filter(purchase => {
-    // Must have purchase_date
     if (!purchase.purchase_date) return false;
-    
-    // Filter by closer_id if specified
-    if (closer && purchase.closer_id !== closer) {
-      return false;
-    }
-    
-    // For refunds, only include if refund happened in same month as purchase
-    if (purchase.outcome === 'refund') {
-      if (!purchase.refund_date) return false;
-      const purchaseDate = new Date(purchase.purchase_date);
-      // Only include if same month (normalized to timezone)
-      if (!DateHelpers.isSameMonthInTimezone(
-        purchase.purchase_date,
-        purchase.refund_date,
-        DateHelpers.DEFAULT_TIMEZONE
-      )) return false;
-    }
-    
-    // Filter by date range (based on purchase_date)
+    if (closer && purchase.closer_id !== closer) return false;
     const purchaseDate = new Date(purchase.purchase_date);
     const purchaseDateOnly = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth(), purchaseDate.getDate());
     const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
     const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-    
     return purchaseDateOnly >= startDateOnly && purchaseDateOnly <= endDateOnly;
   });
   
