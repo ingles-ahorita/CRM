@@ -83,6 +83,54 @@ export default async function handler(req, res) {
     });
   }
 
+  // Handle find user by phone (used when create fails and client retries with find)
+  if (action === 'find-user-by-phone') {
+    const { whatsapp_phone: findPhone, apiKey: findApiKey } = req.body;
+    if (!findPhone || !findApiKey) {
+      return res.status(400).json({ error: 'Missing required fields: whatsapp_phone and apiKey' });
+    }
+    try {
+      const customFieldsResponse = await fetch('https://api.manychat.com/fb/page/getCustomFields', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${findApiKey}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      if (!customFieldsResponse.ok) {
+        const errText = await customFieldsResponse.text();
+        throw new Error(`Failed to get custom fields: ${customFieldsResponse.status} - ${errText}`);
+      }
+      const customFieldsData = await customFieldsResponse.json();
+      const dataFields = customFieldsData.data || [];
+      const phoneField = dataFields.find(f => f.name === 'phone') || dataFields.find(f => f.name === 'whatsapp_phone');
+      if (!phoneField?.id) {
+        return res.status(404).json({ error: 'Phone field not found in ManyChat custom fields' });
+      }
+      const findUrl = `${BASE_URL}/findByCustomField?field_id=${phoneField.id}&field_value=${encodeURIComponent(findPhone)}`;
+      const findResponse = await fetch(findUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${findApiKey}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      if (!findResponse.ok) {
+        const errText = await findResponse.text();
+        throw new Error(`Failed to find subscriber: ${findResponse.status} - ${errText}`);
+      }
+      const findData = await findResponse.json();
+      const subscriberId = findData.data?.[0]?.id;
+      if (!subscriberId) {
+        return res.status(404).json({ error: 'Subscriber not found for this phone number' });
+      }
+      return res.status(200).json({ success: true, subscriberId, found: true });
+    } catch (error) {
+      console.error('❌ find-user-by-phone error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
+
   // Handle create user action
   if (action === 'create-user') {
     if (!first_name || !whatsapp_phone || !apiKey) {
@@ -149,12 +197,13 @@ export default async function handler(req, res) {
 
       const customFieldsData = JSON.parse(customFieldsText);
       console.log('📋 Custom fields data:', customFieldsData);
-      const phoneField = customFieldsData.data?.find(field => field.name === 'phone');
+      const dataFields = customFieldsData.data || [];
+      const phoneField = dataFields.find(f => f.name === 'phone') || dataFields.find(f => f.name === 'whatsapp_phone');
       console.log('📞 Phone field found:', phoneField);
       debug.steps.push({ step: 2, phoneField });
       
       if (!phoneField || !phoneField.id) {
-        throw new Error('Phone field not found in custom fields');
+        throw new Error('Phone field not found in custom fields (tried "phone" and "whatsapp_phone")');
       }
 
       // Step 3: Find subscriber by phone using the phone field ID

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { listOffers, fetchOffer } from '../lib/kajabiApi';
+import { LOCK_IN_OFFER_DB_ID, PAYOFF_OFFER_DB_ID } from '../lib/specialOffers';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth';
 import { Plus, Edit, Trash2, Check, X } from 'lucide-react';
@@ -12,6 +14,10 @@ export default function OffersPage() {
   const [editingOffer, setEditingOffer] = useState(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedKajabiId, setSelectedKajabiId] = useState(null);
+  const [kajabiOffers, setKajabiOffers] = useState([]);
+  const [kajabiOffersLoading, setKajabiOffersLoading] = useState(false);
+  const [kajabiOfferSearch, setKajabiOfferSearch] = useState('');
+  const [kajabiOfferDropdownOpen, setKajabiOfferDropdownOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -19,6 +25,7 @@ export default function OffersPage() {
     base_commission: '',
     PIF_commission: '',
     kajabi_id: '',
+    checkout_url: '',
     weekly_classes: '',
     active: true
   });
@@ -55,9 +62,11 @@ export default function OffersPage() {
         base_commission: offer.base_commission || '',
         PIF_commission: offer.PIF_commission || '',
         kajabi_id: offer.kajabi_id || '',
+        checkout_url: offer.checkout_url || '',
         weekly_classes: offer.weekly_classes || '',
         active: offer.active !== undefined ? offer.active : true
       });
+      setKajabiOfferSearch(offer.kajabi_id || '');
     } else {
       setEditingOffer(null);
       setFormData({
@@ -67,16 +76,21 @@ export default function OffersPage() {
         base_commission: '',
         PIF_commission: '',
         kajabi_id: '',
+        checkout_url: '',
         weekly_classes: '',
         active: true
       });
+      setKajabiOfferSearch('');
     }
+    setKajabiOfferDropdownOpen(false);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingOffer(null);
+    setKajabiOfferSearch('');
+    setKajabiOfferDropdownOpen(false);
     setFormData({
       name: '',
       price: '',
@@ -84,14 +98,59 @@ export default function OffersPage() {
       base_commission: '',
       PIF_commission: '',
       kajabi_id: '',
+      checkout_url: '',
       weekly_classes: '',
       active: true
     });
   };
 
+  // Load Kajabi offers when modal opens
+  useEffect(() => {
+    if (!isModalOpen) return;
+    setKajabiOffersLoading(true);
+    listOffers({ perPage: 100 })
+      .then(({ data }) => setKajabiOffers(data || []))
+      .catch((err) => {
+        console.error('Kajabi offers load error:', err);
+        setKajabiOffers([]);
+      })
+      .finally(() => setKajabiOffersLoading(false));
+  }, [isModalOpen]);
+
+  // Filter Kajabi offers by ID (search by offer id)
+  const kajabiOfferSearchLower = kajabiOfferSearch.trim().toLowerCase();
+  const kajabiOffersFiltered = kajabiOfferSearchLower
+    ? kajabiOffers.filter((o) => String(o.id).toLowerCase().includes(kajabiOfferSearchLower))
+    : kajabiOffers;
+
+  const handleSelectKajabiOffer = (offer) => {
+    setFormData((prev) => ({
+      ...prev,
+      kajabi_id: offer.id,
+      checkout_url: offer.checkout_url || ''
+    }));
+    setKajabiOfferSearch(String(offer.id));
+    setKajabiOfferDropdownOpen(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+    let checkoutUrlForPayload = formData.checkout_url?.trim() || null;
+    if (formData.kajabi_id && formData.kajabi_id.trim() !== '') {
+      const id = String(formData.kajabi_id).trim();
+      const inList = kajabiOffers.some((o) => String(o.id) === id);
+      if (!inList) {
+        const existing = await fetchOffer(id);
+        if (!existing) {
+          alert('Please select a Kajabi offer from the list. The ID must exist in Kajabi.');
+          return;
+        }
+        checkoutUrlForPayload = existing.checkout_url || null;
+      } else {
+        const selected = kajabiOffers.find((o) => String(o.id) === id);
+        if (selected?.checkout_url) checkoutUrlForPayload = selected.checkout_url;
+      }
+    }
     try {
       const payload = {
         name: formData.name.trim(),
@@ -100,6 +159,7 @@ export default function OffersPage() {
         base_commission: formData.base_commission ? parseFloat(formData.base_commission) : null,
         PIF_commission: formData.PIF_commission ? parseFloat(formData.PIF_commission) : null,
         kajabi_id: formData.kajabi_id ? formData.kajabi_id.trim() : null,
+        checkout_url: checkoutUrlForPayload,
         weekly_classes: formData.weekly_classes ? parseInt(formData.weekly_classes) : null,
         active: formData.active
       };
@@ -177,9 +237,14 @@ export default function OffersPage() {
     setSelectedKajabiId(null);
   };
 
-  // Group offers by active status
-  const activeOffers = offers.filter(offer => offer.active === true);
-  const inactiveOffers = offers.filter(offer => offer.active !== true);
+  // Lock-in & Payoff (special offers) in a separate section; rest by active status
+  const specialOfferIds = [LOCK_IN_OFFER_DB_ID, PAYOFF_OFFER_DB_ID];
+  const specialOffers = offers.filter((o) => specialOfferIds.includes(o.id));
+  const lockInOffer = specialOffers.find((o) => o.id === LOCK_IN_OFFER_DB_ID);
+  const payoffOffer = specialOffers.find((o) => o.id === PAYOFF_OFFER_DB_ID);
+  const otherOffers = offers.filter((o) => !specialOfferIds.includes(o.id));
+  const activeOffers = otherOffers.filter((offer) => offer.active === true);
+  const inactiveOffers = otherOffers.filter((offer) => offer.active !== true);
 
   const renderOfferTable = (offersList, title, emptyMessage) => {
     if (offersList.length === 0) {
@@ -252,6 +317,13 @@ export default function OffersPage() {
                   fontWeight: '600',
                   color: '#374151'
                 }}>Kajabi ID</th>
+                <th style={{ 
+                  padding: '12px 16px', 
+                  textAlign: 'left', 
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#374151'
+                }}>Checkout link</th>
                 <th style={{ 
                   padding: '12px 16px', 
                   textAlign: 'left', 
@@ -332,6 +404,25 @@ export default function OffersPage() {
                         }}
                       >
                         {offer.kajabi_id}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
+                    {offer.checkout_url ? (
+                      <a
+                        href={offer.checkout_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: '#3b82f6',
+                          textDecoration: 'none'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.textDecoration = 'underline'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.textDecoration = 'none'; }}
+                      >
+                        Checkout
                       </a>
                     ) : (
                       '-'
@@ -495,6 +586,7 @@ export default function OffersPage() {
           </div>
         ) : (
           <div>
+            {renderOfferTable(specialOffers, '🔒 Lock-in & Payoff', 'Lock-in and Payoff offers not found')}
             {renderOfferTable(activeOffers, '🟢 Active Offers', 'No active offers')}
             {renderOfferTable(inactiveOffers, '⚪ Inactive Offers', 'No inactive offers')}
           </div>
@@ -749,7 +841,7 @@ export default function OffersPage() {
                   />
                 </div>
 
-                <div style={{ marginBottom: '20px' }}>
+                <div style={{ marginBottom: '20px', position: 'relative' }}>
                   <label style={{ 
                     display: 'block', 
                     marginBottom: '8px', 
@@ -757,12 +849,32 @@ export default function OffersPage() {
                     fontWeight: '600',
                     color: '#374151'
                   }}>
-                    Kajabi ID
+                    Kajabi Offer (search by ID)
                   </label>
                   <input
                     type="text"
-                    value={formData.kajabi_id}
-                    onChange={(e) => setFormData({ ...formData, kajabi_id: e.target.value })}
+                    value={kajabiOfferSearch}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setKajabiOfferSearch(v);
+                      if (v.trim() === '') setFormData((prev) => ({ ...prev, kajabi_id: '' }));
+                      setKajabiOfferDropdownOpen(true);
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = '#3b82f6';
+                      setKajabiOfferDropdownOpen(true);
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = '#d1d5db';
+                      setTimeout(() => {
+                        setKajabiOfferDropdownOpen(false);
+                        const validId = kajabiOffers.some((o) => String(o.id) === kajabiOfferSearch.trim());
+                        if (!validId && kajabiOfferSearch.trim() !== '') {
+                          setKajabiOfferSearch(formData.kajabi_id || '');
+                        }
+                      }, 150);
+                    }}
+                    placeholder="Search by offer ID (select from list)"
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -772,13 +884,62 @@ export default function OffersPage() {
                       outline: 'none',
                       boxSizing: 'border-box'
                     }}
-                    onFocus={(e) => {
-                      e.currentTarget.style.borderColor = '#3b82f6';
-                    }}
-                    onBlur={(e) => {
-                      e.currentTarget.style.borderColor = '#d1d5db';
-                    }}
                   />
+                  {kajabiOffersLoading && (
+                    <span style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px', display: 'block' }}>
+                      Loading Kajabi offers...
+                    </span>
+                  )}
+                  {kajabiOfferDropdownOpen && !kajabiOffersLoading && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        top: '100%',
+                        marginTop: '4px',
+                        backgroundColor: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '6px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        maxHeight: '220px',
+                        overflowY: 'auto',
+                        zIndex: 10
+                      }}
+                    >
+                      {kajabiOffersFiltered.length === 0 ? (
+                        <div style={{ padding: '12px 16px', fontSize: '14px', color: '#6b7280' }}>
+                          No offers matching this ID.
+                        </div>
+                      ) : (
+                        kajabiOffersFiltered.map((offer) => (
+                          <button
+                            key={offer.id}
+                            type="button"
+                            onClick={() => handleSelectKajabiOffer(offer)}
+                            style={{
+                              width: '100%',
+                              padding: '10px 16px',
+                              textAlign: 'left',
+                              border: 'none',
+                              backgroundColor: 'transparent',
+                              fontSize: '14px',
+                              color: '#111827',
+                              cursor: 'pointer',
+                              borderBottom: '1px solid #f3f4f6'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f3f4f6'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                          >
+                            <span style={{ fontWeight: '600' }}>{offer.id}</span>
+                            <span style={{ color: '#6b7280', fontSize: '13px', marginLeft: '8px' }}>
+                              {offer.internal_title || 'Untitled'}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>

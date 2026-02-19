@@ -2,14 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchPurchases, fetchCustomer, searchCustomers, fetchOffer } from '../lib/kajabiApi';
 import { supabase } from '../lib/supabaseClient';
+import { getSpecialOfferKajabiIds } from '../lib/specialOffers';
 import { NotesModal } from './components/Modal';
 import { StatusBadge } from './components/LeadItem';
 
 const SEARCH_DEBOUNCE_MS = 400;
 const LINK_SEARCH_DEBOUNCE_MS = 300;
 const MAX_CUSTOMERS_TO_FETCH_PURCHASES = 15;
-const LOCK_IN_OFFER_ID = '2150523894';
-const PAYOFF_OFFER_ID = '2150799973';
 
 /**
  * Standalone Kajabi purchases page – not connected to the rest of the app.
@@ -61,6 +60,7 @@ export default function KajabiPurchasesPage() {
   const [closerNoteInitialPurchaseId, setCloserNoteInitialPurchaseId] = useState(null);
   const [closerNoteInitialPurchaseDisplay, setCloserNoteInitialPurchaseDisplay] = useState(null);
 
+  const [specialOfferIds, setSpecialOfferIds] = useState({ lockInKajabiId: null, payoffKajabiId: null });
   const [activeTab, setActiveTab] = useState('purchases'); // 'purchases' | 'lockins'
   const getCurrentMonthKey = () => {
     const n = new Date();
@@ -241,6 +241,14 @@ export default function KajabiPurchasesPage() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    getSpecialOfferKajabiIds().then((ids) => {
+      if (!cancelled) setSpecialOfferIds(ids);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   // Purchase ids linked via outcome_log outcome = 'lock_in' (count as linked only on lock-ins/payoffs tabs)
   useEffect(() => {
     let cancelled = false;
@@ -363,10 +371,11 @@ export default function KajabiPurchasesPage() {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
-  const lockInPurchases = displayPurchases.filter((p) => String(p.relationships?.offer?.data?.id) === LOCK_IN_OFFER_ID);
-  const payoffPurchases = displayPurchases.filter((p) => String(p.relationships?.offer?.data?.id) === PAYOFF_OFFER_ID);
+  const { lockInKajabiId, payoffKajabiId } = specialOfferIds;
+  const lockInPurchases = lockInKajabiId ? displayPurchases.filter((p) => String(p.relationships?.offer?.data?.id) === String(lockInKajabiId)) : [];
+  const payoffPurchases = payoffKajabiId ? displayPurchases.filter((p) => String(p.relationships?.offer?.data?.id) === String(payoffKajabiId)) : [];
   const mainPurchases = displayPurchases.filter(
-    (p) => String(p.relationships?.offer?.data?.id) !== LOCK_IN_OFFER_ID && String(p.relationships?.offer?.data?.id) !== PAYOFF_OFFER_ID
+    (p) => (!lockInKajabiId || String(p.relationships?.offer?.data?.id) !== String(lockInKajabiId)) && (!payoffKajabiId || String(p.relationships?.offer?.data?.id) !== String(payoffKajabiId))
   );
   const tabPurchases =
     activeTab === 'lockins' ? lockInPurchases : activeTab === 'payoffs' ? payoffPurchases : mainPurchases;

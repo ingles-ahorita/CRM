@@ -522,7 +522,10 @@ export default function CloserStatsDashboard() {
                     <div>Email</div>
                     <div>Purchase Date</div>
                     <div>Offer</div>
-                    <div>Amount</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    Paid
+                      <img src="https://cdn.prod.website-files.com/693317e747432cd054b3bdc6/693318c0a295b7e00335013a_Dark.png" alt="" width={14} height={14} style={{ display: 'block' }} />
+                    </div>
                     <div>Closer</div>
                     <div>Setter</div>
                     <div style={{ textAlign: 'center' }}>Commission</div>

@@ -309,9 +309,9 @@ export const sendToCloserMC = async (leadData) => {
   console.log('Sending payload to ManyChat:', payload);
   
   try {
-    // Step 4 - Try to create user (or find if exists)
+    // Step 4 - Try to create user (API will find by phone if create fails)
     console.log('📤 Creating ManyChat user...');
-    const response = await fetch('/api/manychat', {
+    let response = await fetch('/api/manychat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -323,19 +323,33 @@ export const sendToCloserMC = async (leadData) => {
       })
     });
 
+    let result;
     if (!response.ok) {
-      const error = await response.json();
-      console.error('❌ API Error:', error);
-      throw new Error(error.error || 'Failed to create/find ManyChat user');
+      const errBody = await response.json().catch(() => ({}));
+      console.warn('⚠️ Create failed, trying to find user by phone...', errBody?.error || response.status);
+      // Step 4b - If create failed (e.g. user exists), try find by phone
+      const findResponse = await fetch('/api/manychat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'find-user-by-phone',
+          apiKey: leadData.apiKey,
+          whatsapp_phone: leadData.phone
+        })
+      });
+      if (!findResponse.ok) {
+        const error = await findResponse.json().catch(() => errBody);
+        throw new Error(error.error || 'Failed to create or find ManyChat user');
+      }
+      result = await findResponse.json();
+    } else {
+      result = await response.json();
     }
 
     // Step 5 - Get subscriber ID from response
-    const result = await response.json();
     console.log('📥 Full API Response:', result);
     
-    // Log debug info from server if available (shows all fetch steps)
-    if (result.debug) {
-      console.log('🔍 Server Debug Info (from api/manychat.js):', result.debug);
+    if (result.debug?.steps) {
       result.debug.steps.forEach((step, index) => {
         console.log(`  Step ${step.step || index + 1}:`, step);
       });

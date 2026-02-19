@@ -22,6 +22,7 @@ import UsersPage from './pages/UsersPage';
 import AISetterPage from './pages/AISetterPage';
 import KajabiPurchasesPage from './pages/KajabiPurchasesPage';
 import AllLeadsPage from './pages/AllLeadsPage';
+import CreateCallPage from './pages/CreateCallPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -50,6 +51,7 @@ function AppRoutes() {
       <Route path="/utm-stats" element={<UTMAnalyticsPage/>}/>
       <Route path="/purchases" element={<KajabiPurchasesPage/>}/>
       <Route path="/leads-list" element={<ProtectedRoute><AllLeadsPage /></ProtectedRoute>}/>
+      <Route path="/create-call" element={<ProtectedRoute><CreateCallPage /></ProtectedRoute>}/>
       <Route path="/shifts" element={
         <ProtectedRoute>
           <ShiftsPage />
