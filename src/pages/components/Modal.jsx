@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import * as DateHelpers from '../../utils/dateHelpers';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { findCustomerByEmail, fetchPurchases, fetchPurchase, searchCustomers, fetchCustomer, fetchTransaction } from '../../lib/kajabiApi';
+import { getSpecialOfferKajabiIds } from '../../lib/specialOffers';
 
 export function Modal({ isOpen, onClose, children, className = "" }) {
   if (!isOpen) return null;
@@ -48,13 +49,28 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     const [purchaseSearchPurchasesLoading, setPurchaseSearchPurchasesLoading] = useState(false);
     const [purchaseSearchTransactionAmounts, setPurchaseSearchTransactionAmounts] = useState({});
     const [purchaseSearchModalOpen, setPurchaseSearchModalOpen] = useState(false);
+    const [purchaseSearchForPayoff, setPurchaseSearchForPayoff] = useState(false);
     const [skipAutoDetect, setSkipAutoDetect] = useState(false);
     const [kajabiPurchaseRequiredError, setKajabiPurchaseRequiredError] = useState(null);
     const purchaseSearchTimeoutRef = useRef(null);
+    // PIF (Paid off) and payoff purchase link – payoff section only visible when PIF is checked
+    const [pifChecked, setPifChecked] = useState(false);
+    const [selectedKajabiPayoffId, setSelectedKajabiPayoffId] = useState(null);
+    const [selectedPayoffDisplay, setSelectedPayoffDisplay] = useState(null);
+    const [lockInKajabiId, setLockInKajabiId] = useState(null);
 
     const table = mode === 'closer' ? 'outcome_log' : 'setter_notes';
     const noteId = mode === 'closer' ? lead.closer_note_id : lead.setter_note_id;
   
+  // Fetch Lock-in offer Kajabi ID when modal opens (closer mode) – for filtering purchases when outcome is lock_in
+  useEffect(() => {
+    if (!isOpen || mode !== 'closer') {
+      setLockInKajabiId(null);
+      return;
+    }
+    getSpecialOfferKajabiIds().then(({ lockInKajabiId: id }) => setLockInKajabiId(id ?? null));
+  }, [isOpen, mode]);
+
   // Fetch offers when modal opens (for closer mode)
   useEffect(() => {
     if (!isOpen || mode !== 'closer') {
@@ -125,6 +141,9 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
         setPurchaseSearchCustomers([]);
         setPurchaseSearchModalOpen(false);
         setKajabiPurchaseRequiredError(null);
+        setPifChecked(false);
+        setSelectedKajabiPayoffId(null);
+        setSelectedPayoffDisplay(null);
         return;
       }
 
@@ -158,6 +177,9 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
       setSelectedKajabiPurchaseId(data?.kajabi_purchase_id ?? null);
       setSelectedPurchaseDisplay(null);
       setIsDetectedSale(false);
+      setPifChecked(!!(data?.PIF || data?.pif));
+      setSelectedKajabiPayoffId(data?.kajabi_payoff_id ?? null);
+      setSelectedPayoffDisplay(null);
     };
     fetchNote();
   }, [isOpen, noteId, mode]);
@@ -193,7 +215,11 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
       .then((result) => {
         if (cancelled) return;
         if (result?.data) {
-          setSuggestedPurchases(result.data);
+          let list = result.data;
+          if (outcome === 'lock_in' && lockInKajabiId) {
+            list = list.filter((p) => String(p.relationships?.offer?.data?.id ?? '') === String(lockInKajabiId));
+          }
+          setSuggestedPurchases(list);
           setIsDetectedSale(false);
         } else {
           setSuggestedPurchases([]);
@@ -212,7 +238,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
         if (!cancelled) setSuggestLoading(false);
       });
     return () => { cancelled = true; };
-  }, [isOpen, mode, outcome, lead?.email, selectedKajabiPurchaseId]);
+  }, [isOpen, mode, outcome, lead?.email, selectedKajabiPurchaseId, lockInKajabiId]);
 
   // Fetch customer details for suggested purchases (name, email per customer id)
   useEffect(() => {
@@ -389,9 +415,9 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     }
   }, [isOpen]);
 
-  // Clear Kajabi required error when outcome is not 'yes' or when a purchase is selected
+  // Clear Kajabi required error when outcome is not yes/lock_in or when a purchase is selected
   useEffect(() => {
-    if (outcome !== 'yes' || selectedKajabiPurchaseId) setKajabiPurchaseRequiredError(null);
+    if ((outcome !== 'yes' && outcome !== 'lock_in') || selectedKajabiPurchaseId) setKajabiPurchaseRequiredError(null);
   }, [outcome, selectedKajabiPurchaseId]);
 
   // When opened with initialKajabiPurchaseId (e.g. from Kajabi purchases page), pre-set the linked purchase
@@ -414,9 +440,22 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
 
     const formData = new FormData(e.target);
     const outcomeValue = formData.get('outcome') || '';
-    if (mode === 'closer' && outcomeValue === 'yes' && !selectedKajabiPurchaseId) {
-      setKajabiPurchaseRequiredError('Please link a Kajabi purchase before saving an outcome of Yes.');
+    const pifCheckedSubmit = formData.get('pif') === 'on';
+    if (mode === 'closer' && (outcomeValue === 'yes' || outcomeValue === 'lock_in') && !selectedKajabiPurchaseId) {
+      setKajabiPurchaseRequiredError(outcomeValue === 'lock_in'
+        ? 'Please select the lock-in purchase (must be the Lock-in offer from the offers table).'
+        : 'Please link a Kajabi purchase before saving an outcome of Yes.');
       return;
+    }
+    if (mode === 'closer' && outcomeValue === 'yes' && pifCheckedSubmit) {
+      if (!selectedKajabiPayoffId) {
+        setKajabiPurchaseRequiredError('Paid off is selected. Please link a Kajabi payoff purchase (must be different from the lock-in purchase).');
+        return;
+      }
+      if (selectedKajabiPayoffId === selectedKajabiPurchaseId) {
+        setKajabiPurchaseRequiredError('Payoff purchase must be different from the lock-in Kajabi purchase.');
+        return;
+      }
     }
 
     console.log(noteId);
@@ -531,7 +570,8 @@ const closerPayload = {
   call_id: callId || null,
   PIF: pifChecked,
   paid_second_installment: paidSecondInstallment,
-  kajabi_purchase_id: selectedKajabiPurchaseId || null
+  kajabi_purchase_id: selectedKajabiPurchaseId || null,
+  kajabi_payoff_id: selectedKajabiPayoffId || null
 };
 
 
@@ -582,29 +622,25 @@ if (idToUse) {
     }
 
     // Update purchase status based on outcome (for closer mode only)
-    // Only set purchased=true when outcome is 'yes'
+    // purchased: yes -> true; lock_in / follow_up -> null (TBD); else -> false
     if (mode === 'closer' && notePayload.outcome) {
       let purchasedValue = null;
-      
       if (notePayload.outcome === 'yes') {
         purchasedValue = true;
+      } else if (notePayload.outcome === 'lock_in' || notePayload.outcome === 'follow_up') {
+        purchasedValue = null; // TBD
       } else {
         purchasedValue = false;
       }
-      // For 'lock_in' and 'follow_up', leave purchased as null/unchanged
-      
-      if (purchasedValue !== null) {
-        const { error: purchaseError } = await supabase
-          .from('calls')
-          .update({ 
-            purchased: purchasedValue,
-            purchased_at: purchasedValue ? new Date().toISOString() : null
-          })
-          .eq('id', callId);
-        
-        if (purchaseError) {
-          console.error('Error updating purchase status:', purchaseError);
-        }
+      const { error: purchaseError } = await supabase
+        .from('calls')
+        .update({
+          purchased: purchasedValue,
+          purchased_at: purchasedValue === true ? new Date().toISOString() : null
+        })
+        .eq('id', callId);
+      if (purchaseError) {
+        console.error('Error updating purchase status:', purchaseError);
       }
       lead.purchased = purchasedValue;
     }
@@ -642,9 +678,11 @@ if (idToUse) {
 
     // Update local lead object
     if(mode === 'setter') lead.setter_note_id = data.id;
-    if(mode === 'closer') {
+    if (mode === 'closer') {
       lead.closer_note_id = data.id;
-      lead.purchased = notePayload.outcome === 'yes' ? true : false;
+      if (notePayload.outcome === 'yes') lead.purchased = true;
+      else if (notePayload.outcome === 'lock_in' || notePayload.outcome === 'follow_up') lead.purchased = null;
+      else lead.purchased = false;
     }
     // Link note to call
     const noteIdField = mode === 'closer' ? 'closer_note_id' : 'setter_note_id';
@@ -658,30 +696,25 @@ if (idToUse) {
       return;
     }
 
-    // Update purchase status based on outcome (for closer mode only)
-    // Only set purchased=true when outcome is 'yes'
+    // purchased: yes -> true; lock_in / follow_up -> null (TBD); else -> false
     if (mode === 'closer' && notePayload.outcome) {
       let purchasedValue = null;
-      
       if (notePayload.outcome === 'yes') {
         purchasedValue = true;
+      } else if (notePayload.outcome === 'lock_in' || notePayload.outcome === 'follow_up') {
+        purchasedValue = null; // TBD
       } else {
         purchasedValue = false;
       }
-      // For 'lock_in' and 'follow_up', leave purchased as null/unchanged
-      
-      if (purchasedValue !== null) {
-        const { error: purchaseError } = await supabase
-          .from('calls')
-          .update({ 
-            purchased: purchasedValue,
-            purchased_at: purchasedValue ? new Date().toISOString() : null
-          })
-          .eq('id', callId);
-        
-        if (purchaseError) {
-          console.error('Error updating purchase status:', purchaseError);
-        }
+      const { error: purchaseError } = await supabase
+        .from('calls')
+        .update({
+          purchased: purchasedValue,
+          purchased_at: purchasedValue === true ? new Date().toISOString() : null
+        })
+        .eq('id', callId);
+      if (purchaseError) {
+        console.error('Error updating purchase status:', purchaseError);
       }
     }
 
@@ -1062,10 +1095,11 @@ if (idToUse) {
                   <input 
                     name="pif" 
                     type="checkbox" 
-                    defaultChecked={noteData?.PIF || noteData?.pif || false}
+                    checked={pifChecked}
+                    onChange={(e) => setPifChecked(e.target.checked)}
                     style={{ width: '18px', height: '18px', cursor: 'pointer' }} 
                   />
-                  <label style={labelStyle}>💳 PIF (Pay In Full)</label>
+                  <label style={labelStyle}>💳 Paid off (From multipayment)</label>
                 </div>
 
                 <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1080,6 +1114,52 @@ if (idToUse) {
               </>
             )}
           </>
+        )}
+
+        {/* Kajabi payoff purchase – only when outcome is yes and Paid off (PIF) is checked; must differ from main purchase */}
+        {mode === 'closer' && outcome === 'yes' && pifChecked && (
+          <div style={{ gridColumn: '1 / -1', marginTop: '8px', padding: '12px', backgroundColor: '#fefce8', borderRadius: '8px', border: '1px solid #fef08a' }}>
+            <label style={{ ...labelStyle, display: 'block', marginBottom: '8px' }}>🔗 Kajabi payoff purchase (must be different from main purchase)</label>
+            {selectedKajabiPayoffId ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '14px', color: '#374151' }}>
+                  Linked payoff: #{selectedKajabiPayoffId}
+                  {selectedPayoffDisplay && (
+                    <>
+                      {' · '}
+                      {(selectedPayoffDisplay.name ?? selectedPayoffDisplay.email) ? [selectedPayoffDisplay.name, selectedPayoffDisplay.email].filter(Boolean).join(' · ') : '—'}
+                      {selectedPayoffDisplay.amount_in_cents != null && ` · $${(selectedPayoffDisplay.amount_in_cents / 100).toFixed(2)}`}
+                    </>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setSelectedKajabiPayoffId(null); setSelectedPayoffDisplay(null); }}
+                  style={{ padding: '6px 12px', fontSize: '13px', backgroundColor: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPurchaseSearchQuery('');
+                    setPurchaseSearchCustomers([]);
+                    setPurchaseSearchSelectedCustomerId(null);
+                    setPurchaseSearchPurchases([]);
+                    setPurchaseSearchForPayoff(true);
+                    setPurchaseSearchModalOpen(true);
+                  }}
+                  style={{ padding: '8px 14px', fontSize: '13px', backgroundColor: '#fef08a', color: '#374151', border: '1px solid #eab308', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
+                >
+                  Search for payoff purchase
+                </button>
+                <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '10px' }}>Must be different from the lock-in purchase above.</span>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Purchased Date - Only show when outcome is yes or lock_in */}
@@ -1102,7 +1182,14 @@ if (idToUse) {
         {/* Link outcome to Kajabi purchase (yes / lock_in / refund) - below purchase date */}
         {mode === 'closer' && (outcome === 'yes' || outcome === 'lock_in' || outcome === 'refund') && (
           <div style={{ gridColumn: '1 / -1', marginTop: '8px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <label style={{ ...labelStyle, display: 'block', marginBottom: '8px' }}>🔗 Kajabi purchase</label>
+            <label style={{ ...labelStyle, display: 'block', marginBottom: '8px' }}>
+              {outcome === 'lock_in' ? '🔗 Select the lock-in purchase' : '🔗 Kajabi purchase'}
+            </label>
+            {outcome === 'lock_in' && (
+              <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '0', display: 'block', marginBottom: '8px' }}>
+                Must be a purchase of the Lock-in offer (same offer ID as in the offers table).
+              </span>
+            )}
             {(suggestLoading && !selectedKajabiPurchaseId) || (selectedKajabiPurchaseId && selectedPurchaseDetailsLoading) ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minHeight: '32px' }}>
                 <span className="notes-modal-kajabi-spinner" />
@@ -1185,6 +1272,7 @@ if (idToUse) {
                       setPurchaseSearchCustomers([]);
                       setPurchaseSearchSelectedCustomerId(null);
                       setPurchaseSearchPurchases([]);
+                      setPurchaseSearchForPayoff(false);
                       setPurchaseSearchModalOpen(true);
                     }}
                     style={{ padding: '8px 14px', fontSize: '13px', backgroundColor: '#e5e7eb', color: '#374151', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
@@ -1320,7 +1408,10 @@ if (idToUse) {
       <Modal isOpen={purchaseSearchModalOpen} onClose={() => setPurchaseSearchModalOpen(false)}>
         <div style={{ padding: '20px', minWidth: '400px', maxWidth: '520px' }}>
           <h3 style={{ margin: '0 0 16px 0', fontSize: '18px' }}>Search for a purchase</h3>
-          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>Search by customer name or email, then select a purchase to link.</p>
+          <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
+            Search by customer name or email, then select a purchase to link.
+            {outcome === 'lock_in' && lockInKajabiId && ' Only Lock-in offer purchases (same offer ID as in the offers table) are shown.'}
+          </p>
           <input
             type="text"
             placeholder="Customer name or email…"
@@ -1350,7 +1441,14 @@ if (idToUse) {
             <>
               {purchaseSearchPurchasesLoading ? (
                 <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '8px' }}>Loading purchases…</div>
-              ) : purchaseSearchPurchases.length > 0 ? (
+              ) : (() => {
+                let list = purchaseSearchForPayoff && selectedKajabiPurchaseId
+                  ? purchaseSearchPurchases.filter((p) => String(p.id) !== String(selectedKajabiPurchaseId))
+                  : purchaseSearchPurchases;
+                if (!purchaseSearchForPayoff && outcome === 'lock_in' && lockInKajabiId) {
+                  list = list.filter((p) => String(p.relationships?.offer?.data?.id ?? '') === String(lockInKajabiId));
+                }
+                return list.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <button
                     type="button"
@@ -1359,9 +1457,12 @@ if (idToUse) {
                   >
                     ← Back to customer list
                   </button>
+                  {purchaseSearchForPayoff && selectedKajabiPurchaseId && purchaseSearchPurchases.some((p) => String(p.id) === String(selectedKajabiPurchaseId)) && (
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>Lock-in purchase #{selectedKajabiPurchaseId} hidden (payoff must be different).</span>
+                  )}
                   <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600' }}>Select purchase:</span>
                   <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {purchaseSearchPurchases.map((p) => {
+                    {list.map((p) => {
                       const created = p.attributes?.created_at ? new Date(p.attributes.created_at).toLocaleDateString(undefined, { dateStyle: 'short' }) : '—';
                       const searchCustomer = purchaseSearchCustomers.find((c) => c.id === purchaseSearchSelectedCustomerId);
                       const txAmount = purchaseSearchTransactionAmounts[p.id];
@@ -1372,14 +1473,23 @@ if (idToUse) {
                           <button
                             type="button"
                             onClick={() => {
-                              setSelectedKajabiPurchaseId(p.id);
-                              setSelectedKajabiCustomerId(p.relationships?.customer?.data?.id ?? null);
-                              setSelectedPurchaseDisplay({
-                                name: searchCustomer?.name ?? null,
-                                email: searchCustomer?.email ?? null,
-                                amount_in_cents: txAmount != null ? txAmount : (p.attributes?.amount_in_cents ?? null),
-                              });
-                              setIsDetectedSale(false);
+                              if (purchaseSearchForPayoff) {
+                                setSelectedKajabiPayoffId(p.id);
+                                setSelectedPayoffDisplay({
+                                  name: searchCustomer?.name ?? null,
+                                  email: searchCustomer?.email ?? null,
+                                  amount_in_cents: txAmount != null ? txAmount : (p.attributes?.amount_in_cents ?? null),
+                                });
+                              } else {
+                                setSelectedKajabiPurchaseId(p.id);
+                                setSelectedKajabiCustomerId(p.relationships?.customer?.data?.id ?? null);
+                                setSelectedPurchaseDisplay({
+                                  name: searchCustomer?.name ?? null,
+                                  email: searchCustomer?.email ?? null,
+                                  amount_in_cents: txAmount != null ? txAmount : (p.attributes?.amount_in_cents ?? null),
+                                });
+                                setIsDetectedSale(false);
+                              }
                               setPurchaseSearchModalOpen(false);
                             }}
                             style={{ padding: '4px 10px', fontSize: '12px', backgroundColor: '#001749ff', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
@@ -1392,8 +1502,15 @@ if (idToUse) {
                   </div>
                 </div>
               ) : (
-                <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '8px' }}>No purchases for this customer.</div>
-              )}
+                <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '8px' }}>
+                  {purchaseSearchForPayoff && selectedKajabiPurchaseId && purchaseSearchPurchases.length === 1 && String(purchaseSearchPurchases[0]?.id) === String(selectedKajabiPurchaseId)
+                    ? 'Only the lock-in purchase exists for this customer. Choose another customer for the payoff purchase.'
+                    : !purchaseSearchForPayoff && outcome === 'lock_in' && lockInKajabiId && purchaseSearchPurchases.length > 0
+                      ? 'No Lock-in offer purchases for this customer. Only purchases of the Lock-in offer (from the offers table) can be linked.'
+                      : 'No purchases for this customer.'}
+                </div>
+              );
+              })()}
             </>
           )}
           <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>

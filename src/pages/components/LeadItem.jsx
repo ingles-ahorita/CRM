@@ -284,7 +284,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                   e.currentTarget.style.fontWeight = '400';
                 }}
               >
-                Setter: {setterMap[setter] || 'N/A'}
+                Setter: {lead.source_type === "referral" ? "Referral" : (setterMap[setter] || 'N/A')}
               </span>
             </div>
   )}
@@ -1563,13 +1563,16 @@ export function StatusBadge({ value, label, title, outcomeLog }) {
     if (value === false || value === 'false') {
       return '#ef4444'; // red
     }
-    // Default color (yellow)
+    // Default color (yellow) for null/undefined = TBD
     return '#f59e0b';
   };
 
+  const isPurchasedTBD = label === '$' && (value == null || value === 'null');
+  const displayTitle = isPurchasedTBD ? 'Purchased: TBD' : title;
+
   return (
     <div
-      title={title}
+      title={displayTitle}
       style={{
         width: '24px',
         height: '24px',

@@ -15,9 +15,12 @@ async function getToken() {
     return tokenCache.token;
   }
   const base = typeof window !== 'undefined' ? window.location.origin : '';
-  const res = await fetch(`${base}/api/kajabi-token`);
+  const tokenUrl = `${base}/api/kajabi-token`;
+  console.log('[Kajabi] fetching token', tokenUrl);
+  const res = await fetch(tokenUrl);
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.access_token) {
+    console.error('[Kajabi] token error', res.status, data);
     throw new Error(data?.error || data?.detail || `Token ${res.status}`);
   }
   const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 7200;
@@ -25,12 +28,14 @@ async function getToken() {
     token: data.access_token,
     expiresAt: Date.now() + expiresIn * 1000,
   };
+  console.log('[Kajabi] token received, expires_in', expiresIn);
   return tokenCache.token;
 }
 
 async function kajabiFetch(pathAndQuery) {
   const token = await getToken();
   const url = `${KAJABI_BASE}/${pathAndQuery}`;
+  console.log('[Kajabi] fetch', url);
   return fetch(url, {
     method: 'GET',
     headers: {
@@ -53,13 +58,15 @@ async function parseJsonResponse(res) {
   }
 }
 
-export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_at', customerId } = {}) {
+export async function fetchPurchases({ page = 1, perPage = 25, sort = '-created_at', customerId, createdAtGt, createdAtLt } = {}) {
   const params = new URLSearchParams({
     'page[number]': String(page),
     'page[size]': String(perPage),
     sort,
   });
   if (customerId) params.set('filter[customer_id]', customerId);
+  if (createdAtGt) params.set('filter[created_at_gt]', createdAtGt);
+  if (createdAtLt) params.set('filter[created_at_lt]', createdAtLt);
   params.set('filter[site_id]', KAJABI_SITE_ID);
   const res = await kajabiFetch(`purchases?${params}`);
   if (!res.ok) {
@@ -202,7 +209,7 @@ export async function listOffers({ page = 1, perPage = 50 } = {}) {
   const params = new URLSearchParams({
     'page[number]': String(page),
     'page[size]': String(perPage),
-    'fields[offers]': 'internal_title',
+    'fields[offers]': 'internal_title,checkout_url',
   });
   const res = await kajabiFetch(`offers?${params}`);
   if (!res.ok) {
@@ -213,16 +220,44 @@ export async function listOffers({ page = 1, perPage = 50 } = {}) {
   const data = (json.data || []).map((o) => ({
     id: o.id,
     internal_title: o.attributes?.internal_title ?? null,
+    checkout_url: o.attributes?.checkout_url ?? null,
+  }));
+  return { data, links: json.links || {}, meta: json.meta };
+}
+
+/** Search offers by title (Kajabi filter[title_cont]). Returns { data: [{ id, internal_title }] }. */
+export async function searchOffers({ search = '', page = 1, perPage = 100 } = {}) {
+  const params = new URLSearchParams({
+    'page[number]': String(page),
+    'page[size]': String(perPage),
+    'filter[site_id]': String(KAJABI_SITE_ID)
+  });
+  if (search && String(search).trim()) {
+    params.set('filter[internal_title_cont]', String(search).trim());
+  }
+  const res = await kajabiFetch(`offers?${params}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Kajabi API ${res.status}: ${text}`);
+  }
+  const json = await parseJsonResponse(res);
+  const data = (json.data || []).map((o) => ({
+    id: o.id,
+    title: o.attributes?.internal_title ?? null,
   }));
   return { data, links: json.links || {}, meta: json.meta };
 }
 
 export async function fetchOffer(id) {
   if (!id) return null;
-  const params = new URLSearchParams({ 'fields[offers]': 'internal_title' });
+  const params = new URLSearchParams({ 'fields[offers]': 'internal_title,checkout_url' });
   const res = await kajabiFetch(`offers/${encodeURIComponent(id)}?${params}`);
   if (!res.ok) return null;
   const json = await parseJsonResponse(res);
   const attrs = json.data?.attributes || {};
-  return { id: json.data?.id, internal_title: attrs.internal_title ?? null };
+  return {
+    id: json.data?.id,
+    internal_title: attrs.internal_title ?? null,
+    checkout_url: attrs.checkout_url ?? null,
+  };
 }

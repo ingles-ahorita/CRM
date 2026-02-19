@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { getCountryFromPhone } from '../utils/phoneNumberParser';
@@ -20,9 +20,7 @@ import {
 } from 'recharts';
 import { fetchPurchases as fetchKajabiPurchases, fetchOffer, fetchCustomer as fetchKajabiCustomer, fetchTransaction, listCustomers, listOffers, fetchTransactions } from '../lib/kajabiApi';
 import LinkKajabiCustomerModal from './components/LinkKajabiCustomerModal';
-
-const LOCK_IN_OFFER_ID = '2150523894';
-const PAYOFF_OFFER_ID = '2150799973';
+import { getSpecialOfferKajabiIds } from '../lib/specialOffers';
 
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
 function parseDateAsUTC(dateString) {
@@ -35,9 +33,12 @@ function parseDateAsUTC(dateString) {
 // Mock function - replace with your actual Supabase fetch
 // Dates are normalized to DEFAULT_TIMEZONE for consistent filtering
 async function fetchStatsData(startDate, endDate) {
-  console.log('startDate', startDate);
-  console.log('endDate', endDate);
-  
+  const totalStart = performance.now();
+  const log = (label, start) => {
+    const ms = (performance.now() - start).toFixed(0);
+    console.log(`[generalStats] ${label} took ${ms}ms`);
+  };
+
   // Parse dates as UTC if they don't have timezone indicators (matches SQL date_trunc behavior)
   const startDateObj = parseDateAsUTC(startDate);
   const endDateObj = parseDateAsUTC(endDate);
@@ -67,6 +68,7 @@ async function fetchStatsData(startDate, endDate) {
   }
   
   // Fetch 1: Get calls booked in the date range for main metrics
+  const stepBooked = performance.now();
   const { data: bookedCalls, error: bookedError } = await supabase
     .from('calls')
     .select(`
@@ -87,8 +89,7 @@ async function fetchStatsData(startDate, endDate) {
     `)
     .gte('call_date', startUTC.toISOString())
     .lte('call_date', isNaN(endUTC) ? null : endUTC.toISOString());
-
-    console.log('bookedCalls', bookedCalls.length);
+  log('1. Supabase booked calls', stepBooked);
 
   if (bookedError) {
     console.error('Error fetching booked calls:', bookedError);
@@ -98,7 +99,9 @@ async function fetchStatsData(startDate, endDate) {
   // Fetch 2: Get all purchases from outcome_log in the date range for analysis
   // IMPORTANT: Purchases are filtered by purchase_date from outcome_log, not call_date from calls table
   // Use the same function as purchase log view to ensure consistency
+  const stepPurchases = performance.now();
   const purchasedCalls = await fetchPurchasesForDateRange(startDate, endDate);
+  log('2. fetchPurchasesForDateRange (outcome_log)', stepPurchases);
   
   if (!purchasedCalls) {
     console.error('Error fetching purchased calls');
@@ -106,6 +109,7 @@ async function fetchStatsData(startDate, endDate) {
   }
 
   // Fetch bookings made in period with source breakdown (incl. is_reschedule for chart)
+  const stepBookings = performance.now();
   const { data: bookingsData, error: bookingsError } = await supabase
     .from('calls')
     .select(`
@@ -119,12 +123,14 @@ async function fetchStatsData(startDate, endDate) {
     `)
     .gte('book_date', startUTC.toISOString())
     .lte('book_date', endUTC.toISOString());
+  log('3. Supabase bookings (book_date)', stepBookings);
 
   if (bookingsError) {
     console.error('Error fetching bookings made in period:', bookingsError);
     return null;
   }
 
+  const stepInMemory = performance.now();
   const bookingsMadeinPeriod = bookingsData?.length || 0;
   const totalPickedUpFromBookings = bookingsData?.filter(b => b.picked_up === true).length || 0;
 
@@ -612,6 +618,9 @@ const totalPurchased = purchasedCalls.length;
     medium.conversionRate = medium.totalShowedUp > 0 ? (medium.totalPurchased / medium.totalShowedUp) * 100 : 0;
   });
 
+  log('4. In-memory processing (closer/setter/country/source/medium stats)', stepInMemory);
+  console.log(`[generalStats] TOTAL fetchStatsData took ${(performance.now() - totalStart).toFixed(0)}ms`);
+
   return {
     bookingsMadeinPeriod,
     bookingsBySource,
@@ -863,8 +872,8 @@ async function fetchDailyStats(numDays = 30) {
 // All purchase counts in general stats use this function to ensure consistency
 // Dates are normalized to DEFAULT_TIMEZONE for consistent filtering
 async function fetchPurchasesForDateRange(startDate, endDate) {
-  // console.log('fetchPurchasesForDateRange', startDate, endDate);
-  
+  const t0 = performance.now();
+
   // Parse dates as UTC if they don't have timezone indicators (matches SQL date_trunc behavior)
   const startDateObj = parseDateAsUTC(startDate);
   const endDateObj = parseDateAsUTC(endDate);
@@ -893,6 +902,7 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
     endUTC = DateHelpers.fromZonedTime(endOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
   }
 
+  const tQuery = performance.now();
   let query = supabase
     .from('outcome_log')
     .select(`
@@ -914,14 +924,14 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
     .order('purchase_date', { ascending: false });
 
   const { data: outcomeLogs, error } = await query;
-
-  // console.log('outcomeLogs', outcomeLogs);
+  console.log(`[generalStats] fetchPurchasesForDateRange: outcome_log query took ${(performance.now() - tQuery).toFixed(0)}ms`);
 
   if (error) {
     console.error('Error fetching purchases:', error);
     return [];
   }
 
+  const tTransform = performance.now();
   // First, deduplicate outcome_log entries by call_id BEFORE transforming
   // If multiple outcome_log entries exist for the same call_id, keep only the most recent one
   const outcomeLogsByCallId = new Map();
@@ -957,11 +967,18 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       purchased: true
     }));
 
+  console.log(`[generalStats] fetchPurchasesForDateRange: dedupe+transform took ${(performance.now() - tTransform).toFixed(0)}ms, total took ${(performance.now() - t0).toFixed(0)}ms`);
   return purchases;
 }
 
-// Fetch pure Kajabi purchases for date range (no CRM data). Returns name, email, purchase_date, offer_name, amount.
+// Fetch pure Kajabi purchases for date range (no CRM data). Returns { purchases, lockInKajabiId, payoffKajabiId }.
 async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
+  const totalStart = performance.now();
+  const logStep = (label, start) => console.log(`[generalStats] fetchKajabiPurchasesForDateRange: ${label} took ${(performance.now() - start).toFixed(0)}ms`);
+
+  const { lockInKajabiId, payoffKajabiId } = await getSpecialOfferKajabiIds();
+
+
   const startDateObj = parseDateAsUTC(startDate);
   const endDateObj = parseDateAsUTC(endDate);
   let startUTC, endUTC;
@@ -981,36 +998,41 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
     endUTC = DateHelpers.fromZonedTime(endOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
   }
 
-  const startTs = startUTC.getTime();
-  const endTs = endUTC.getTime();
+  const createdAtGt = startUTC.toISOString();
+  const createdAtLt = new Date(endUTC.getTime() + 1).toISOString();
 
+  const stepPaginate = performance.now();
   const allInRange = [];
   let page = 1;
-  const perPage = 100;
+  const perPage = 200;
   let hasMore = true;
   while (hasMore) {
-    const result = await fetchKajabiPurchases({ page, perPage, sort: '-created_at' });
+    const result = await fetchKajabiPurchases({
+      page,
+      perPage,
+      sort: '-created_at',
+      createdAtGt,
+      createdAtLt,
+    });
     const data = result.data || [];
     if (data.length === 0) break;
-    for (const p of data) {
-      const createdAt = p.attributes?.created_at;
-      if (!createdAt) continue;
-      const ts = new Date(createdAt).getTime();
-      if (ts >= startTs && ts <= endTs) allInRange.push(p);
-    }
-    if (data.length < perPage || (data.length && new Date(data[data.length - 1].attributes?.created_at).getTime() < startTs))
-      hasMore = false;
-    else
-      page++;
+    allInRange.push(...data);
+    hasMore = data.length >= perPage;
+    if (hasMore) page++;
     if (page > 50) break;
   }
+  logStep('Kajabi pagination (pages: ' + page + ')', stepPaginate);
 
-  if (allInRange.length === 0) return [];
+  if (allInRange.length === 0) {
+    console.log(`[generalStats] fetchKajabiPurchasesForDateRange: TOTAL took ${(performance.now() - totalStart).toFixed(0)}ms (no purchases in range)`);
+    return { purchases: [], lockInKajabiId, payoffKajabiId };
+  }
 
   const customerIds = [...new Set(allInRange.map((p) => p.relationships?.customer?.data?.id).filter(Boolean))].map(String);
   const kajabiOfferIds = [...new Set(allInRange.map((p) => p.relationships?.offer?.data?.id).filter(Boolean))];
 
   // 1 list fetch for offers; then fetch individually any we need that weren't in the list.
+  const stepOffers = performance.now();
   const kajabiOfferMap = {};
   const { data: offersList } = await listOffers({ page: 1, perPage: 100 });
   (offersList || []).forEach((o) => {
@@ -1025,10 +1047,12 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
       else kajabiOfferMap[String(id)] = id;
     });
   }
+  logStep('offers', stepOffers);
 
   // 1 list fetch for customers; then fetch individually any we need that weren't in the list.
+  const stepCustomers = performance.now();
   const kajabiCustomerById = {};
-  const { data: customersList } = await listCustomers({ page: 1, perPage: 200, sort: '-created_at' });
+  const { data: customersList } = await listCustomers({ page: 1, perPage: 500, sort: '-created_at' });
   (customersList || []).forEach((c) => {
     if (c?.id) kajabiCustomerById[String(c.id)] = { name: c.name ?? null, email: c.email ?? null, contact_id: c.contact_id ?? null };
   });
@@ -1040,8 +1064,10 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
       if (c) kajabiCustomerById[String(cid)] = { name: c.name ?? null, email: c.email ?? null, contact_id: c.contact_id ?? null };
     });
   }
+  logStep('customers missing ' + missingCustomerIds.length, stepCustomers);
 
   // Amount paid: 1 list fetch for transactions; then fetch individually any we need that weren't in the list.
+  const stepTx = performance.now();
   const purchaseToTxIds = {};
   const allTxIds = new Set();
   for (const p of allInRange) {
@@ -1071,31 +1097,47 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
       if (t) txById[String(id)] = { amount_in_cents: t.amount_in_cents, currency: t.currency || 'USD' };
     });
   }
+  logStep('transactions', stepTx);
   const amountPaidByPurchaseId = {};
   for (const [purchaseId, ids] of Object.entries(purchaseToTxIds)) {
-    let totalCents = 0;
-    let currency = 'USD';
-    for (const id of ids) {
-      const t = txById[id];
-      if (t && t.amount_in_cents != null) {
-        totalCents += t.amount_in_cents;
-        if (t.currency) currency = t.currency;
-      }
-    }
-    amountPaidByPurchaseId[purchaseId] = { amount_in_cents: totalCents, currency };
+    const firstId = ids && ids[0];
+    const t = firstId ? txById[firstId] : null;
+    amountPaidByPurchaseId[purchaseId] = t && t.amount_in_cents != null
+      ? { amount_in_cents: t.amount_in_cents, currency: t.currency || 'USD' }
+      : { amount_in_cents: 0, currency: 'USD' };
   }
 
   // For each purchase: get outcome_log row where kajabi_purchase_id = purchase id (closer, setter, lead from that call).
+  const stepOutcome = performance.now();
   const purchaseIds = allInRange.map((p) => String(p.id));
+  // Override how a purchase is treated (Purchase / Lock-in / Payoff). Table: purchase_treatment_override (kajabi_purchase_id text primary key, treatment text not null, check treatment in ('purchase','lock_in','payoff'))
+  const treatmentOverrideByPurchaseId = {};
+  if (purchaseIds.length > 0) {
+    const { data: overrideRows } = await supabase
+      .from('purchase_treatment_override')
+      .select('kajabi_purchase_id, treatment')
+      .in('kajabi_purchase_id', purchaseIds);
+    if (overrideRows && overrideRows.length) {
+      overrideRows.forEach((r) => {
+        const id = r.kajabi_purchase_id != null ? String(r.kajabi_purchase_id) : null;
+        if (id && ['purchase', 'lock_in', 'payoff'].includes(r.treatment)) {
+          treatmentOverrideByPurchaseId[id] = r.treatment;
+        }
+      });
+    }
+  }
   const outcomeLogByPurchaseId = {};
   if (purchaseIds.length > 0) {
     const { data: outcomeRows } = await supabase
       .from('outcome_log')
-      .select('id, outcome, purchase_date, closer_id, setter_id, call_id, kajabi_purchase_id, closers(id, name), setters(id, name), calls!closer_notes_call_id_fkey(lead_id)')
-      .in('kajabi_purchase_id', purchaseIds);
+      .select('id, outcome, purchase_date, closer_id, setter_id, call_id, kajabi_purchase_id, kajabi_payoff_id, PIF, closers(id, name), setters(id, name), calls!closer_notes_call_id_fkey(lead_id)')
+      .or('kajabi_purchase_id.in.(' + purchaseIds.join(',') + '),kajabi_payoff_id.in.(' + purchaseIds.join(',') + ')');
+    console.log('outcomeRows', outcomeRows);
     if (outcomeRows && outcomeRows.length) {
       outcomeRows.forEach((row) => {
         const pid = row.kajabi_purchase_id != null ? String(row.kajabi_purchase_id) : null;
+        const pid2 = row.kajabi_payoff_id != null ? String(row.kajabi_payoff_id) : null;
+
         if (!pid) return;
         outcomeLogByPurchaseId[pid] = {
           outcome_log_id: row.id,
@@ -1106,13 +1148,19 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
           setter_id: row.setter_id ?? row.setters?.id ?? null,
           setter_name: row.setters?.name ?? '—',
           lead_id: row.calls?.lead_id ?? null,
+          PIF: row.PIF
         };
+
+        if (pid2) outcomeLogByPurchaseId[pid2] = outcomeLogByPurchaseId[pid];
+
       });
     }
   }
+  logStep('outcome_log by purchase_id', stepOutcome);
 
   // Lead id by Kajabi customer_id (from leads table). When customer is linked to a lead but purchase isn't,
   // we still have lead_id so we show the lead link and only "link purchase" is needed (not "link customer").
+  const stepLeads = performance.now();
   const leadIdByCustomerId = {};
   if (customerIds.length > 0) {
     try {
@@ -1130,6 +1178,7 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
       // If leads fetch fails, continue with empty map so purchases still show
     }
   }
+  logStep('leads by customer_id', stepLeads);
 
   const formatAmount = (cents, currency = 'USD') => {
     if (cents == null) return '—';
@@ -1138,7 +1187,7 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
   };
 
   const purchases = allInRange.map((p) => {
-    const customerId = p.relationships?.customer?.data?.id;
+    const customerId = p.relationships?.customer?.data?.id; 
     const kajabiOfferId = p.relationships?.offer?.data?.id;
     const attrs = p.attributes || {};
     const createdAt = attrs.created_at;
@@ -1154,6 +1203,17 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
     const setter_name = outcomeRow ? outcomeRow.setter_name : 'x';
     // From outcome_log when linked; else from leads.customer_id so "customer linked, purchase not linked" shows lead link only
     const lead_id = outcomeRow?.lead_id ?? (customerId ? leadIdByCustomerId[String(customerId)] : null) ?? null;
+    const treatment_override = treatmentOverrideByPurchaseId[String(p.id)] ?? null;
+    let isLinkedToOutcome;
+    if (treatment_override === 'lock_in') {
+      isLinkedToOutcome = true;
+    } else if (treatment_override === 'payoff') {
+      isLinkedToOutcome = outcomeRow?.PIF === true;
+    } else if (treatment_override === 'purchase') {
+      isLinkedToOutcome = outcomeRow?.outcome === 'yes';
+    } else {
+      isLinkedToOutcome = outcomeRow?.outcome === 'yes' || (lockInKajabiId && String(kajabiOfferId) === String(lockInKajabiId)) || (payoffKajabiId && String(kajabiOfferId) === String(payoffKajabiId) && outcomeRow?.PIF === true);
+    }
     return {
       _rowKey: p.id,
       purchase_id: p.id,
@@ -1172,17 +1232,19 @@ async function fetchKajabiPurchasesForDateRange(startDate, endDate) {
       setter_id,
       setter_name,
       lead_id: lead_id ?? null,
-      isLinkedToOutcomeYes: outcomeRow?.outcome === 'yes',
+      treatment_override,
+      isLinkedToOutcome
     };
   });
 
   purchases.sort((a, b) => new Date(b.purchase_date) - new Date(a.purchase_date));
-  return purchases;
+  console.log(`[generalStats] fetchKajabiPurchasesForDateRange: TOTAL took ${(performance.now() - totalStart).toFixed(0)}ms`);
+  return { purchases, lockInKajabiId, payoffKajabiId };
 }
 
 // Pure Kajabi purchase row (no CRM fields). lead_id comes from outcome_log or leads.customer_id;
 // when customer is linked but purchase not linked we show lead link (only link purchase needed).
-function KajabiPurchaseRow({ row, onOpenLinkModal }) {
+function KajabiPurchaseRow({ row, onOpenLinkModal, onContextMenu }) {
   const navigate = useNavigate();
   const nameContent = row.name || '—';
   const emailContent = row.email || '—';
@@ -1261,19 +1323,24 @@ function KajabiPurchaseRow({ row, onOpenLinkModal }) {
   );
   return (
     <div
+      role="row"
       style={{
         display: 'grid',
         gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr',
         gap: '16px',
         alignItems: 'center',
         padding: '12px 16px',
-        backgroundColor: row.isLinkedToOutcomeYes ? 'white' : '#fff7ed',
+        backgroundColor: row.isLinkedToOutcome ? 'white' : '#fff7ed',
         borderBottom: '1px solid #e5e7eb',
         fontSize: '14px',
         transition: 'background-color 0.2s'
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = row.isLinkedToOutcomeYes ? '#f9fafb' : '#ffedd5'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = row.isLinkedToOutcomeYes ? 'white' : '#fff7ed'; }}
+      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = row.isLinkedToOutcome ? '#f9fafb' : '#ffedd5'; }}
+      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = row.isLinkedToOutcome ? 'white' : '#fff7ed'; }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onContextMenu?.(e, row);
+      }}
     >
       <div style={{ fontWeight: '600', color: '#111827', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {nameEl}
@@ -1388,6 +1455,7 @@ export default function StatsDashboard() {
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'ads', 'organic'
   const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
   const [purchases, setPurchases] = useState([]);
+  const [specialOfferIds, setSpecialOfferIds] = useState({ lockInKajabiId: null, payoffKajabiId: null });
   const [purchasesLoading, setPurchasesLoading] = useState(false);
   const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [linkModalCustomer, setLinkModalCustomer] = useState(null);
@@ -1398,6 +1466,7 @@ export default function StatsDashboard() {
   const [purchaseLogCloserFilter, setPurchaseLogCloserFilter] = useState('');
   const [purchaseLogSetterFilter, setPurchaseLogSetterFilter] = useState('');
   const [hideReschedulesInChart, setHideReschedulesInChart] = useState(false);
+  const [purchaseContextMenu, setPurchaseContextMenu] = useState(null); // { x, y, row }
 
   // Generate list of available months (previous 6 months including current)
   const generateAvailableMonths = () => {
@@ -1605,8 +1674,9 @@ export default function StatsDashboard() {
       const loadPurchases = async () => {
         setPurchasesLoading(true);
         try {
-          const purchasesData = await fetchKajabiPurchasesForDateRange(startDate, endDate);
-          setPurchases(purchasesData);
+          const result = await fetchKajabiPurchasesForDateRange(startDate, endDate);
+          setPurchases(result.purchases);
+          setSpecialOfferIds({ lockInKajabiId: result.lockInKajabiId, payoffKajabiId: result.payoffKajabiId });
         } catch (e) {
           console.error('Error loading Kajabi purchases:', e);
           setPurchases([]);
@@ -1616,6 +1686,26 @@ export default function StatsDashboard() {
       loadPurchases();
     }
   }, [viewMode, startDate, endDate, comparisonView]);
+
+  const refetchPurchases = useCallback(async () => {
+    setPurchasesLoading(true);
+    try {
+      const result = await fetchKajabiPurchasesForDateRange(startDate, endDate);
+      setPurchases(result.purchases);
+      setSpecialOfferIds({ lockInKajabiId: result.lockInKajabiId, payoffKajabiId: result.payoffKajabiId });
+    } catch (e) {
+      console.error('Error refetching Kajabi purchases:', e);
+    }
+    setPurchasesLoading(false);
+  }, [startDate, endDate]);
+
+  // Close purchase context menu on outside click
+  useEffect(() => {
+    if (!purchaseContextMenu) return;
+    const close = () => setPurchaseContextMenu(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [purchaseContextMenu]);
 
   // Removed full-page loading - now shows loading indicator in metrics area instead
 
@@ -1874,10 +1964,15 @@ export default function StatsDashboard() {
 
         {/* Purchase Log View - Kajabi only, with Purchases / Lock-ins / Payoffs tabs */}
         {comparisonView === 'none' && viewMode === 'purchases' && (() => {
-          const lockInPurchases = purchases.filter((p) => String(p.offer_id) === LOCK_IN_OFFER_ID);
-          const payoffPurchases = purchases.filter((p) => String(p.offer_id) === PAYOFF_OFFER_ID);
-          const mainPurchases = purchases.filter(
-            (p) => String(p.offer_id) !== LOCK_IN_OFFER_ID && String(p.offer_id) !== PAYOFF_OFFER_ID
+          const { lockInKajabiId, payoffKajabiId } = specialOfferIds;
+          const lockInPurchases = purchases.filter((p) =>
+            p.treatment_override === 'lock_in' || (!p.treatment_override && lockInKajabiId && String(p.offer_id) === String(lockInKajabiId))
+          );
+          const payoffPurchases = purchases.filter((p) =>
+            p.treatment_override === 'payoff' || (!p.treatment_override && payoffKajabiId && String(p.offer_id) === String(payoffKajabiId))
+          );
+          const mainPurchases = purchases.filter((p) =>
+            p.treatment_override === 'purchase' || (!p.treatment_override && (!lockInKajabiId || String(p.offer_id) !== String(lockInKajabiId)) && (!payoffKajabiId || String(p.offer_id) !== String(payoffKajabiId)))
           );
           const tabPurchases = purchaseLogTab === 'lockins' ? lockInPurchases : purchaseLogTab === 'payoffs' ? payoffPurchases : mainPurchases;
           const filteredTabPurchases = tabPurchases.filter(
@@ -1885,7 +1980,25 @@ export default function StatsDashboard() {
               (!purchaseLogCloserFilter || row.closer_name === purchaseLogCloserFilter) &&
               (!purchaseLogSetterFilter || row.setter_name === purchaseLogSetterFilter)
           );
+          const handleTreatmentOverride = async (treatment) => {
+            const row = purchaseContextMenu?.row;
+            if (!row?.purchase_id) return;
+            const id = String(row.purchase_id);
+            try {
+              if (treatment == null) {
+                await supabase.from('purchase_treatment_override').delete().eq('kajabi_purchase_id', id);
+              } else {
+                await supabase.from('purchase_treatment_override').upsert({ kajabi_purchase_id: id, treatment }, { onConflict: 'kajabi_purchase_id' });
+              }
+              await refetchPurchases();
+            } catch (e) {
+              console.error('Failed to save purchase treatment override:', e);
+            }
+            setPurchaseContextMenu(null);
+          };
+
           return (
+            <>
             <div className="bg-white rounded-lg shadow">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Purchase Log (Kajabi)</h2>
@@ -1998,11 +2111,51 @@ export default function StatsDashboard() {
                         setLinkModalCustomer(customer);
                         setLinkModalOpen(true);
                       }}
+                      onContextMenu={(e, r) => setPurchaseContextMenu({ x: e.clientX, y: e.clientY, row: r })}
                     />
                   ))}
                 </div>
               )}
             </div>
+            {purchaseContextMenu && (
+              <div
+                className="bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[180px] z-[9999]"
+                style={{ position: 'fixed', left: purchaseContextMenu.x, top: purchaseContextMenu.y }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => handleTreatmentOverride('purchase')}
+                >
+                  Treat as Purchase
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => handleTreatmentOverride('lock_in')}
+                >
+                  Treat as Lock-in
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  onClick={() => handleTreatmentOverride('payoff')}
+                >
+                  Treat as Payoff
+                </button>
+                {purchaseContextMenu.row?.treatment_override && (
+                  <button
+                    type="button"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 border-t border-gray-100"
+                    onClick={() => handleTreatmentOverride(null)}
+                  >
+                    Clear override
+                  </button>
+                )}
+              </div>
+            )}
+          </>
           );
         })()}
 
@@ -2692,8 +2845,9 @@ export default function StatsDashboard() {
         onLinked={async () => {
           setPurchasesLoading(true);
           try {
-            const purchasesData = await fetchKajabiPurchasesForDateRange(startDate, endDate);
-            setPurchases(purchasesData);
+            const result = await fetchKajabiPurchasesForDateRange(startDate, endDate);
+            setPurchases(result.purchases);
+            setSpecialOfferIds({ lockInKajabiId: result.lockInKajabiId, payoffKajabiId: result.payoffKajabiId });
           } catch (e) {
             console.error('Error refetching Kajabi purchases:', e);
           }
