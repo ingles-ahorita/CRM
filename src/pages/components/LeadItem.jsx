@@ -131,6 +131,104 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     name,
   }));
 
+  const updateStatus = async (id, field, value, setterF, mcID, leadData) => {
+    console.log('[LeadItem] updateStatus:', field, '→', value, 'call id:', id);
+    setterF(value);
+
+    try {
+      let formattedValue = value;
+      if (['picked_up', 'confirmed', 'showed_up', 'purchased'].includes(field)) {
+        if (value === 'true' || value === true) {
+          formattedValue = true;
+        } else if (value === 'false' || value === false) {
+          formattedValue = false;
+        } else if (value === 'null' || value === null || value === '') {
+          formattedValue = null;
+        }
+      } else if (field === 'setter_id') {
+        formattedValue = value ? value : null;
+      }
+
+      const { error } = await supabase.from('calls').update({ [field]: formattedValue }).eq('id', id);
+      if (error) console.error('[LeadItem] Supabase update error:', error);
+
+      try {
+        await ManychatService.updateManychatField(mcID, field, formattedValue);
+      } catch (mcErr) {
+        console.error('[LeadItem] ManyChat field update error:', mcErr);
+      }
+
+      if (field === 'confirmed' && formattedValue === true) {
+        console.log('[LeadItem] Confirmed=yes: sending to closer, leadData:', leadData?.name ?? leadData?.id ?? 'no leadData');
+        try {
+          await sendToCloserMC({
+            id: id,
+            name: leadData?.name,
+            phone: leadData?.phone,
+            apiKey: leadData?.closers?.mc_api_key,
+            fieldsToSet: [
+              { name: 'SETTER', value: leadData?.setters?.name },
+              { name: 'CLOSER', value: leadData?.closers?.name },
+              { name: 'CALL LINK', value: leadData?.call_link },
+              { name: 'DATE (LEAD TZ)', value: leadData?.call_date && leadData?.timezone
+                ? new Date(leadData.call_date).toLocaleDateString('en-US', {
+                    timeZone: leadData.timezone,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                  })
+                : (leadData?.call_date || '') + ' (Tu fecha local)' },
+              { name: 'CALL TIME (LEAD TZ)',
+                value: leadData?.call_date && leadData?.timezone
+                  ? new Date(leadData.call_date).toLocaleTimeString('en-US', {
+                      timeZone: leadData.timezone,
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                  : (leadData?.call_date || '') + ' (Tu hora local)'
+              },
+              { name: 'call_date', value: leadData?.call_date }
+            ]
+          });
+          console.log('✅ ManyChat user creation triggered for confirmed lead');
+          showToast('Lead confirmed and sent to closer', 'success');
+        } catch (error) {
+          console.error('❌ Error creating ManyChat user:', error);
+          showToast('Lead confirmed but failed to send to ManyChat. See console or function_errors.', 'error');
+          alert('Failed to send lead to closer. Lead is still marked confirmed. Check console or function_errors for details.');
+          try {
+            await supabase.from('function_errors').insert({
+              function_name: 'sendToCloserMC',
+              error_message: error.message || String(error),
+              error_details: JSON.stringify(error.stack || error),
+              source: 'LeadItem.jsx/updateStatus'
+            });
+          } catch (logError) {
+            console.error('❌ Failed to log error to function_errors:', logError);
+          }
+        }
+        try {
+          await fetch('/api/n8n-webhook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'lead_confirmed',
+              calendly_id: leadData?.calendly_id,
+              email: leadData?.email,
+              phone: leadData?.phone
+            })
+          });
+        } catch (webhookError) {
+          console.error('❌ Error sending to N8N webhook:', webhookError);
+        }
+      }
+    } catch (err) {
+      console.error('[LeadItem] updateStatus error:', err);
+      showToast('Error updating status. See console.', 'error');
+      alert('Error updating status: ' + (err?.message || String(err)));
+    }
+  };
+
   return (
     <div
       key={lead.id}
@@ -660,6 +758,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                     }
                   }
 
+                  console.log('pendingConfirmedValue', pendingConfirmedValue);
+
                   // Update confirmed status
                   if (pendingConfirmedValue !== null) {
                     updateStatus(lead.id, 'confirmed', pendingConfirmedValue, setConfirmed, lead.manychat_user_id);
@@ -742,114 +842,15 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   );
 }
 
-  const updateStatus = async (id, field, value, setterF, mcID, leadData) => {
-
-    console.log('Updating', field, 'to', value, 'for lead ID:', id);
-    setterF(value); // Update local state immediately for responsiveness
-
-    let formattedValue = value;
-
-    if (['picked_up', 'confirmed', 'showed_up', 'purchased'].includes(field)) {
-      if (value === 'true' || value === true) {
-        formattedValue = true;
-      } else if (value === 'false' || value === false) {
-        formattedValue = false;
-      } else if (value === 'null' || value === null || value === '') {
-        formattedValue = null;
-      }
-    } else if (field === 'setter_id') {
-      formattedValue = value ? value : null;
-    }
-
-    const { error } = await supabase.from('calls').update({ [field]: formattedValue }).eq('id', id);
-
-    const { error: mcError } = await ManychatService.updateManychatField(mcID, field, formattedValue);
-
-    // When confirmed is set to true, create user in ManyChat
-    if (field === 'confirmed' && formattedValue === true) {
-      console.log('Creating ManyChat user for confirmed lead:', leadData);
-      try {
-        await sendToCloserMC({
-          id: id,
-          name: leadData.name,
-          phone: leadData.phone,
-          apiKey: leadData.closers?.mc_api_key,
-          fieldsToSet: [
-            { name: 'SETTER', value: leadData.setters?.name },
-            { name: 'CLOSER', value: leadData.closers?.name },
-            { name: 'CALL LINK', value: leadData.call_link },
-            { name: 'DATE (LEAD TZ)', value: leadData.call_date && leadData.timezone
-              ? new Date(leadData.call_date).toLocaleDateString('en-US', {
-                  timeZone: leadData.timezone,
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit'
-                })
-              : (leadData.call_date || '') + " (Tu fecha local)" },
-            { name: 'CALL TIME (LEAD TZ)', 
-              value: leadData.call_date && leadData.timezone
-                ? new Date(leadData.call_date).toLocaleTimeString('en-US', {
-                    timeZone: leadData.timezone,
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })
-                : (leadData.call_date || '') + " (Tu hora local)"
-            },
-            { name: 'call_date', value: leadData.call_date }
-          ]
-        });
-        console.log('✅ ManyChat user creation triggered for confirmed lead');
-        setTimeout(() => {
-          alert('Lead confirmed and sent to closer');
-        }, 0);
-      } catch (error) {
-        console.error('❌ Error creating ManyChat user:', error);
-        // Log the error in the function_errors table
-        try {
-          await supabase.from('function_errors').insert({
-            function_name: 'sendToCloserMC',
-            error_message: error.message || String(error),
-            error_details: JSON.stringify(error.stack || error),
-            source: 'LeadItem.jsx/updateStatus'
-          });
-        } catch (logError) {
-          console.error('❌ Failed to log error to function_errors:', logError);
-        }
-        // Don't block the update if user creation fails
-      }
-
-
-      // Send to N8N webhook via backend proxy
-      try {
-        await fetch('/api/n8n-webhook', {
-          method: 'POST',
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event: 'lead_confirmed',
-            calendly_id: leadData.calendly_id,
-            email: leadData.email,
-            phone: leadData.phone
-          })
-        });
-      } catch (webhookError) {
-        console.error('❌ Error sending to N8N webhook:', webhookError);
-        // Don't block the update if webhook fails
-      }
-
-  }}
-
-
   const StatusDropdown = ({ value, onChange, label, disabled = false, onClick = null, outcomeLog = null}) => {
 
     // Get background color based on value
     const getBackgroundColor = () => {
-      // Special case: if this is the Purchased dropdown and value is true, check for lock_in
-      if (
-        label === 'Purchased' && 
-        ((Array.isArray(outcomeLog) && outcomeLog.some(ol => ol?.outcome === 'lock_in')) ||
-         (!Array.isArray(outcomeLog) && outcomeLog?.outcome === 'lock_in'))
-      ) {
-        return '#e9d5ff'; // light purple background
+      // Special case: if this is the Purchased dropdown, check for lock_in or follow_up
+      if (label === 'Purchased') {
+        const isLockIn = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'lock_in') : outcomeLog?.outcome === 'lock_in';
+        const isFollowUp = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'follow_up') : outcomeLog?.outcome === 'follow_up';
+        if (isLockIn || isFollowUp) return '#e9d5ff'; // light purple background
       }
       
       if (value === true || value === 'true') return '#cfffc5ff'; // green for true
@@ -1545,15 +1546,11 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
 // Helper component for status badges (exported for use in KajabiPurchasesPage Find call list)
 export function StatusBadge({ value, label, title, outcomeLog }) {
   const getColor = () => {
-    // Only apply lock_in color for label === '$' and lock_in outcome
-    if (
-      label === '$' &&
-      (
-        (Array.isArray(outcomeLog) && outcomeLog.some(ol => ol?.outcome === 'lock_in')) ||
-        (!Array.isArray(outcomeLog) && outcomeLog?.outcome === 'lock_in')
-      )
-    ) {
-      return '#9333ea'; // purple
+    // Purple for label === '$' (Purchased) when outcome is lock_in or follow_up
+    if (label === '$') {
+      const isLockIn = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'lock_in') : outcomeLog?.outcome === 'lock_in';
+      const isFollowUp = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'follow_up') : outcomeLog?.outcome === 'follow_up';
+      if (isLockIn || isFollowUp) return '#9333ea'; // purple
     }
     // fallback: use green for any truthy value, red for falsey value (as before)
     if (value) {
