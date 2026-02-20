@@ -131,7 +131,7 @@
             borderRadius: '6px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>Sourceaaaaa:</span>
+              <span style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>Source:</span>
               <span style={{ 
                 fontSize: '14px', 
                 color: isAds ? '#2563eb' : '#059669',
