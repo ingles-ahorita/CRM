@@ -48,18 +48,18 @@ async function loadHandler(handlerPath, handlerName) {
 }
 
 async function loadHandlers() {
-  manychatHandler = await loadHandler('./api/manychat.js', 'manychat');
-  cancelCalendlyHandler = await loadHandler('./api/cancel-calendly.js', 'cancel-calendly');
-  currentSetterHandler = await loadHandler('./api/current-setter.js', 'current-setter');
-  calendlyWebhookHandler = await loadHandler('./api/calendly-webhook.js', 'calendly-webhook');
-  kajabiWebhookHandler = await loadHandler('./api/kajabi-webhook.js', 'kajabi-webhook');
-  kajabiTokenHandler = await loadHandler('./api/kajabi-token.js', 'kajabi-token');
-  rubenShiftToggleHandler = await loadHandler('./api/ruben-shift-toggle.js', 'ruben-shift-toggle');
-  aiSetterHandler = await loadHandler('./api/ai-setter.js', 'ai-setter');
-  storeFbclidHandler = await loadHandler('./api/store-fbclid.js', 'store-fbclid');
-  metaConversionHandler = await loadHandler('./api/meta-conversion.js', 'meta-conversion');
-  googleAnalyticsHandler = await loadHandler('./api/google-analytics.js', 'google-analytics');
-  academicStatsHandler = await loadHandler('./api/academic-stats.js', 'academic-stats');
+  manychatHandler = await loadHandler('./lib/api-handlers/manychat.js', 'manychat');
+  cancelCalendlyHandler = await loadHandler('./lib/api-handlers/cancel-calendly.js', 'cancel-calendly');
+  currentSetterHandler = await loadHandler('./lib/api-handlers/current-setter.js', 'current-setter');
+  calendlyWebhookHandler = await loadHandler('./lib/api-handlers/calendly-webhook.js', 'calendly-webhook');
+  kajabiWebhookHandler = await loadHandler('./lib/api-handlers/kajabi-webhook.js', 'kajabi-webhook');
+  kajabiTokenHandler = await loadHandler('./lib/api-handlers/kajabi-token.js', 'kajabi-token');
+  rubenShiftToggleHandler = await loadHandler('./lib/api-handlers/ruben-shift-toggle.js', 'ruben-shift-toggle');
+  aiSetterHandler = await loadHandler('./lib/api-handlers/ai-setter.js', 'ai-setter');
+  storeFbclidHandler = await loadHandler('./lib/api-handlers/store-fbclid.js', 'store-fbclid');
+  metaConversionHandler = await loadHandler('./lib/api-handlers/meta-conversion.js', 'meta-conversion');
+  googleAnalyticsHandler = await loadHandler('./lib/api-handlers/google-analytics.js', 'google-analytics');
+  academicStatsHandler = await loadHandler('./lib/api-handlers/academic-stats.js', 'academic-stats');
 }
 
 // Convert Vercel-style handler to Express middleware
