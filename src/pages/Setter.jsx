@@ -2,7 +2,7 @@ import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
   import { useState, useEffect } from 'react';
   import { useParams, useNavigate } from 'react-router-dom';
   import { fetchAll } from '../utils/fetchLeads';
-  import Header from './components/Header';
+  import Header, { HeaderTabsAndToolbar } from './components/Header';
 import { EndShiftModal } from './components/EndShiftModal';
 import { StartShiftModal } from './components/StartShiftModal';
 import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
@@ -138,23 +138,29 @@ import { supabase } from '../lib/supabaseClient';
   state={{...headerState, setterMap: dataState.setterMap}}
   setState={setHeaderState}
   mode='setter'
+  hideTabs
 />
 
-          {dataState.loading && <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
-      </div>}
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
-            {dataState.leads.map((lead) => (
-              <LeadItem key={lead.id} lead={lead} closerMap = {dataState.closerMap} setterMap={dataState.setterMap} mode="setter" currentUserId={setter} calltimeLoading={dataState.calltimeLoading}/>
-            ))}
+          <HeaderTabsAndToolbar state={{ ...headerState, setterMap: dataState.setterMap, closerMap: dataState.closerMap }} setState={setHeaderState} mode="setter" />
 
-            {(dataState.leads.length === 0 && !dataState.loading) && (
-            <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
-              No leads found.
+          {dataState.loading ? (
+            <div style={{ padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
+              <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
+            </div>
+          ) : (
+            <div style={{ marginTop: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
+                {dataState.leads.map((lead) => (
+                  <LeadItem key={lead.id} lead={lead} closerMap={dataState.closerMap} setterMap={dataState.setterMap} mode="setter" currentUserId={setter} calltimeLoading={dataState.calltimeLoading} />
+                ))}
+                {(dataState.leads.length === 0) && (
+                  <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
+                    No leads found.
+                  </div>
+                )}
+              </div>
             </div>
           )}
-          </div>
         </div>
 
         {/* Start Shift Modal */}

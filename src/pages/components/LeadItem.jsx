@@ -382,7 +382,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                   e.currentTarget.style.fontWeight = '400';
                 }}
               >
-                Setter: {lead.source_type === "referral" ? "Referral" : (setterMap[setter] || 'N/A')}
+                Setter: {lead.source_type === "referral" ? "Referral" : (lead.setter_id != null && Object.keys(setterMap).length === 0 ? <span className="lead-item-spinner" /> : (setterMap[setter] || 'N/A'))}
               </span>
             </div>
   )}
@@ -412,7 +412,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                   e.currentTarget.style.fontWeight = '400';
                 }}
               >
-                Closer: {closerMap[lead.closer_id] || 'N/A'}
+                Closer: {lead.closer_id != null && Object.keys(closerMap).length === 0 ? <span className="lead-item-spinner" /> : (closerMap[lead.closer_id] || 'N/A')}
               </span>
             </div> )}
           </div>
@@ -1349,7 +1349,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
           gap: '4px'
         }}
       >
-        {setterMap[lead.setter_id] || 'N/A'}
+        {lead.setter_id != null && Object.keys(setterMap).length === 0 ? <span className="lead-item-spinner" /> : (setterMap[lead.setter_id] || 'N/A')}
         {lead.first_setter_id && lead.setter_id && lead.first_setter_id !== lead.setter_id && (
           <span 
             onClick={(e) => {
@@ -1379,7 +1379,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
           textOverflow: 'ellipsis'
         }}
       >
-        {closerMap[lead.closer_id] || 'N/A'}
+        {lead.closer_id != null && Object.keys(closerMap).length === 0 ? <span className="lead-item-spinner" /> : (closerMap[lead.closer_id] || 'N/A')}
       </div>
 
       {/* Call Date */}

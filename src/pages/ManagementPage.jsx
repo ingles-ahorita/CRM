@@ -12,6 +12,7 @@ export default function ManagementPage() {
   const { userId } = useSimpleAuth();
 
   const [slots, setSlots] = useState({});
+  const [dashboardStats, setDashboardStats] = useState({ avgAttendance: null, loading: true, error: null });
 
   const [dataState, setDataState] = useState({
     leads: [],
@@ -52,6 +53,29 @@ export default function ManagementPage() {
 
   // Enable real-time updates for admin view
   useRealtimeLeads(dataState, setDataState, headerState.activeTab);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchDashboard = async () => {
+      try {
+        const res = await fetch('/api/academic-stats');
+        const data = await res.json();
+        if (!cancelled) {
+          setDashboardStats({
+            avgAttendance: data.avgAttendance ?? null,
+            loading: false,
+            error: data.error || null,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDashboardStats({ avgAttendance: null, loading: false, error: err.message });
+        }
+      }
+    };
+    fetchDashboard();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     console.log('Updating URL with headerState:', headerState);
@@ -116,6 +140,36 @@ export default function ManagementPage() {
         <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
           Management
         </h1>
+
+        {/* Management dashboard - stats from academic app etc. */}
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: '10px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+              padding: '20px',
+              minWidth: '180px',
+              border: '1px solid #e5e7eb',
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+              Avg attendance
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
+              {dashboardStats.loading
+                ? '…'
+                : dashboardStats.error
+                  ? '—'
+                  : dashboardStats.avgAttendance != null
+                    ? `${Number(dashboardStats.avgAttendance).toFixed(1)}%`
+                    : '—'}
+            </div>
+            {dashboardStats.error && (
+              <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>From academic app</div>
+            )}
+          </div>
+        </div>
         
         <Header
           state={{...headerState, setterMap: dataState.setterMap, closerMap: dataState.closerMap}}

@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -58,6 +58,8 @@ async function loadHandlers() {
   aiSetterHandler = await loadHandler('./api/ai-setter.js', 'ai-setter');
   storeFbclidHandler = await loadHandler('./api/store-fbclid.js', 'store-fbclid');
   metaConversionHandler = await loadHandler('./api/meta-conversion.js', 'meta-conversion');
+  googleAnalyticsHandler = await loadHandler('./api/google-analytics.js', 'google-analytics');
+  academicStatsHandler = await loadHandler('./api/academic-stats.js', 'academic-stats');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -155,6 +157,16 @@ app.post('/api/store-fbclid', async (req, res) => {
 app.post('/api/meta-conversion', async (req, res) => {
   if (!metaConversionHandler) await loadHandlers();
   return adaptVercelHandler(metaConversionHandler)(req, res);
+});
+
+app.get('/api/google-analytics', async (req, res) => {
+  if (!googleAnalyticsHandler) await loadHandlers();
+  return adaptVercelHandler(googleAnalyticsHandler)(req, res);
+});
+
+app.get('/api/academic-stats', async (req, res) => {
+  if (!academicStatsHandler) await loadHandlers();
+  return adaptVercelHandler(academicStatsHandler)(req, res);
 });
 
 // N8N webhook proxy endpoint

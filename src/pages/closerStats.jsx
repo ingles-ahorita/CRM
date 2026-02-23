@@ -6,6 +6,7 @@ import { NotesModal } from './components/Modal';
 import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
 import { fetchPurchases as fetchKajabiPurchases, fetchTransactions as fetchKajabiTransactions } from '../lib/kajabiApi';
+import { LOCK_IN_OFFER_DB_ID, PAYOFF_OFFER_DB_ID } from '../lib/specialOffers';
 
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
 function parseDateAsUTC(dateString) {
@@ -47,6 +48,7 @@ export default function CloserStatsDashboard() {
   const [closerMap, setCloserMap] = useState({});
   const [purchaseAmountMap, setPurchaseAmountMap] = useState({});
   const [purchaseAmountMapLoading, setPurchaseAmountMapLoading] = useState(false);
+  const [purchaseLogTab, setPurchaseLogTab] = useState('purchases'); // 'purchases' | 'lockins' | 'payoffs'
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -486,61 +488,111 @@ export default function CloserStatsDashboard() {
           </>
         ) : viewMode === 'purchases' ? (
           <>
-            {/* Purchases Table */}
+            {/* Purchases Table - CRM (outcome_log) data; filter by offer_id for Lock-ins / Payoffs tabs */}
             <div className="bg-white rounded-lg shadow mb-6">
               <div className="p-4 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">
                   Purchases - {selectedMonth}
                 </h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  {purchases.length} purchase{purchases.length !== 1 ? 's' : ''} found
-                </p>
+                <div className="flex flex-wrap items-center gap-4 mt-3">
+                  <div className="flex gap-1 border-b border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setPurchaseLogTab('purchases')}
+                      className={`px-4 py-2 text-sm font-medium rounded-t border border-b-0 -mb-px ${
+                        purchaseLogTab === 'purchases' ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Purchases
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPurchaseLogTab('lockins')}
+                      className={`px-4 py-2 text-sm font-medium rounded-t border border-b-0 -mb-px ${
+                        purchaseLogTab === 'lockins' ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Lock-ins
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPurchaseLogTab('payoffs')}
+                      className={`px-4 py-2 text-sm font-medium rounded-t border border-b-0 -mb-px ${
+                        purchaseLogTab === 'payoffs' ? 'bg-white border-gray-300 text-gray-900' : 'bg-gray-100 border-transparent text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      Payoffs
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-500">
+                    {(() => {
+                      const main = purchases.filter((p) => { const oid = p.offer_id != null ? String(p.offer_id) : null; return !oid || (oid !== LOCK_IN_OFFER_DB_ID && oid !== PAYOFF_OFFER_DB_ID); }).length;
+                      const lockins = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === LOCK_IN_OFFER_DB_ID).length;
+                      const payoffs = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === PAYOFF_OFFER_DB_ID).length;
+                      const n = purchaseLogTab === 'purchases' ? main : purchaseLogTab === 'lockins' ? lockins : payoffs;
+                      const label = purchaseLogTab === 'lockins' ? 'lock-in' : purchaseLogTab === 'payoffs' ? 'payoff' : 'purchase';
+                      return `${n} ${label}${n !== 1 ? 's' : ''} in this tab`;
+                    })()}
+                  </p>
+                </div>
               </div>
               {purchasesLoading ? (
                 <div className="p-8 text-center text-gray-500">Loading purchases...</div>
-              ) : purchases.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">No purchases found for this month.</div>
-              ) : (
-                <div>
-                  {/* Purchase Log Header - matches general stats + Commission + Notes */}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr',
-                      gap: '16px',
-                      padding: '12px 16px',
-                      backgroundColor: '#f3f4f6',
-                      borderBottom: '2px solid #e5e7eb',
-                      fontSize: '12px',
-                      fontWeight: '600',
-                      color: '#6b7280',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px'
-                    }}
-                  >
-                    <div>Name</div>
-                    <div>Email</div>
-                    <div>Purchase Date</div>
-                    <div>Offer</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Paid
-                      <img src="https://cdn.prod.website-files.com/693317e747432cd054b3bdc6/693318c0a295b7e00335013a_Dark.png" alt="" width={14} height={14} style={{ display: 'block' }} />
-                    </div>
-                    <div>Closer</div>
-                    <div>Setter</div>
-                    <div style={{ textAlign: 'center' }}>Commission</div>
-                    <div style={{ textAlign: 'center' }}>Notes</div>
+              ) : (() => {
+                const lockInPurchases = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === LOCK_IN_OFFER_DB_ID);
+                const payoffPurchases = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === PAYOFF_OFFER_DB_ID);
+                const mainPurchases = purchases.filter((p) => {
+                  const oid = p.offer_id != null ? String(p.offer_id) : null;
+                  return !oid || (oid !== LOCK_IN_OFFER_DB_ID && oid !== PAYOFF_OFFER_DB_ID);
+                });
+                const tabPurchases = purchaseLogTab === 'lockins' ? lockInPurchases : purchaseLogTab === 'payoffs' ? payoffPurchases : mainPurchases;
+                return tabPurchases.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    {purchases.length === 0
+                      ? 'No purchases found for this month.'
+                      : `No ${purchaseLogTab === 'lockins' ? 'lock-ins' : purchaseLogTab === 'payoffs' ? 'payoffs' : 'other purchases'} in this month.`}
                   </div>
-                  {purchases.map(lead => (
-                    <PurchaseItem
-                      key={lead.outcome_log_id ?? lead.id}
-                      lead={lead}
-                      setterMap={setterMap}
-                      amountMap={purchaseAmountMap}
-                    />
-                  ))}
-                </div>
-              )}
+                ) : (
+                  <div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '2fr 2fr 1.5fr 1.5fr 1fr 1.2fr 1.2fr 1fr 0.8fr',
+                        gap: '16px',
+                        padding: '12px 16px',
+                        backgroundColor: '#f3f4f6',
+                        borderBottom: '2px solid #e5e7eb',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        color: '#6b7280',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      <div>Name</div>
+                      <div>Email</div>
+                      <div>Purchase Date</div>
+                      <div>Offer</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      Paid
+                        <img src="https://cdn.prod.website-files.com/693317e747432cd054b3bdc6/693318c0a295b7e00335013a_Dark.png" alt="" width={14} height={14} style={{ display: 'block' }} />
+                      </div>
+                      <div>Closer</div>
+                      <div>Setter</div>
+                      <div style={{ textAlign: 'center' }}>Commission</div>
+                      <div style={{ textAlign: 'center' }}>Notes</div>
+                    </div>
+                    {tabPurchases.map(lead => (
+                      <PurchaseItem
+                        key={lead.outcome_log_id ?? lead.id}
+                        lead={lead}
+                        setterMap={setterMap}
+                        amountMap={purchaseAmountMap}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Refunds Table */}

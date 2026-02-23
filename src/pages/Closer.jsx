@@ -1,9 +1,9 @@
 import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
-
-  import { useState, useEffect } from 'react';
-  import { useParams, useNavigate } from 'react-router-dom';
-  import Header from './components/Header';
-  import { fetchAll } from '../utils/fetchLeads';
+import CloserDashboardCards from './components/CloserDashboardCards';
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import Header, { HeaderTabsAndToolbar } from './components/Header';
+import { fetchAll } from '../utils/fetchLeads';
 import { EndShiftModal } from './components/EndShiftModal';
 import { StartShiftModal } from './components/StartShiftModal';
 import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
@@ -133,48 +133,54 @@ import { useSimpleAuth } from '../useSimpleAuth';
                   state={headerState}
                   setState={setHeaderState}
                   mode='closer'
+                  hideTabs={true}
                 />
 
-                          {dataState.loading && <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
-      </div>}
-          
-      {(headerState.activeTab !== 'all') && (
-        
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
-          {dataState.leads.map((lead) => (
-            <LeadItem
-              key={lead.id}
-              lead={lead}
-              setterMap={dataState.setterMap}
-              closerMap={dataState.closerMap}
-              mode='closer'
-              currentUserId={closer}
-              calltimeLoading={dataState.calltimeLoading}
-            />
-          ))}
+                <CloserDashboardCards closer={closer} />
 
-          {(dataState.leads.length === 0 && !dataState.loading) && (
-            <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
-              No leads found.
+                <HeaderTabsAndToolbar state={{ ...headerState, setterMap: dataState.setterMap, closerMap: dataState.closerMap }} setState={setHeaderState} mode="closer" />
+
+          {dataState.loading ? (
+            <div style={{ padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px' }}>
+              <div style={{ fontSize: '18px', color: '#6b7280' }}>Loading leads...</div>
             </div>
-          )}
-        </div> )}
-
-        {(headerState.activeTab === 'all') && (
-          <div>
-  <LeadListHeader />
-  {dataState.leads.map(lead => (
-    <LeadItemCompact
-      key={lead.id}
-      lead={lead}
-      setterMap={dataState.setterMap}
-      closerMap={dataState.closerMap}
-      calltimeLoading={dataState.calltimeLoading}
-    />
-  ))}
-</div>
-
+          ) : (
+            <div style={{ marginTop: '16px' }}>
+              {(headerState.activeTab !== 'all') && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
+                  {dataState.leads.map((lead) => (
+                    <LeadItem
+                      key={lead.id}
+                      lead={lead}
+                      setterMap={dataState.setterMap}
+                      closerMap={dataState.closerMap}
+                      mode='closer'
+                      currentUserId={closer}
+                      calltimeLoading={dataState.calltimeLoading}
+                    />
+                  ))}
+                  {(dataState.leads.length === 0) && (
+                    <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>
+                      No leads found.
+                    </div>
+                  )}
+                </div>
+              )}
+              {(headerState.activeTab === 'all') && (
+                <div>
+                  <LeadListHeader />
+                  {dataState.leads.map(lead => (
+                    <LeadItemCompact
+                      key={lead.id}
+                      lead={lead}
+                      setterMap={dataState.setterMap}
+                      closerMap={dataState.closerMap}
+                      calltimeLoading={dataState.calltimeLoading}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
 

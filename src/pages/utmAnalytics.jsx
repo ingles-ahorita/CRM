@@ -229,14 +229,14 @@ async function fetchUTMAnalytics(startDate, endDate) {
     .lte('purchase_date', endISO)
     .in('outcome', ['yes', 'refund']);
 
-  const showUpsBySource = {};
-  const showUpsByCampaign = {};
+  // Bookings = all organic calls in period (by source/campaign). Conversion = purchases / bookings.
+  const bookingsBySource = {};
+  const bookingsByCampaign = {};
   callsForStats.forEach(call => {
-    if (call.showed_up !== true) return;
     const src = call.utm_source ?? 'Unknown';
     const camp = call.utm_campaign ?? 'Unknown';
-    showUpsBySource[src] = (showUpsBySource[src] || 0) + 1;
-    showUpsByCampaign[camp] = (showUpsByCampaign[camp] || 0) + 1;
+    bookingsBySource[src] = (bookingsBySource[src] || 0) + 1;
+    bookingsByCampaign[camp] = (bookingsByCampaign[camp] || 0) + 1;
   });
 
   // Dedupe outcome_log by call_id (keep latest), same as generalStats fetchPurchasesForDateRange
@@ -265,29 +265,29 @@ async function fetchUTMAnalytics(startDate, endDate) {
     purchasesByCampaign[camp] = (purchasesByCampaign[camp] || 0) + 1;
   });
 
-  const allSources = new Set([...Object.keys(showUpsBySource), ...Object.keys(purchasesBySource)]);
+  const allSources = new Set([...Object.keys(bookingsBySource), ...Object.keys(purchasesBySource)]);
   const conversionByPlatform = Array.from(allSources).map(name => {
-    const showUps = showUpsBySource[name] || 0;
+    const bookings = bookingsBySource[name] || 0;
     const purchases = purchasesBySource[name] || 0;
     return {
       name: name.length > 18 ? name.slice(0, 16) + '…' : name,
       fullName: name,
-      showUps,
+      bookings,
       purchases,
-      conversionRate: showUps > 0 ? (purchases / showUps) * 100 : 0,
+      conversionRate: bookings > 0 ? (purchases / bookings) * 100 : 0,
     };
   }).sort((a, b) => b.conversionRate - a.conversionRate);
 
-  const allCampaigns = new Set([...Object.keys(showUpsByCampaign), ...Object.keys(purchasesByCampaign)]);
+  const allCampaigns = new Set([...Object.keys(bookingsByCampaign), ...Object.keys(purchasesByCampaign)]);
   const conversionByCampaign = Array.from(allCampaigns).map(name => {
-    const showUps = showUpsByCampaign[name] || 0;
+    const bookings = bookingsByCampaign[name] || 0;
     const purchases = purchasesByCampaign[name] || 0;
     return {
       name: name.length > 18 ? name.slice(0, 16) + '…' : name,
       fullName: name,
-      showUps,
+      bookings,
       purchases,
-      conversionRate: showUps > 0 ? (purchases / showUps) * 100 : 0,
+      conversionRate: bookings > 0 ? (purchases / bookings) * 100 : 0,
     };
   }).sort((a, b) => b.conversionRate - a.conversionRate);
 
@@ -698,7 +698,7 @@ export default function UTMAnalyticsPage() {
             <div className="bg-white rounded-lg shadow p-6 mt-6">
               <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">
-                  Conversion rate (show-ups → purchases)
+                  Conversion rate (bookings → purchases)
                 </h2>
                 <select
                   value={conversionChartMode}
@@ -737,7 +737,7 @@ export default function UTMAnalyticsPage() {
                             return (
                               <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-sm">
                                 <div className="font-medium text-gray-900 mb-1">{d.fullName}</div>
-                                <div className="text-gray-600">Show-ups: {d.showUps}</div>
+                                <div className="text-gray-600">Bookings: {d.bookings}</div>
                                 <div className="text-gray-600">Purchases: {d.purchases}</div>
                                 <div className="text-gray-700 font-medium mt-0.5">Conversion: {d.conversionRate?.toFixed(1)}%</div>
                               </div>

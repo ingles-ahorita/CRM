@@ -16,6 +16,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.18",
     "@deepgram/sdk": "^3.7.0",
+    "@google-analytics/data": "^5.2.1",
     "@supabase/supabase-js": "^2.58.0",
     "ai": "^6.0.48",
     "cors": "^2.8.5",

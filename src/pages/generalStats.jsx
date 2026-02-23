@@ -210,6 +210,9 @@ const totalBooked = filteredCalls.length;
 const totalPickedUp = filteredCalls.filter(c => c.picked_up === true).length;
 const totalShowedUp = filteredCalls.filter(c => c.showed_up === true).length;
 const totalConfirmed = filteredCalls.filter(c => c.confirmed === true).length;
+// DQ (Don't Qualify) = picked up = yes and confirmed = no
+const totalDQ = filteredCalls.filter(c => c.picked_up === true && c.confirmed !== true).length;
+const dqRate = totalPickedUp > 0 ? (totalDQ / totalPickedUp) * 100 : 0;
 
 // Use purchased calls count for total purchases (already filtered by date)
 // Both filteredCalls and purchasedCalls are filtered using UTC-normalized date ranges
@@ -630,6 +633,8 @@ const totalPurchased = purchasedCalls.length;
     totalPickedUpFromBookings,
     totalShowedUp,
     totalConfirmed,
+    totalDQ,
+    dqRate,
     totalPurchased,
     totalRescheduled: filteredCalls.filter(c => c.is_reschedule).length,
     closers: Object.values(closerStats),
@@ -1443,7 +1448,65 @@ export default function StatsDashboard() {
     return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   };
 
+  /** Get start/end dates for a range preset. Returns { start, end } in local format. */
+  const getRangePresetDates = (preset) => {
+    const today = new Date();
+    const endOfToday = new Date(today);
+    endOfToday.setHours(23, 59, 59, 999);
+    if (!preset) return null;
+    if (preset === 'last7') {
+      const start = new Date(today);
+      start.setDate(start.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+    }
+    if (preset === 'last14') {
+      const start = new Date(today);
+      start.setDate(start.getDate() - 13);
+      start.setHours(0, 0, 0, 0);
+      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+    }
+    if (preset === 'last30') {
+      const start = new Date(today);
+      start.setDate(start.getDate() - 29);
+      start.setHours(0, 0, 0, 0);
+      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+    }
+    if (preset === 'last90') {
+      const start = new Date(today);
+      start.setDate(start.getDate() - 89);
+      start.setHours(0, 0, 0, 0);
+      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+    }
+    if (preset === 'currentMonth') {
+      const monthDate = new Date(today.getFullYear(), today.getMonth(), 15);
+      const range = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+      if (range) return { start: range.startDate.toISOString(), end: range.endDate.toISOString() };
+    }
+    if (preset === 'previousMonth') {
+      const prev = new Date(today.getFullYear(), today.getMonth() - 1, 15);
+      const range = DateHelpers.getMonthRangeInTimezone(prev, DateHelpers.DEFAULT_TIMEZONE);
+      if (range) return { start: range.startDate.toISOString(), end: range.endDate.toISOString() };
+    }
+    if (preset === 'thisWeek') {
+      return { start: getStartOfWeek(), end: getTodayLocal() };
+    }
+    if (preset === 'lastWeek') {
+      const monday = new Date(today);
+      const dayOfWeek = monday.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      monday.setDate(monday.getDate() + diff - 7);
+      monday.setHours(0, 0, 0, 0);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      sunday.setHours(23, 59, 59, 999);
+      return { start: formatDateLocal(monday), end: formatDateLocal(sunday) };
+    }
+    return null;
+  };
+
   const [endDate, setEndDate] = useState(initialRange.end);
+  const [rangePreset, setRangePreset] = useState('currentMonth'); // '' = custom
   const [comparisonView, setComparisonView] = useState('none'); // 'none', 'weekly', 'monthly', 'daily'
   const [selectedDays, setSelectedDays] = useState(30); // For daily comparison
   const [weeklyStats, setWeeklyStats] = useState([]);
@@ -1496,7 +1559,7 @@ export default function StatsDashboard() {
       setSelectedMonth(null);
       return;
     }
-    
+    setRangePreset('');
     setSelectedMonth(monthKey);
     
     // Parse month and create date in UTC
@@ -1536,6 +1599,7 @@ export default function StatsDashboard() {
     newEnd.setHours(23, 59, 59, 999);
     
     setSelectedMonth(null); // Clear month selection when navigating weeks
+    setRangePreset('');
     setStartDate(formatDateLocal(currentStart));
     setEndDate(formatDateLocal(newEnd));
   };
@@ -1556,12 +1620,14 @@ export default function StatsDashboard() {
     newEnd.setHours(23, 59, 59, 999);
     
     setSelectedMonth(null); // Clear month selection when navigating weeks
+    setRangePreset('');
     setStartDate(formatDateLocal(currentStart));
     setEndDate(formatDateLocal(newEnd));
   };
 
   const goToCurrentWeek = () => {
-    setSelectedMonth(null); // Clear month selection when resetting to current week
+    setSelectedMonth(null);
+    setRangePreset('thisWeek');
     setStartDate(getStartOfWeek());
     setEndDate(getTodayLocal());
   };
@@ -1710,8 +1776,8 @@ export default function StatsDashboard() {
   // Removed full-page loading - now shows loading indicator in metrics area instead
 
   // Calculate metrics only if we have stats and not in comparison view
-  let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, conversionRateShowedUp = 0, conversionRateBooked = 0;
-  let totalBooked, totalPickedUp, totalPickedUpFromBookings, totalShowedUp, totalConfirmed, totalPurchased, totalRescheduled, totalBookedInPeriod;
+  let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, conversionRateShowedUp = 0, conversionRateBooked = 0, dqRate = 0;
+  let totalBooked, totalPickedUp, totalPickedUpFromBookings, totalShowedUp, totalConfirmed, totalDQ, totalPurchased, totalRescheduled, totalBookedInPeriod;
   
   if (stats && comparisonView === 'none') {
     // Filter by source if not 'all'
@@ -1728,6 +1794,8 @@ export default function StatsDashboard() {
       totalPickedUpFromBookings = filtered.pickedUpFromBookings;
       totalShowedUp = filtered.totalShowedUp;
       totalConfirmed = filtered.totalConfirmed;
+      totalDQ = (filtered.totalPickedUp ?? 0) - (filtered.totalConfirmed ?? 0);
+      dqRate = (filtered.totalPickedUp ?? 0) > 0 ? (totalDQ / filtered.totalPickedUp) * 100 : 0;
       totalPurchased = filtered.totalPurchased;
       totalRescheduled = 0; // Not tracked by source
     } else {
@@ -1742,6 +1810,8 @@ export default function StatsDashboard() {
       totalPickedUpFromBookings = stats.totalPickedUpFromBookings;
       totalShowedUp = stats.totalShowedUp;
       totalConfirmed = stats.totalConfirmed;
+      totalDQ = stats.totalDQ ?? 0;
+      dqRate = stats.dqRate ?? 0;
       totalPurchased = stats.totalPurchased;
       totalRescheduled = stats.totalRescheduled;
     }
@@ -1868,23 +1938,55 @@ export default function StatsDashboard() {
           {/* Date Range Filters - Only show if not in comparison view */}
           {comparisonView === 'none' && (
           <div className="bg-white p-6 rounded-lg shadow mb-6">
-            {/* Month Selector */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Month (Quick Filter)
-              </label>
-              <select
-                value={selectedMonth || ''}
-                onChange={(e) => handleMonthSelect(e.target.value || null)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">-- Select a month --</option>
-                {availableMonths.map((month) => (
-                  <option key={month.value} value={month.value}>
-                    {month.label}
-                  </option>
-                ))}
-              </select>
+            {/* Month selector + Range preset in same row */}
+            <div className="flex gap-4 mb-4 flex-wrap items-end">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Month (Quick Filter)
+                </label>
+                <select
+                  value={selectedMonth || ''}
+                  onChange={(e) => handleMonthSelect(e.target.value || null)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">-- Select a month --</option>
+                  {availableMonths.map((month) => (
+                    <option key={month.value} value={month.value}>
+                      {month.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Quick range
+                </label>
+                <select
+                  value={rangePreset}
+                  onChange={(e) => {
+                    const preset = e.target.value;
+                    setRangePreset(preset);
+                    const range = getRangePresetDates(preset);
+                    if (range) {
+                      setSelectedMonth(null);
+                      setStartDate(range.start);
+                      setEndDate(range.end);
+                      loadStats(range.start, range.end);
+                    }
+                  }}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Custom range</option>
+                  <option value="last7">Last 7 days</option>
+                  <option value="last14">Last 14 days</option>
+                  <option value="last30">Last 30 days</option>
+                  <option value="last90">Last 90 days</option>
+                  <option value="thisWeek">This week (Mon–today)</option>
+                  <option value="lastWeek">Last week</option>
+                  <option value="currentMonth">Current month</option>
+                  <option value="previousMonth">Previous month</option>
+                </select>
+              </div>
             </div>
             
             <div className="flex gap-6 items-end">
@@ -1898,7 +2000,8 @@ export default function StatsDashboard() {
                   onChange={(e) => {
                     const newStartDate = e.target.value + 'T00:00:00';
                     setStartDate(newStartDate);
-                    setSelectedMonth(null); // Clear month selection when manually changing dates
+                    setSelectedMonth(null);
+                    setRangePreset('');
                     loadStats(newStartDate, endDate);
                   }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -1914,7 +2017,8 @@ export default function StatsDashboard() {
                   onChange={(e) => {
                     const newEndDate = e.target.value + 'T23:59:59';
                     setEndDate(newEndDate);
-                    setSelectedMonth(null); // Clear month selection when manually changing dates
+                    setSelectedMonth(null);
+                    setRangePreset('');
                     loadStats(startDate, newEndDate);
                   }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -2337,6 +2441,40 @@ export default function StatsDashboard() {
                   <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalConfirmed}</div>
                   <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalConfirmed}</div>
                   <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalConfirmed}</div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* DQ Rate (Don't Qualify): picked up = yes, confirmed = no */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">DQ Rate</h3>
+              <span className="text-xs text-gray-400">Don't qualify (picked up, not confirmed)</span>
+            </div>
+            <div className="text-3xl font-bold text-amber-600">
+              {(dqRate ?? 0).toFixed(1)}%
+            </div>
+            <div className="text-sm text-gray-500 mt-2">
+              {totalDQ ?? 0} / {totalPickedUp ?? 0} picked up
+            </div>
+            {sourceFilter === 'all' && stats && stats.sourceStats && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.sourceStats.ads?.totalPickedUp > 0
+                      ? (((stats.sourceStats.ads.totalPickedUp - (stats.sourceStats.ads.totalConfirmed ?? 0)) / stats.sourceStats.ads.totalPickedUp) * 100).toFixed(1)
+                      : '0'}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.sourceStats.organic?.totalPickedUp > 0
+                      ? (((stats.sourceStats.organic.totalPickedUp - (stats.sourceStats.organic.totalConfirmed ?? 0)) / stats.sourceStats.organic.totalPickedUp) * 100).toFixed(1)
+                      : '0'}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{(stats.sourceStats.ads?.totalPickedUp ?? 0) - (stats.sourceStats.ads?.totalConfirmed ?? 0)}/{stats.sourceStats.ads?.totalPickedUp ?? 0}</div>
+                  <div>{(stats.sourceStats.organic?.totalPickedUp ?? 0) - (stats.sourceStats.organic?.totalConfirmed ?? 0)}/{stats.sourceStats.organic?.totalPickedUp ?? 0}</div>
                 </div>
               </div>
             )}
