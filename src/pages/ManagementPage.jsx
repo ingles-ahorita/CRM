@@ -8,6 +8,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from 'recharts';
 import {LeadItemCompact, LeadListHeader} from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
@@ -134,7 +135,16 @@ export default function ManagementPage() {
       setChartLoading(true);
       try {
         const res = await fetch('/api/management-series?days=7');
-        const data = await res.json().catch(() => ({}));
+        const raw = await res.text();
+        let data = {};
+        if (raw.trim()) {
+          try {
+            data = JSON.parse(raw);
+          } catch (_) {
+            if (!cancelled) setChartSeries([]);
+            return;
+          }
+        }
         if (!cancelled) {
           setChartSeries(Array.isArray(data.series) ? data.series : []);
         }
@@ -306,8 +316,10 @@ export default function ManagementPage() {
                   }}
                 >
                   <option value="showUpRate">Show up rate (%)</option>
+                  <option value="purchaseRate">Purchase rate (%)</option>
+                  <option value="conversionRate">Conversion rate, closers (%)</option>
                   <option value="bookings">Bookings</option>
-                  <option value="calls">Calls</option>
+                  <option value="calls">Show ups</option>
                 </select>
               </div>
             </div>
@@ -323,16 +335,26 @@ export default function ManagementPage() {
               ) : (
                 <ResponsiveContainer width="100%" height={220}>
                   <LineChart
-                    data={chartSeries.map((d) => ({
-                      ...d,
-                      label: d.date.slice(5),
-                      value: chartMetric === 'showUpRate' ? (d.showUpRate ?? 0) : chartMetric === 'bookings' ? d.bookings : d.calls,
-                      valueOrganic: d.showUpRateOrganic ?? 0,
-                      valueAds: d.showUpRateAds ?? 0,
-                    }))}
+                    data={chartSeries.map((d) => {
+                      const bookings = d.bookings ?? 0;
+                      const purchased = d.totalPurchased ?? 0;
+                      const showed = d.totalShowedUp ?? 0;
+                      const purchaseRate = bookings > 0 ? (purchased / bookings) * 100 : 0;
+                      const conversionRateClosers = showed > 0 ? (purchased / showed) * 100 : 0;
+                      return {
+                        ...d,
+                        label: d.date?.slice(5) ?? d.date,
+                        value: chartMetric === 'showUpRate' ? (d.showUpRate ?? 0) : chartMetric === 'purchaseRate' ? purchaseRate : chartMetric === 'conversionRate' ? conversionRateClosers : chartMetric === 'bookings' ? d.bookings : (d.totalShowedUp ?? 0),
+                        valueOrganic: typeof d.showUpRateOrganic === 'number' ? d.showUpRateOrganic : 0,
+                        valueAds: typeof d.showUpRateAds === 'number' ? d.showUpRateAds : 0,
+                      };
+                    })}
                     margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                    {chartMetric === 'showUpRate' && <ReferenceLine y={55} stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" label={{ value: 'Target 55%', position: 'right', fill: '#22c55e', fontSize: 11 }} />}
+                    {chartMetric === 'purchaseRate' && <ReferenceLine y={10} stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" label={{ value: 'Target 10%', position: 'right', fill: '#22c55e', fontSize: 11 }} />}
+                    {chartMetric === 'conversionRate' && <ReferenceLine y={30} stroke="#22c55e" strokeWidth={2} strokeDasharray="4 4" label={{ value: 'Target 30%', position: 'right', fill: '#22c55e', fontSize: 11 }} />}
                     <XAxis
                       dataKey="label"
                       tick={{ fontSize: 11, fill: '#6b7280' }}
@@ -343,8 +365,8 @@ export default function ManagementPage() {
                       tick={{ fontSize: 11, fill: '#6b7280' }}
                       axisLine={false}
                       tickLine={false}
-                      tickFormatter={chartMetric === 'showUpRate' ? (v) => `${v}%` : (v) => v}
-                      domain={chartMetric === 'showUpRate' ? [0, 100] : [0, 'auto']}
+                      tickFormatter={chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate' ? (v) => `${v}%` : (v) => v}
+                      domain={chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate' ? [0, 100] : [0, 'auto']}
                     />
                     <Tooltip
                       content={({ active, payload }) => {
@@ -352,11 +374,18 @@ export default function ManagementPage() {
                         const raw = payload[0]?.payload;
                         const isBookings = chartMetric === 'bookings';
                         const isShowUpSplit = chartMetric === 'showUpRate' && chartSplitBySource;
+                        const isPurchaseRate = chartMetric === 'purchaseRate';
+                        const isConversionRate = chartMetric === 'conversionRate';
+                        const isShowUps = chartMetric === 'calls';
                         const v = chartMetric === 'showUpRate'
                           ? (raw?.showUpRate != null ? `${Number(raw.showUpRate).toFixed(1)}%` : '—')
-                          : isBookings
-                            ? raw?.bookings
-                            : raw?.calls;
+                          : isPurchaseRate || isConversionRate
+                            ? (raw?.value != null ? `${Number(raw.value).toFixed(1)}%` : '—')
+                            : isBookings
+                              ? raw?.bookings
+                              : isShowUps
+                                ? (raw?.totalShowedUp ?? 0)
+                                : raw?.calls;
                         return (
                           <div style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '10px 14px', fontSize: '13px' }}>
                             <div style={{ color: '#6b7280', marginBottom: '6px' }}>{raw?.date ?? raw?.label}</div>
@@ -373,10 +402,31 @@ export default function ManagementPage() {
                               </>
                             ) : isShowUpSplit ? (
                               <>
-                                <div style={{ color: '#22c55e' }}>Organic: {raw?.showUpRateOrganic != null ? `${Number(raw.showUpRateOrganic).toFixed(1)}%` : '—'}</div>
-                                <div style={{ color: '#3b82f6' }}>Ads: {raw?.showUpRateAds != null ? `${Number(raw.showUpRateAds).toFixed(1)}%` : '—'}</div>
+                                <div style={{ color: '#22c55e' }}>Organic: {raw?.valueOrganic != null ? `${Number(raw.valueOrganic).toFixed(1)}%` : '—'}</div>
+                                <div style={{ color: '#3b82f6' }}>Ads: {raw?.valueAds != null ? `${Number(raw.valueAds).toFixed(1)}%` : '—'}</div>
                                 <div style={{ fontWeight: '600', color: '#111827', marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #e5e7eb' }}>
                                   Total: {v}
+                                </div>
+                              </>
+                            ) : isPurchaseRate ? (
+                              <>
+                                <div style={{ fontWeight: '600', color: '#111827' }}>{v}</div>
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                                  {raw?.totalPurchased ?? 0} / {raw?.bookings ?? 0} booked
+                                </div>
+                              </>
+                            ) : isConversionRate ? (
+                              <>
+                                <div style={{ fontWeight: '600', color: '#111827' }}>{v}</div>
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                                  {raw?.totalPurchased ?? 0} / {raw?.totalShowedUp ?? 0} showed up
+                                </div>
+                              </>
+                            ) : isShowUps ? (
+                              <>
+                                <div style={{ fontWeight: '600', color: '#111827' }}>{v}</div>
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                                  {raw?.totalShowedUp ?? 0} / {raw?.totalConfirmed ?? 0} confirmed
                                 </div>
                               </>
                             ) : (
@@ -388,8 +438,8 @@ export default function ManagementPage() {
                     />
                     {chartMetric === 'showUpRate' && chartSplitBySource ? (
                       <>
-                        <Line type="monotone" dataKey="valueOrganic" name="Organic" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} activeDot={{ r: 6 }} connectNulls={false} />
-                        <Line type="monotone" dataKey="valueAds" name="Ads" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }} connectNulls={false} />
+                        <Line type="monotone" dataKey="valueOrganic" name="Organic" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} activeDot={{ r: 6 }} connectNulls />
+                        <Line type="monotone" dataKey="valueAds" name="Ads" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }} connectNulls />
                         <Legend wrapperStyle={{ fontSize: '11px' }} />
                       </>
                     ) : (
@@ -409,36 +459,69 @@ export default function ManagementPage() {
             </div>
           </div>
 
-          <div
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: '12px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-              padding: '20px',
-              width: '200px',
-              flexShrink: 0,
-              border: '1px solid #e5e7eb',
-            }}
-          >
-            <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-              Yesterday's show up rate
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '200px', flexShrink: 0 }}>
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '20px',
+                border: '1px solid #e5e7eb',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                Yesterday's show up rate
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
+                {chartLoading
+                  ? '…'
+                  : (() => {
+                      const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                      const rate = yesterday?.showUpRate;
+                      return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
+                    })()}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
+                {chartLoading ? '…' : (() => {
+                  const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const showed = yesterday?.totalShowedUp ?? 0;
+                  const confirmed = yesterday?.totalConfirmed ?? 0;
+                  return confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—';
+                })()}
+              </div>
             </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
-              {chartLoading
-                ? '…'
-                : (() => {
-                    const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                    const rate = yesterday?.showUpRate;
-                    return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
-                  })()}
-            </div>
-            <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
-              {chartLoading ? '…' : (() => {
-                const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                const showed = yesterday?.totalShowedUp ?? 0;
-                const confirmed = yesterday?.totalConfirmed ?? 0;
-                return confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—';
-              })()}
+
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '20px',
+                border: '1px solid #e5e7eb',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                Yesterday's conversion rate
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
+                {chartLoading
+                  ? '…'
+                  : (() => {
+                      const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                      const showed = yesterday?.totalShowedUp ?? 0;
+                      const purchased = yesterday?.totalPurchased ?? 0;
+                      const rate = showed > 0 ? (purchased / showed) * 100 : null;
+                      return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
+                    })()}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
+                {chartLoading ? '…' : (() => {
+                  const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const purchased = yesterday?.totalPurchased ?? 0;
+                  const showed = yesterday?.totalShowedUp ?? 0;
+                  return showed > 0 ? `${purchased} / ${showed} showed up` : '—';
+                })()}
+              </div>
             </div>
           </div>
         </div>
