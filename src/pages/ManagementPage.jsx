@@ -81,7 +81,25 @@ export default function ManagementPage() {
     const fetchDashboard = async () => {
       try {
         const res = await fetch('/api/academic-stats');
-        const data = await res.json();
+        const raw = await res.text();
+        let data = {};
+        if (raw.trim()) {
+          try {
+            data = JSON.parse(raw);
+          } catch (_) {
+            if (!cancelled) {
+              setDashboardStats({
+                avgAttendance: null,
+                numberOfClasses: null,
+                numberOfStudents: null,
+                showUpRate: null,
+                loading: false,
+                error: res.ok ? 'Invalid response' : `HTTP ${res.status}`,
+              });
+            }
+            return;
+          }
+        }
         if (!cancelled) {
           setDashboardStats({
             avgAttendance: data.avgAttendance ?? null,
