@@ -21,7 +21,11 @@ async function getToken() {
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.access_token) {
     console.error('[Kajabi] token error', res.status, data);
-    throw new Error(data?.error || data?.detail || `Token ${res.status}`);
+    const msg = data?.error || data?.detail || data?.message;
+    if (res.ok && !data.access_token && (data?.ok || data?.message)) {
+      throw new Error('Kajabi token endpoint returned 200 but no access_token. Check API routing and env (KAJABI_CLIENT_ID, KAJABI_CLIENT_SECRET) on the server.');
+    }
+    throw new Error(msg || `Token ${res.status}`);
   }
   const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 7200;
   tokenCache = {

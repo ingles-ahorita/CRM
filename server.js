@@ -243,6 +243,14 @@ app.post('/api/n8n-webhook', async (req, res) => {
   }
 });
 
+// GET /api or GET /api/ — avoid "route not found" when hitting base
+app.get('/api', (req, res) => {
+  res.json({ ok: true, message: 'API base. Use e.g. /api/academic-stats, /api/test' });
+});
+app.get('/api/', (req, res) => {
+  res.json({ ok: true, message: 'API base. Use e.g. /api/academic-stats, /api/test' });
+});
+
 // Catch-all for unregistered API routes
 app.use('/api/*', (req, res) => {
   console.warn(`⚠️ Unregistered API route: ${req.method} ${req.path}`);

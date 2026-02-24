@@ -35,23 +35,31 @@ const ROUTES = {
 };
 
 function getRouteFromRequest(req) {
+  // 1) Query (Vercel / Next-style catch-all param)
   const segments = req.query?.route ?? req.query?.slug ?? [];
-  let route = Array.isArray(segments) ? segments[0] : segments;
-  if (!route && req.url) {
+  let route = Array.isArray(segments) ? segments[0] : (typeof segments === 'string' ? segments : null);
+  if (route) return route;
+
+  // 2) Path from URL (Vercel often passes full URL or path in req.url)
+  const urlRaw = req.url || req.headers?.['x-url'] || req.headers?.['x-invoke-path'] || req.path;
+  if (urlRaw) {
     try {
-      const pathname = new URL(req.url, 'http://x').pathname;
+      const pathname = urlRaw.startsWith('/') ? urlRaw : new URL(urlRaw, 'http://x').pathname;
       const parts = pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
-      route = parts[0] || null;
+      if (parts[0]) return parts[0];
     } catch (_) {}
   }
-  return route || null;
+  return null;
 }
 
 export default async function handler(req, res) {
   const route = getRouteFromRequest(req);
   const h = route ? ROUTES[route] : null;
   if (!h) {
-    return res.status(404).json({ error: 'Not found', path: route || '/api' });
+    if (!route || route === '') {
+      return res.status(200).json({ ok: true, message: 'API base. Use e.g. /api/academic-stats, /api/test' });
+    }
+    return res.status(404).json({ error: 'Not found', path: route });
   }
   return h(req, res);
 }
