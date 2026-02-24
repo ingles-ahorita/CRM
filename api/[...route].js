@@ -56,38 +56,35 @@ function getRouteFromRequest(req) {
 
 /**
  * Parse body from request. Returns a plain object (or {}).
- * On Vercel the request can be a Web Request (req.body is a stream, use req.json())
- * or Node-style; we never rely on mutating req since Request can be immutable.
+ * Always tries every way to read body so POST works on Vercel even when req.method is missing/wrong.
  */
 async function parseBody(req) {
-  const method = (req.method || '').toUpperCase();
-  const mightHaveBody = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === '';
-
-  // Already a plain object (Express or Vercel Node with body getter)
-  const b = req.body;
-  if (mightHaveBody && b != null && typeof b === 'object' && !(b instanceof Buffer) && typeof b.pipe !== 'function' && typeof b.getReader !== 'function') {
-    return b;
-  }
-
-  // Web API Request: body is a ReadableStream, must use .json()
+  // 1) Web API Request: body is a stream, must use .json() (try first so we get body when method is wrong)
   if (typeof req.json === 'function') {
     try {
-      return await req.json();
+      const parsed = await req.json();
+      return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
       return {};
     }
   }
 
-  // Node IncomingMessage: read stream once
-  if (mightHaveBody && typeof req.on === 'function') {
-    const raw = await new Promise((resolve, reject) => {
-      const chunks = [];
-      req.on('data', (chunk) => chunks.push(chunk));
-      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-      req.on('error', reject);
-    });
+  // 2) Already a plain object (Express or Vercel Node with body getter)
+  const b = req.body;
+  if (b != null && typeof b === 'object' && !(b instanceof Buffer) && typeof b.pipe !== 'function' && typeof b.getReader !== 'function') {
+    return b;
+  }
+
+  // 3) Node IncomingMessage: read stream once (try even when method looks like GET — Vercel can be wrong)
+  if (typeof req.on === 'function') {
     try {
-      return raw ? JSON.parse(raw) : {};
+      const raw = await new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        req.on('error', reject);
+      });
+      return raw && raw.trim() ? JSON.parse(raw) : {};
     } catch {
       return {};
     }
