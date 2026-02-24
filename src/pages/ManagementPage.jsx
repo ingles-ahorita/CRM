@@ -60,14 +60,18 @@ export default function ManagementPage() {
       try {
         const res = await fetch('/api/academic-stats');
         const data = await res.json();
+        console.log('Dashboard stats response:', data);
         if (!cancelled) {
+          console.log('Setting dashboard stats:', data);
           setDashboardStats({
-            avgAttendance: data.avgAttendance ?? null,
+            avgAttendance: data.avgAttendance ?? 5,
             loading: false,
-            error: data.error || null,
+            error: data.error || null
           });
+          console.log('Dashboard stats set:', dashboardStats);
         }
       } catch (err) {
+        console.error('Dashboard stats error:', err);
         if (!cancelled) {
           setDashboardStats({ avgAttendance: null, loading: false, error: err.message });
         }
