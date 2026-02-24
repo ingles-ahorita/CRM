@@ -120,6 +120,18 @@ function buildRequest(originalReq, parsedBody) {
 
 export default async function handler(req, res) {
   const route = getRouteFromRequest(req);
+  console.log('[api/route] incoming', {
+    method: req.method,
+    url: req.url,
+    path: req.path,
+    route,
+    hasJson: typeof req.json === 'function',
+    hasOn: typeof req.on === 'function',
+    bodyType: req.body == null ? null : typeof req.body,
+    bodyKeys: req.body && typeof req.body === 'object' ? Object.keys(req.body) : [],
+    queryKeys: Object.keys(req.query || {}),
+  });
+
   const h = route ? ROUTES[route] : null;
   if (!h) {
     if (!route || route === '') {
@@ -129,6 +141,16 @@ export default async function handler(req, res) {
   }
 
   const parsedBody = await parseBody(req);
+  console.log('[api/route] parsedBody', {
+    keys: Object.keys(parsedBody || {}),
+    hasBody: parsedBody && typeof parsedBody === 'object' && Object.keys(parsedBody).length > 0,
+  });
+
   const normalizedReq = buildRequest(req, parsedBody);
+  console.log('[api/route] normalized', {
+    method: normalizedReq.method,
+    bodyKeys: Object.keys(normalizedReq.body || {}),
+  });
+
   return h(normalizedReq, res);
 }
