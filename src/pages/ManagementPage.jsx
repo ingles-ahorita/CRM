@@ -366,7 +366,7 @@ export default function ManagementPage() {
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate' ? (v) => `${v}%` : (v) => v}
-                      domain={chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate' ? [0, 100] : [0, 'auto']}
+                      domain={chartMetric === 'showUpRate' || chartMetric === 'conversionRate' ? [0, 100] : chartMetric === 'purchaseRate' ? [0, 50] : [0, 'auto']}
                     />
                     <Tooltip
                       content={({ active, payload }) => {
@@ -392,7 +392,7 @@ export default function ManagementPage() {
                             {isBookings ? (
                               <>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                  <div style={{ color: '#22c55e' }}>Organic: {raw?.bookingsOrganic ?? 0}</div>
+                                  <div style={{ color: '#f97316' }}>Organic: {raw?.bookingsOrganic ?? 0}</div>
                                   <div style={{ color: '#3b82f6' }}>Ads: {raw?.bookingsAds ?? 0}</div>
                                   <div style={{ color: '#f59e0b' }}>Rescheduled: {raw?.bookingsRescheduled ?? 0}</div>
                                 </div>
@@ -402,7 +402,7 @@ export default function ManagementPage() {
                               </>
                             ) : isShowUpSplit ? (
                               <>
-                                <div style={{ color: '#22c55e' }}>Organic: {raw?.valueOrganic != null ? `${Number(raw.valueOrganic).toFixed(1)}%` : '—'}</div>
+                                <div style={{ color: '#f97316' }}>Organic: {raw?.valueOrganic != null ? `${Number(raw.valueOrganic).toFixed(1)}%` : '—'}</div>
                                 <div style={{ color: '#3b82f6' }}>Ads: {raw?.valueAds != null ? `${Number(raw.valueAds).toFixed(1)}%` : '—'}</div>
                                 <div style={{ fontWeight: '600', color: '#111827', marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #e5e7eb' }}>
                                   Total: {v}
@@ -438,7 +438,7 @@ export default function ManagementPage() {
                     />
                     {chartMetric === 'showUpRate' && chartSplitBySource ? (
                       <>
-                        <Line type="monotone" dataKey="valueOrganic" name="Organic" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} activeDot={{ r: 6 }} connectNulls />
+                        <Line type="monotone" dataKey="valueOrganic" name="Organic" stroke="#f97316" strokeWidth={2} dot={{ fill: '#f97316', r: 4 }} activeDot={{ r: 6 }} connectNulls />
                         <Line type="monotone" dataKey="valueAds" name="Ads" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }} connectNulls />
                         <Legend wrapperStyle={{ fontSize: '11px' }} />
                       </>
