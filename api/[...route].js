@@ -10,6 +10,7 @@ import currentSetter from '../lib/api-handlers/current-setter.js';
 import googleAnalytics from '../lib/api-handlers/google-analytics.js';
 import kajabiToken from '../lib/api-handlers/kajabi-token.js';
 import kajabiWebhook from '../lib/api-handlers/kajabi-webhook.js';
+import managementSeries from '../lib/api-handlers/management-series.js';
 import manychat from '../lib/api-handlers/manychat.js';
 import metaConversion from '../lib/api-handlers/meta-conversion.js';
 import n8nWebhook from '../lib/api-handlers/n8n-webhook.js';
@@ -26,6 +27,7 @@ const ROUTES = {
   'google-analytics': googleAnalytics,
   'kajabi-token': kajabiToken,
   'kajabi-webhook': kajabiWebhook,
+  'management-series': managementSeries,
   'manychat': manychat,
   'meta-conversion': metaConversion,
   'n8n-webhook': n8nWebhook,
@@ -52,6 +54,59 @@ function getRouteFromRequest(req) {
   return null;
 }
 
+/**
+ * Ensure req.body is a parsed object for JSON POST/PUT/PATCH.
+ * On Vercel, the catch-all receives the request; body may be a stream or unparsed.
+ */
+async function ensureBodyParsed(req) {
+  const method = (req.method || '').toUpperCase();
+  // Parse body for POST/PUT/PATCH, or when method is missing (Vercel catch-all can omit it)
+  if (method !== 'POST' && method !== 'PUT' && method !== 'PATCH' && method !== '') return;
+
+  // Already a plain object (e.g. Express or Vercel already parsed)
+  if (req.body != null && typeof req.body === 'object' && !(req.body instanceof Buffer) && typeof req.body.pipe !== 'function') {
+    return;
+  }
+
+  // Web API Request (e.g. Request with .json())
+  if (typeof req.json === 'function') {
+    try {
+      req.body = await req.json();
+    } catch {
+      req.body = {};
+    }
+    return;
+  }
+
+  // Node IncomingMessage: read stream once and parse JSON
+  if (typeof req.on === 'function') {
+    const raw = await new Promise((resolve, reject) => {
+      const chunks = [];
+      req.on('data', (chunk) => chunks.push(chunk));
+      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+      req.on('error', reject);
+    });
+    try {
+      req.body = raw ? JSON.parse(raw) : {};
+    } catch {
+      req.body = {};
+    }
+  }
+}
+
+/**
+ * Normalize req so sub-handlers always see method. On Vercel catch-all, req.method can be missing.
+ */
+function normalizeReq(originalReq) {
+  let method = originalReq.method;
+  if (!method || typeof method !== 'string') {
+    // Infer POST when body was sent (already parsed by ensureBodyParsed)
+    method = originalReq.body && typeof originalReq.body === 'object' && Object.keys(originalReq.body).length > 0 ? 'POST' : 'GET';
+  }
+  method = method.toUpperCase();
+  return Object.assign({}, originalReq, { method, query: originalReq.query ?? {}, headers: originalReq.headers ?? {} });
+}
+
 export default async function handler(req, res) {
   const route = getRouteFromRequest(req);
   const h = route ? ROUTES[route] : null;
@@ -61,5 +116,8 @@ export default async function handler(req, res) {
     }
     return res.status(404).json({ error: 'Not found', path: route });
   }
-  return h(req, res);
+
+  await ensureBodyParsed(req);
+  const normalizedReq = normalizeReq(req);
+  return h(normalizedReq, res);
 }

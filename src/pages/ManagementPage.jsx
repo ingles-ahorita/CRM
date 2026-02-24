@@ -1,4 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import {LeadItemCompact, LeadListHeader} from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
 import {getDailySlotsTotal} from '../utils/ocuppancy';
@@ -12,7 +22,19 @@ export default function ManagementPage() {
   const { userId } = useSimpleAuth();
 
   const [slots, setSlots] = useState({});
-  const [dashboardStats, setDashboardStats] = useState({ avgAttendance: null, loading: true, error: null });
+  const [dashboardStats, setDashboardStats] = useState({
+    avgAttendance: null,
+    numberOfClasses: null,
+    numberOfStudents: null,
+    showUpRate: null,
+    loading: true,
+    error: null,
+  });
+
+  const [chartSeries, setChartSeries] = useState([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [chartMetric, setChartMetric] = useState('showUpRate');
+  const [chartSplitBySource, setChartSplitBySource] = useState(false);
 
   const [dataState, setDataState] = useState({
     leads: [],
@@ -60,24 +82,51 @@ export default function ManagementPage() {
       try {
         const res = await fetch('/api/academic-stats');
         const data = await res.json();
-        console.log('Dashboard stats response:', data);
         if (!cancelled) {
-          console.log('Setting dashboard stats:', data);
           setDashboardStats({
-            avgAttendance: data.avgAttendance ?? 5,
+            avgAttendance: data.avgAttendance ?? null,
+            numberOfClasses: data.numberOfClasses ?? null,
+            numberOfStudents: data.numberOfStudents ?? null,
+            showUpRate: data.showUpRate ?? null,
             loading: false,
-            error: data.error || null
+            error: data.error || null,
           });
-          console.log('Dashboard stats set:', dashboardStats);
         }
       } catch (err) {
         console.error('Dashboard stats error:', err);
         if (!cancelled) {
-          setDashboardStats({ avgAttendance: null, loading: false, error: err.message });
+          setDashboardStats({
+            avgAttendance: null,
+            numberOfClasses: null,
+            numberOfStudents: null,
+            showUpRate: null,
+            loading: false,
+            error: err.message,
+          });
         }
       }
     };
     fetchDashboard();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchSeries = async () => {
+      setChartLoading(true);
+      try {
+        const res = await fetch('/api/management-series?days=7');
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled) {
+          setChartSeries(Array.isArray(data.series) ? data.series : []);
+        }
+      } catch (err) {
+        if (!cancelled) setChartSeries([]);
+      } finally {
+        if (!cancelled) setChartLoading(false);
+      }
+    };
+    fetchSeries();
     return () => { cancelled = true; };
   }, []);
 
@@ -145,20 +194,21 @@ export default function ManagementPage() {
           Management
         </h1>
 
-        {/* Management dashboard - stats from academic app etc. */}
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
+        {/* Management dashboard - cards + chart; cards fit content height, chart has fixed height */}
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '24px' }}>
           <div
             style={{
               backgroundColor: '#fff',
-              borderRadius: '10px',
+              borderRadius: '12px',
               boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
               padding: '20px',
-              minWidth: '180px',
+              width: '200px',
+              flexShrink: 0,
               border: '1px solid #e5e7eb',
             }}
           >
             <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-              Avg attendance
+              Yesterday's avg attendance
             </div>
             <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
               {dashboardStats.loading
@@ -166,12 +216,212 @@ export default function ManagementPage() {
                 : dashboardStats.error
                   ? '—'
                   : dashboardStats.avgAttendance != null
-                    ? `${Number(dashboardStats.avgAttendance).toFixed(1)}%`
+                    ? `${Number(dashboardStats.avgAttendance).toFixed(2)}`
                     : '—'}
+            </div>
+            <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '13px', color: '#4b5563' }}>
+              <span>
+                <strong>Classes:</strong>{' '}
+                {dashboardStats.loading ? '…' : dashboardStats.numberOfClasses != null ? dashboardStats.numberOfClasses : '—'}
+              </span>
+              <span>
+                <strong>Students:</strong>{' '}
+                {dashboardStats.loading ? '…' : dashboardStats.numberOfStudents != null ? dashboardStats.numberOfStudents : '—'}
+              </span>
             </div>
             {dashboardStats.error && (
               <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>From academic app</div>
             )}
+          </div>
+
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+              border: '1px solid #e5e7eb',
+              padding: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              height: '100%',
+              minHeight: '280px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexShrink: 0, flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Past 7 days
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {chartMetric === 'showUpRate' && (
+                  <button
+                    type="button"
+                    onClick={() => setChartSplitBySource((v) => !v)}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #e5e7eb',
+                      backgroundColor: chartSplitBySource ? '#6366f1' : '#f9fafb',
+                      color: chartSplitBySource ? '#fff' : '#374151',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Split by organic/ads
+                  </button>
+                )}
+                <select
+                  value={chartMetric}
+                  onChange={(e) => setChartMetric(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb',
+                    backgroundColor: '#f9fafb',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    color: '#374151',
+                    cursor: 'pointer',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="showUpRate">Show up rate (%)</option>
+                  <option value="bookings">Bookings</option>
+                  <option value="calls">Calls</option>
+                </select>
+              </div>
+            </div>
+            <div style={{ flex: 1, minHeight: '220px', height: '220px' }}>
+              {chartLoading ? (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+                  Loading…
+                </div>
+              ) : !chartSeries.length ? (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
+                  No data
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart
+                    data={chartSeries.map((d) => ({
+                      ...d,
+                      label: d.date.slice(5),
+                      value: chartMetric === 'showUpRate' ? (d.showUpRate ?? 0) : chartMetric === 'bookings' ? d.bookings : d.calls,
+                      valueOrganic: d.showUpRateOrganic ?? 0,
+                      valueAds: d.showUpRateAds ?? 0,
+                    }))}
+                    margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fontSize: 11, fill: '#6b7280' }}
+                      axisLine={{ stroke: '#e5e7eb' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#6b7280' }}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={chartMetric === 'showUpRate' ? (v) => `${v}%` : (v) => v}
+                      domain={chartMetric === 'showUpRate' ? [0, 100] : [0, 'auto']}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const raw = payload[0]?.payload;
+                        const isBookings = chartMetric === 'bookings';
+                        const isShowUpSplit = chartMetric === 'showUpRate' && chartSplitBySource;
+                        const v = chartMetric === 'showUpRate'
+                          ? (raw?.showUpRate != null ? `${Number(raw.showUpRate).toFixed(1)}%` : '—')
+                          : isBookings
+                            ? raw?.bookings
+                            : raw?.calls;
+                        return (
+                          <div style={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '10px 14px', fontSize: '13px' }}>
+                            <div style={{ color: '#6b7280', marginBottom: '6px' }}>{raw?.date ?? raw?.label}</div>
+                            {isBookings ? (
+                              <>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <div style={{ color: '#22c55e' }}>Organic: {raw?.bookingsOrganic ?? 0}</div>
+                                  <div style={{ color: '#3b82f6' }}>Ads: {raw?.bookingsAds ?? 0}</div>
+                                  <div style={{ color: '#f59e0b' }}>Rescheduled: {raw?.bookingsRescheduled ?? 0}</div>
+                                </div>
+                                <div style={{ fontWeight: '600', color: '#111827', marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #e5e7eb' }}>
+                                  Total: {v}
+                                </div>
+                              </>
+                            ) : isShowUpSplit ? (
+                              <>
+                                <div style={{ color: '#22c55e' }}>Organic: {raw?.showUpRateOrganic != null ? `${Number(raw.showUpRateOrganic).toFixed(1)}%` : '—'}</div>
+                                <div style={{ color: '#3b82f6' }}>Ads: {raw?.showUpRateAds != null ? `${Number(raw.showUpRateAds).toFixed(1)}%` : '—'}</div>
+                                <div style={{ fontWeight: '600', color: '#111827', marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #e5e7eb' }}>
+                                  Total: {v}
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ fontWeight: '600', color: '#111827' }}>{v}</div>
+                            )}
+                          </div>
+                        );
+                      }}
+                    />
+                    {chartMetric === 'showUpRate' && chartSplitBySource ? (
+                      <>
+                        <Line type="monotone" dataKey="valueOrganic" name="Organic" stroke="#22c55e" strokeWidth={2} dot={{ fill: '#22c55e', r: 4 }} activeDot={{ r: 6 }} connectNulls={false} />
+                        <Line type="monotone" dataKey="valueAds" name="Ads" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }} connectNulls={false} />
+                        <Legend wrapperStyle={{ fontSize: '11px' }} />
+                      </>
+                    ) : (
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        dot={{ fill: '#6366f1', strokeWidth: 0, r: 4 }}
+                        activeDot={{ r: 6, fill: '#818cf8', stroke: '#fff', strokeWidth: 2 }}
+                        connectNulls={false}
+                      />
+                    )}
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          <div
+            style={{
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+              padding: '20px',
+              width: '200px',
+              flexShrink: 0,
+              border: '1px solid #e5e7eb',
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+              Yesterday's show up rate
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
+              {chartLoading
+                ? '…'
+                : (() => {
+                    const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                    const rate = yesterday?.showUpRate;
+                    return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
+                  })()}
+            </div>
+            <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
+              {chartLoading ? '…' : (() => {
+                const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                const showed = yesterday?.totalShowedUp ?? 0;
+                const confirmed = yesterday?.totalConfirmed ?? 0;
+                return confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—';
+              })()}
+            </div>
           </div>
         </div>
         
