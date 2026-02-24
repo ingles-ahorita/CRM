@@ -36,6 +36,11 @@ const ROUTES = {
   'zoom-webhook': zoomWebhook,
 };
 
+const POST_ONLY_ROUTES = new Set([
+  'cancel-calendly', 'manychat', 'n8n-webhook', 'calendly-webhook', 'kajabi-webhook',
+  'meta-conversion', 'store-fbclid', 'ai-setter', 'ruben-shift-toggle', 'zoom-webhook',
+]);
+
 function getRouteFromRequest(req) {
   // 1) Query (Vercel / Next-style catch-all param)
   const segments = req.query?.route ?? req.query?.slug ?? [];
@@ -99,10 +104,9 @@ async function parseBody(req) {
  */
 function buildRequest(originalReq, parsedBody) {
   const hasBody = parsedBody && typeof parsedBody === 'object' && Object.keys(parsedBody).length > 0;
-  let method = originalReq.method;
-  if (!method || typeof method !== 'string') {
-    method = hasBody ? 'POST' : 'GET';
-  }
+  // When we have a body, always send POST so handlers work on Vercel even when req.method is wrong (e.g. GET)
+  let method = hasBody ? 'POST' : (originalReq.method || 'GET');
+  if (typeof method !== 'string') method = 'GET';
   method = method.toUpperCase();
 
   return Object.assign({}, originalReq, {
@@ -143,7 +147,15 @@ export default async function handler(req, res) {
     hasBody: parsedBody && typeof parsedBody === 'object' && Object.keys(parsedBody).length > 0,
   });
 
-  const normalizedReq = buildRequest(req, parsedBody);
+  let normalizedReq = buildRequest(req, parsedBody);
+  // Vercel can send wrong method; for POST-only routes with JSON content-type, force POST
+  if (normalizedReq.method !== 'POST' && POST_ONLY_ROUTES.has(route)) {
+    const h = normalizedReq.headers;
+    const ct = (typeof h?.get === 'function' ? h.get('content-type') : (h?.['content-type'] || h?.['Content-Type'] || '')) || '';
+    if (String(ct).toLowerCase().includes('application/json')) {
+      normalizedReq = Object.assign({}, normalizedReq, { method: 'POST' });
+    }
+  }
   console.log('[api/route] normalized', {
     method: normalizedReq.method,
     bodyKeys: Object.keys(normalizedReq.body || {}),

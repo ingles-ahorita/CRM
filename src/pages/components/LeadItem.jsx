@@ -712,7 +712,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                           showToast('Calendly event is already canceled', 'info');
                         }
                       } else {
-                        alert('Could not cancel the Calendly event automatically. Please inform support (Ruben) to cancel this event manually.');
+                        alert('Could not cancel the Calendly event automatically. Please inform support (Ruben) to cancel this event manually. Error: ' + response.text());
                         // Handle HTTP error response
                         let errorMessage = 'Unknown error';
                         try {
