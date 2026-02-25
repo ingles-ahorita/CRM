@@ -15,6 +15,7 @@ export default function CloserDashboardCards({ closer }) {
   const [noShowCalls, setNoShowCalls] = useState([]);
   const [multipayPurchases, setMultipayPurchases] = useState([]);
   const [last5ShowUps, setLast5ShowUps] = useState([]);
+  const [yesterdayShowUpRate, setYesterdayShowUpRate] = useState({ rate: null, showedUp: 0, confirmed: 0 });
 
   const currentMonthKey = (() => {
     const ym = DateHelpers.getYearMonthInTimezone(new Date(), DateHelpers.DEFAULT_TIMEZONE);
@@ -35,7 +36,7 @@ export default function CloserDashboardCards({ closer }) {
     async function load() {
       setLoading(true);
 
-      const [commissionRes, conversionRes, pifRateRes, downsellRateRes, callsRes, last5Res] = await Promise.all([
+      const [commissionRes, conversionRes, pifRateRes, downsellRateRes, callsRes, last5Res, yesterdayRateRes] = await Promise.all([
         loadCurrentMonthCommission(closer, currentMonthKey, startISO, endISO),
         loadCurrentMonthConversionRate(closer, startISO, endISO),
         loadCurrentMonthPifRate(closer, startISO, endISO),
@@ -54,7 +55,8 @@ export default function CloserDashboardCards({ closer }) {
           .eq('showed_up', true)
           .order('call_date', { ascending: false })
           .limit(5)
-          .then((r) => (r.error ? { data: [] } : r))
+          .then((r) => (r.error ? { data: [] } : r)),
+        loadYesterdayShowUpRate(closer)
       ]);
 
       if (cancelled) return;
@@ -62,6 +64,7 @@ export default function CloserDashboardCards({ closer }) {
       setCurrentMonthConversionRate(conversionRes);
       setCurrentMonthPifRate(pifRateRes);
       setCurrentMonthDownsellRate(downsellRateRes);
+      setYesterdayShowUpRate(yesterdayRateRes);
       setNoShowCalls((callsRes.data || []).map((c) => ({ ...c, name: c.leads?.name ?? '—', email: c.leads?.email ?? '—' })));
       setLast5ShowUps((last5Res.data || []).map((c) => {
         const ol = c.outcome_log;
@@ -85,6 +88,27 @@ export default function CloserDashboardCards({ closer }) {
     load();
     return () => { cancelled = true; };
   }, [closer, currentMonthKey]);
+
+  async function loadYesterdayShowUpRate(closerId) {
+    const d = new Date();
+    const yesterday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - 1, 0, 0, 0, 0));
+    const dateStr = yesterday.toISOString().slice(0, 10);
+    const from = `${dateStr}T00:00:00.000Z`;
+    const to = `${dateStr}T23:59:59.999Z`;
+    const { data: calls } = await supabase
+      .from('calls')
+      .select('confirmed, showed_up')
+      .eq('closer_id', closerId)
+      .gte('call_date', from)
+      .lte('call_date', to)
+      .then((r) => (r.error ? { data: [] } : r));
+    const list = calls || [];
+    const isTrue = (v) => v === true || v === 'true';
+    const confirmed = list.filter((c) => isTrue(c.confirmed)).length;
+    const showedUp = list.filter((c) => isTrue(c.showed_up)).length;
+    const rate = confirmed > 0 ? Math.round((showedUp / confirmed) * 1000) / 10 : null;
+    return { rate, showedUp, confirmed };
+  }
 
   async function loadCurrentMonthCommission(closerId, monthKey, startISO, endISO) {
     if (!startISO || !endISO) return 0;
@@ -394,6 +418,16 @@ export default function CloserDashboardCards({ closer }) {
         </div>
       </div>
 
+      <div className="flex flex-col gap-4 self-start">
+        <div className="bg-white rounded-lg shadow p-4">
+          <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Yesterday&apos;s show up rate</h2>
+          <div className="text-2xl font-bold text-gray-900">
+            {loading ? '—' : yesterdayShowUpRate.rate != null ? `${yesterdayShowUpRate.rate}%` : '—'}
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {loading ? '—' : yesterdayShowUpRate.confirmed > 0 ? `${yesterdayShowUpRate.showedUp} / ${yesterdayShowUpRate.confirmed} confirmed` : 'No confirmed calls'}
+          </p>
+        </div>
       <div className="bg-white rounded-lg shadow p-4 self-start">
         <style>{`
           .recent-noshows-scroll::-webkit-scrollbar { width: 5px; }
@@ -426,6 +460,7 @@ export default function CloserDashboardCards({ closer }) {
             ))
           )}
         </ul>
+      </div>
       </div>
 
       <div className="bg-white rounded-lg shadow p-4">

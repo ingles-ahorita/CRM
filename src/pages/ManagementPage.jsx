@@ -36,6 +36,7 @@ export default function ManagementPage() {
   const [chartLoading, setChartLoading] = useState(true);
   const [chartMetric, setChartMetric] = useState('showUpRate');
   const [chartSplitBySource, setChartSplitBySource] = useState(false);
+  const [chartDays, setChartDays] = useState(7);
 
   const [dataState, setDataState] = useState({
     leads: [],
@@ -134,7 +135,7 @@ export default function ManagementPage() {
     const fetchSeries = async () => {
       setChartLoading(true);
       try {
-        const res = await fetch('/api/management-series?days=7');
+        const res = await fetch(`/api/management-series?days=${chartDays}`);
         const raw = await res.text();
         let data = {};
         if (raw.trim()) {
@@ -156,7 +157,7 @@ export default function ManagementPage() {
     };
     fetchSeries();
     return () => { cancelled = true; };
-  }, []);
+  }, [chartDays]);
 
   useEffect(() => {
     console.log('Updating URL with headerState:', headerState);
@@ -278,9 +279,28 @@ export default function ManagementPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexShrink: 0, flexWrap: 'wrap', gap: '8px' }}>
-              <span style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Past 7 days
-              </span>
+              <select
+                value={chartDays}
+                onChange={(e) => setChartDays(Number(e.target.value))}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  color: '#6b7280',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #e5e7eb',
+                  backgroundColor: '#f9fafb',
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                <option value={7}>Last 7 days</option>
+                <option value={14}>Last 14 days</option>
+                <option value={30}>Last 30 days</option>
+                <option value={90}>Last 90 days</option>
+              </select>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 {chartMetric === 'showUpRate' && (
                   <button
@@ -316,7 +336,7 @@ export default function ManagementPage() {
                   }}
                 >
                   <option value="showUpRate">Show up rate (%)</option>
-                  <option value="purchaseRate">Purchase rate (%)</option>
+                  <option value="purchaseRate">Success rate (%)</option>
                   <option value="conversionRate">Conversion rate, closers (%)</option>
                   <option value="bookings">Bookings</option>
                   <option value="calls">Show ups</option>
@@ -341,10 +361,16 @@ export default function ManagementPage() {
                       const showed = d.totalShowedUp ?? 0;
                       const purchaseRate = bookings > 0 ? (purchased / bookings) * 100 : 0;
                       const conversionRateClosers = showed > 0 ? (purchased / showed) * 100 : 0;
+                      const value = chartMetric === 'showUpRate' ? (d.showUpRate ?? 0) : chartMetric === 'purchaseRate' ? purchaseRate : chartMetric === 'conversionRate' ? conversionRateClosers : chartMetric === 'bookings' ? d.bookings : (d.totalShowedUp ?? 0);
+                      const target = chartMetric === 'showUpRate' ? 55 : chartMetric === 'purchaseRate' ? 10 : chartMetric === 'conversionRate' ? 30 : null;
+                      const isPercentMetricWithTarget = target != null && (chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate');
+                      const numValue = typeof value === 'number' ? value : 0;
+                      const belowTarget = isPercentMetricWithTarget && numValue < target;
                       return {
                         ...d,
                         label: d.date?.slice(5) ?? d.date,
-                        value: chartMetric === 'showUpRate' ? (d.showUpRate ?? 0) : chartMetric === 'purchaseRate' ? purchaseRate : chartMetric === 'conversionRate' ? conversionRateClosers : chartMetric === 'bookings' ? d.bookings : (d.totalShowedUp ?? 0),
+                        value,
+                        belowTarget,
                         valueOrganic: typeof d.showUpRateOrganic === 'number' ? d.showUpRateOrganic : 0,
                         valueAds: typeof d.showUpRateAds === 'number' ? d.showUpRateAds : 0,
                       };
@@ -366,7 +392,7 @@ export default function ManagementPage() {
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate' ? (v) => `${v}%` : (v) => v}
-                      domain={chartMetric === 'showUpRate' || chartMetric === 'conversionRate' ? [0, 100] : chartMetric === 'purchaseRate' ? [0, 50] : [0, 'auto']}
+                      domain={chartMetric === 'showUpRate' || chartMetric === 'conversionRate' ? [0, 100] : chartMetric === 'purchaseRate' ? [0, 30] : [0, 'auto']}
                     />
                     <Tooltip
                       content={({ active, payload }) => {
@@ -442,6 +468,24 @@ export default function ManagementPage() {
                         <Line type="monotone" dataKey="valueAds" name="Ads" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }} connectNulls />
                         <Legend wrapperStyle={{ fontSize: '11px' }} />
                       </>
+                    ) : (chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate') ? (
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#6366f1"
+                        strokeWidth={2}
+                        dot={(props) => {
+                          const { cx, cy, payload } = props;
+                          const fill = payload?.belowTarget ? '#ef4444' : '#6366f1';
+                          return <circle cx={cx} cy={cy} r={4} fill={fill} />;
+                        }}
+                        activeDot={(props) => {
+                          const { cx, cy, payload } = props;
+                          const fill = payload?.belowTarget ? '#ef4444' : '#818cf8';
+                          return <circle cx={cx} cy={cy} r={6} fill={fill} stroke="#fff" strokeWidth={2} />;
+                        }}
+                        connectNulls={false}
+                      />
                     ) : (
                       <Line
                         type="monotone"
@@ -472,18 +516,28 @@ export default function ManagementPage() {
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
                 Yesterday's show up rate
               </div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
+              <div style={{
+                fontSize: '28px',
+                fontWeight: '700',
+                color: (() => {
+                  if (chartLoading) return '#111827';
+                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const rate = yesterday?.showUpRate;
+                  if (rate == null) return '#111827';
+                  return rate >= 50 ? '#22c55e' : '#ef4444';
+                })(),
+              }}>
                 {chartLoading
                   ? '…'
                   : (() => {
-                      const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                      const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
                       const rate = yesterday?.showUpRate;
                       return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
                     })()}
               </div>
               <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
                 {chartLoading ? '…' : (() => {
-                  const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
                   const showed = yesterday?.totalShowedUp ?? 0;
                   const confirmed = yesterday?.totalConfirmed ?? 0;
                   return confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—';
@@ -501,13 +555,70 @@ export default function ManagementPage() {
               }}
             >
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                Yesterday's conversion rate
+                Yesterday's success rate
               </div>
-              <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
+              <div style={{
+                fontSize: '28px',
+                fontWeight: '700',
+                color: (() => {
+                  if (chartLoading) return '#111827';
+                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const bookings = yesterday?.bookings ?? 0;
+                  const purchased = yesterday?.totalPurchased ?? 0;
+                  const rate = bookings > 0 ? (purchased / bookings) * 100 : null;
+                  if (rate == null) return '#111827';
+                  return rate >= 10 ? '#22c55e' : '#ef4444';
+                })(),
+              }}>
                 {chartLoading
                   ? '…'
                   : (() => {
-                      const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                      const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                      const bookings = yesterday?.bookings ?? 0;
+                      const purchased = yesterday?.totalPurchased ?? 0;
+                      const rate = bookings > 0 ? (purchased / bookings) * 100 : null;
+                      return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
+                    })()}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
+                {chartLoading ? '…' : (() => {
+                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const purchased = yesterday?.totalPurchased ?? 0;
+                  const bookings = yesterday?.bookings ?? 0;
+                  return bookings > 0 ? `${purchased} / ${bookings} booked` : '—';
+                })()}
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '20px',
+                border: '1px solid #e5e7eb',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                Yesterday's conversion rate
+              </div>
+              <div style={{
+                fontSize: '28px',
+                fontWeight: '700',
+                color: (() => {
+                  if (chartLoading) return '#111827';
+                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const showed = yesterday?.totalShowedUp ?? 0;
+                  const purchased = yesterday?.totalPurchased ?? 0;
+                  const rate = showed > 0 ? (purchased / showed) * 100 : null;
+                  if (rate == null) return '#111827';
+                  return rate >= 30 ? '#22c55e' : '#ef4444';
+                })(),
+              }}>
+                {chartLoading
+                  ? '…'
+                  : (() => {
+                      const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
                       const showed = yesterday?.totalShowedUp ?? 0;
                       const purchased = yesterday?.totalPurchased ?? 0;
                       const rate = showed > 0 ? (purchased / showed) * 100 : null;
@@ -516,7 +627,7 @@ export default function ManagementPage() {
               </div>
               <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
                 {chartLoading ? '…' : (() => {
-                  const yesterday = chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
                   const purchased = yesterday?.totalPurchased ?? 0;
                   const showed = yesterday?.totalShowedUp ?? 0;
                   return showed > 0 ? `${purchased} / ${showed} showed up` : '—';

@@ -1,5 +1,10 @@
 /**
  * POST /api/kajabi-webhook — dedicated route so Vercel accepts POST.
  */
+import { withParsedBody } from './_parse-body.js';
 import handler from '../lib/api-handlers/kajabi-webhook.js';
-export default handler;
+
+export default async function (req, res) {
+  const reqWithBody = await withParsedBody(req);
+  return handler(reqWithBody, res);
+}
