@@ -622,7 +622,7 @@ if (idToUse) {
     }
 
     // Update purchase status based on outcome (for closer mode only)
-    // purchased: yes -> true; lock_in / follow_up -> null (TBD); else -> false
+    // purchased: yes -> true; lock_in / follow_up -> null (TBD); no/dont_qualify -> false
     if (mode === 'closer' && notePayload.outcome) {
       let purchasedValue = null;
       if (notePayload.outcome === 'yes') {
@@ -1040,6 +1040,7 @@ if (idToUse) {
               <option value="">Select outcome...</option>
               <option value="yes">YES</option>
               <option value="no">NO</option>
+              <option value="dont_qualify">DON'T QUALIFY</option>
               <option value="lock_in">LOCK IN</option>
               <option value="follow_up">FOLLOW UP NEEDED</option>
               <option value="refund">REFUND</option>
@@ -2178,7 +2179,8 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                     <div style={valueStyle}>
                       <span style={{ 
                         backgroundColor: closerNote.outcome === 'yes' || closerNote.outcome === 'lock_in' ? '#10b981' : 
-                                       closerNote.outcome === 'no' ? '#ef4444' : '#f59e0b', 
+                                       closerNote.outcome === 'no' ? '#ef4444' : 
+                                       closerNote.outcome === 'dont_qualify' ? '#000000' : '#f59e0b', 
                         color: 'white', 
                         padding: '4px 12px', 
                         borderRadius: '20px',
@@ -2187,6 +2189,7 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                       }}>
                         {closerNote.outcome === 'yes' ? 'YES' : 
                          closerNote.outcome === 'no' ? 'NO' : 
+                         closerNote.outcome === 'dont_qualify' ? "DON'T QUALIFY" : 
                          closerNote.outcome === 'lock_in' ? 'LOCK IN' : 
                          closerNote.outcome === 'follow_up' ? 'FOLLOW UP NEEDED' : 
                          closerNote.outcome}

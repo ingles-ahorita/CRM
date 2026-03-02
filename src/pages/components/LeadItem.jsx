@@ -338,6 +338,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             onChange={(value) => updateStatus(lead.id, 'showed_up', value, setShowUp)}
             label="Show Up"
             disabled={mode === 'setter' || mode === 'view'}
+            outcomeLog={lead.outcome_log}
           />
           <StatusDropdown
             value={purchase}
@@ -846,6 +847,11 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
     // Get background color based on value
     const getBackgroundColor = () => {
+      // Black for Show Up and Purchased when outcome is dont_qualify
+      if (label === 'Show Up' || label === 'Purchased') {
+        const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
+        if (isDontQualify) return '#000000'; // black
+      }
       // Special case: if this is the Purchased dropdown, check for lock_in or follow_up
       if (label === 'Purchased') {
         const isLockIn = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'lock_in') : outcomeLog?.outcome === 'lock_in';
@@ -858,6 +864,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
       if (value === null || value === '' || value === undefined || value === 'null') return '#f9ffa6ff'; // yellow for null/empty
       return '#f9ffa6ff';
     };
+
+    const isDontQualify = (label === 'Show Up' || label === 'Purchased') && (Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify');
     
     return (
      <div style={{
@@ -887,7 +895,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   style={{
     appearance: 'none',
     backgroundColor: getBackgroundColor(),
-    color: '#000000',
+    color: isDontQualify ? '#ffffff' : '#000000',
     borderColor: '#d1d5db',
     border: '1px solid rgba(0,0,0,0.1)',
     padding: '6px 12px',
@@ -1382,20 +1390,20 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
         {lead.closer_id != null && Object.keys(closerMap).length === 0 ? <span className="lead-item-spinner" /> : (closerMap[lead.closer_id] || 'N/A')}
       </div>
 
-      {/* Call Date */}
+      {/* Book Date */}
       <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {DateHelpers.formatTimeWithRelative(lead.call_date) || 'N/A'}
+        {DateHelpers.formatTimeWithRelative(lead.book_date) || 'N/A'}
       </div>
       {/* Call Date */}
       <div style={{ fontSize: '13px', color: '#6b7280' }}>
-        {DateHelpers.formatTimeWithRelative(lead.book_date) || 'N/A'}
+        {DateHelpers.formatTimeWithRelative(lead.call_date) || 'N/A'}
       </div>
 
       {/* Status Indicators */}
       <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
         <StatusBadge value={lead.picked_up} label="P" title="Picked Up" />
         <StatusBadge value={lead.confirmed} label="C" title="Confirmed" />
-        <StatusBadge value={lead.showed_up} label="S" title="Showed Up" />
+        <StatusBadge value={lead.showed_up} label="S" title="Showed Up" outcomeLog={lead.outcome_log} />
         <StatusBadge 
           value={lead.purchased} 
           label="$" 
@@ -1546,6 +1554,11 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
 // Helper component for status badges (exported for use in KajabiPurchasesPage Find call list)
 export function StatusBadge({ value, label, title, outcomeLog }) {
   const getColor = () => {
+    // Black for Show up (S) and Purchase ($) when outcome is dont_qualify
+    if (label === 'S' || label === '$') {
+      const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
+      if (isDontQualify) return '#000000'; // black
+    }
     // Purple for label === '$' (Purchased) when outcome is lock_in or follow_up
     if (label === '$') {
       const isLockIn = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'lock_in') : outcomeLog?.outcome === 'lock_in';
@@ -1609,8 +1622,8 @@ export function LeadListHeader() {
       <div>Name / Email</div>
       <div>Setter</div>
       <div>Closer</div>
-      <div>Call Date</div>
       <div style={{ textAlign: 'left' }}>Book Date</div>
+      <div>Call Date</div>
       <div style={{ textAlign: 'left' }}>Status</div>
       <div style={{ textAlign: 'center' }}>Response</div>
       <div style={{ textAlign: 'center' }}>Notes</div>

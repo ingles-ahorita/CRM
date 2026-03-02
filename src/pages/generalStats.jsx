@@ -109,11 +109,14 @@ async function fetchStatsData(startDate, endDate) {
   }
 
   // Fetch bookings made in period with source breakdown (incl. is_reschedule for chart)
+  // Also used for DQ rate (book_date-based)
   const stepBookings = performance.now();
   const { data: bookingsData, error: bookingsError } = await supabase
     .from('calls')
     .select(`
       picked_up,
+      confirmed,
+      lead_id,
       book_date,
       source_type,
       is_reschedule,
@@ -204,15 +207,32 @@ async function fetchStatsData(startDate, endDate) {
     return keep;
   });
 
+  // Calls that already happened (call_date in the past) - for show up rate only
+  const now = new Date();
+  const callsThatHappened = filteredCalls.filter(c => {
+    const cd = c.call_date ? new Date(c.call_date) : null;
+    return cd && cd <= now;
+  });
 
-// Calculate totals
+  // DQ rate based on book_date (bookings in period)
+  const rescheduledLeadIdsFromBookings = new Set(
+    (bookingsData || []).filter(b => b.is_reschedule === true || b.is_reschedule === 'true').map(b => b.lead_id)
+  );
+  const filteredBookings = (bookingsData || []).filter(b => {
+    const keep = b.is_reschedule === true || b.is_reschedule === 'true' || !rescheduledLeadIdsFromBookings.has(b.lead_id);
+    return keep;
+  });
+  const totalPickedUpByBookDate = filteredBookings.filter(b => b.picked_up === true).length;
+  const totalDQ = filteredBookings.filter(b => b.picked_up === true && b.confirmed !== true).length;
+  const dqRate = totalPickedUpByBookDate > 0 ? (totalDQ / totalPickedUpByBookDate) * 100 : 0;
+
+// Calculate totals (call_date-based for main metrics)
 const totalBooked = filteredCalls.length;
+const totalBookedThatHappened = callsThatHappened.length;
 const totalPickedUp = filteredCalls.filter(c => c.picked_up === true).length;
-const totalShowedUp = filteredCalls.filter(c => c.showed_up === true).length;
-const totalConfirmed = filteredCalls.filter(c => c.confirmed === true).length;
-// DQ (Don't Qualify) = picked up = yes and confirmed = no
-const totalDQ = filteredCalls.filter(c => c.picked_up === true && c.confirmed !== true).length;
-const dqRate = totalPickedUp > 0 ? (totalDQ / totalPickedUp) * 100 : 0;
+// Show up / confirmed: only from calls that already happened (not future call_date)
+const totalShowedUp = callsThatHappened.filter(c => c.showed_up === true).length;
+const totalConfirmed = callsThatHappened.filter(c => c.confirmed === true).length;
 
 // Use purchased calls count for total purchases (already filtered by date)
 // Both filteredCalls and purchasedCalls are filtered using UTC-normalized date ranges
@@ -224,8 +244,8 @@ const totalPurchased = purchasedCalls.length;
   // are filtered using the same UTC-normalized date ranges to ensure accurate conversion rates
   const closerStats = {};
   
-  // Count show-ups from calls filtered by UTC-normalized call_date range
-  filteredCalls.forEach(call => {
+  // Count show-ups from calls that already happened (call_date <= now)
+  callsThatHappened.forEach(call => {
     if (call.closers) {
       const closerId = call.closers.id;
       if (!closerStats[closerId]) {
@@ -236,7 +256,6 @@ const totalPurchased = purchasedCalls.length;
           purchased: 0
         };
       }
-      // Count show-ups - call_date is already in UTC and filtered by UTC-normalized range
       if (call.showed_up) closerStats[closerId].showedUp++;
     }
   });
@@ -305,6 +324,7 @@ const totalPurchased = purchasedCalls.length;
   });
   
   // Then, track calls for show up and confirmed metrics
+  // totalBooked/totalPickedUp: all calls in range; totalShowedUp/totalConfirmed: only calls that already happened
   filteredCalls.forEach(call => {
     if (call.setters) {
       const setterId = call.setters.id;
@@ -323,8 +343,15 @@ const totalPurchased = purchasedCalls.length;
       }
       setterStats[setterId].totalBooked++;
       if (call.picked_up === true) setterStats[setterId].totalPickedUp++;
-      if (call.showed_up === true) setterStats[setterId].totalShowedUp++;
-      if (call.confirmed === true) setterStats[setterId].totalConfirmed++;
+    }
+  });
+  callsThatHappened.forEach(call => {
+    if (call.setters) {
+      const setterId = call.setters.id;
+      if (setterStats[setterId]) {
+        if (call.showed_up === true) setterStats[setterId].totalShowedUp++;
+        if (call.confirmed === true) setterStats[setterId].totalConfirmed++;
+      }
     }
   });
 
@@ -409,11 +436,18 @@ const totalPurchased = purchasedCalls.length;
       };
     }
     
-    // Count activity from booked calls
+    // Count activity from booked calls (totalBooked, totalPickedUp from all)
     countryStats[country].totalBooked++;
     if (call.picked_up) countryStats[country].totalPickedUp++;
-    if (call.showed_up) countryStats[country].totalShowedUp++;
-    if (call.confirmed) countryStats[country].totalConfirmed++;
+  });
+
+  callsThatHappened.forEach(call => {
+    const phoneNumber = call.phone;
+    const country = getCountryFromPhone(phoneNumber);
+    if (countryStats[country]) {
+      if (call.showed_up) countryStats[country].totalShowedUp++;
+      if (call.confirmed) countryStats[country].totalConfirmed++;
+    }
   });
 
   // Process purchased calls for sales metrics
@@ -457,7 +491,10 @@ const totalPurchased = purchasedCalls.length;
   const sourceStats = {
     ads: {
       totalBooked: 0,
+      totalBookedThatHappened: 0,
       totalPickedUp: 0,
+      totalPickedUpByBookDate: 0,
+      totalDQ: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
       totalShowedUp: 0,
@@ -467,7 +504,10 @@ const totalPurchased = purchasedCalls.length;
     },
     organic: {
       totalBooked: 0,
+      totalBookedThatHappened: 0,
       totalPickedUp: 0,
+      totalPickedUpByBookDate: 0,
+      totalDQ: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
       totalShowedUp: 0,
@@ -483,7 +523,18 @@ const totalPurchased = purchasedCalls.length;
   sourceStats.organic.bookingsMadeInPeriod = bookingsBySource.organic.total;
   sourceStats.organic.pickedUpFromBookings = bookingsBySource.organic.pickedUp;
 
-  // Process booked calls for source metrics (for show up, confirmed, rescheduled)
+  // DQ (book_date-based) per source
+  filteredBookings.forEach(b => {
+    const source = b.source_type || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    const sourceKey = isAds ? 'ads' : 'organic';
+    if (b.picked_up === true) {
+      sourceStats[sourceKey].totalPickedUpByBookDate++;
+      if (b.confirmed !== true) sourceStats[sourceKey].totalDQ++;
+    }
+  });
+
+  // Process booked calls for source metrics
   filteredCalls.forEach(call => {
     const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
@@ -491,9 +542,16 @@ const totalPurchased = purchasedCalls.length;
     
     sourceStats[sourceKey].totalBooked++;
     if (call.picked_up) sourceStats[sourceKey].totalPickedUp++;
+    if (call.is_reschedule) sourceStats[sourceKey].totalRescheduled++;
+  });
+  callsThatHappened.forEach(call => {
+    const source = call.source_type || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    const sourceKey = isAds ? 'ads' : 'organic';
+    
+    sourceStats[sourceKey].totalBookedThatHappened = (sourceStats[sourceKey].totalBookedThatHappened || 0) + 1;
     if (call.showed_up) sourceStats[sourceKey].totalShowedUp++;
     if (call.confirmed) sourceStats[sourceKey].totalConfirmed++;
-    if (call.is_reschedule) sourceStats[sourceKey].totalRescheduled++;
   });
 
   // Process purchased calls for source metrics
@@ -510,14 +568,16 @@ const totalPurchased = purchasedCalls.length;
     source.pickUpRate = source.bookingsMadeInPeriod > 0 
       ? (source.pickedUpFromBookings / source.bookingsMadeInPeriod) * 100 
       : 0;
-    source.showUpRate = source.totalBooked > 0 ? (source.totalShowedUp / source.totalConfirmed) * 100 : 0;
+    source.showUpRate = (source.totalBookedThatHappened ?? 0) > 0 ? (source.totalShowedUp / source.totalBookedThatHappened) * 100 : 0;
     source.conversionRate = source.totalShowedUp > 0 ? (source.totalPurchased / source.totalShowedUp) * 100 : 0;
+    source.dqRate = source.totalPickedUpByBookDate > 0 ? (source.totalDQ / source.totalPickedUpByBookDate) * 100 : 0;
   });
 
   // Group by medium (TikTok, Instagram, other) for ads only
   const mediumStats = {
     tiktok: {
       totalBooked: 0,
+      totalBookedThatHappened: 0,
       totalPickedUp: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
@@ -528,6 +588,7 @@ const totalPurchased = purchasedCalls.length;
     },
     instagram: {
       totalBooked: 0,
+      totalBookedThatHappened: 0,
       totalPickedUp: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
@@ -538,6 +599,7 @@ const totalPurchased = purchasedCalls.length;
     },
     other: {
       totalBooked: 0,
+      totalBookedThatHappened: 0,
       totalPickedUp: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
@@ -570,7 +632,7 @@ const totalPurchased = purchasedCalls.length;
     }
   });
 
-  // Process only ads calls for medium metrics (for show up, confirmed, rescheduled)
+  // Process only ads calls for medium metrics
   filteredCalls.forEach(call => {
     const source = call.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
@@ -587,9 +649,26 @@ const totalPurchased = purchasedCalls.length;
       
       mediumStats[mediumKey].totalBooked++;
       if (call.picked_up) mediumStats[mediumKey].totalPickedUp++;
+      if (call.is_reschedule) mediumStats[mediumKey].totalRescheduled++;
+    }
+  });
+  callsThatHappened.forEach(call => {
+    const source = call.source_type || 'organic';
+    const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
+    
+    if (isAds) {
+      const medium = call.leads?.medium?.toLowerCase();
+      let mediumKey = 'other';
+      
+      if (medium === 'tiktok') {
+        mediumKey = 'tiktok';
+      } else if (medium === 'instagram') {
+        mediumKey = 'instagram';
+      }
+      
+      mediumStats[mediumKey].totalBookedThatHappened = (mediumStats[mediumKey].totalBookedThatHappened || 0) + 1;
       if (call.showed_up) mediumStats[mediumKey].totalShowedUp++;
       if (call.confirmed) mediumStats[mediumKey].totalConfirmed++;
-      if (call.is_reschedule) mediumStats[mediumKey].totalRescheduled++;
     }
   });
 
@@ -617,7 +696,7 @@ const totalPurchased = purchasedCalls.length;
     medium.pickUpRate = medium.bookingsMadeInPeriod > 0 
       ? (medium.pickedUpFromBookings / medium.bookingsMadeInPeriod) * 100 
       : 0;
-    medium.showUpRate = medium.totalBooked > 0 ? (medium.totalShowedUp / medium.totalConfirmed) * 100 : 0;
+    medium.showUpRate = (medium.totalBookedThatHappened ?? 0) > 0 ? (medium.totalShowedUp / medium.totalBookedThatHappened) * 100 : 0;
     medium.conversionRate = medium.totalShowedUp > 0 ? (medium.totalPurchased / medium.totalShowedUp) * 100 : 0;
   });
 
@@ -629,8 +708,10 @@ const totalPurchased = purchasedCalls.length;
     bookingsBySource,
     bookingsPerDay,
     totalBooked,
+    totalBookedThatHappened,
     totalPickedUp,
     totalPickedUpFromBookings,
+    totalPickedUpByBookDate,
     totalShowedUp,
     totalConfirmed,
     totalDQ,
@@ -1777,7 +1858,7 @@ export default function StatsDashboard() {
 
   // Calculate metrics only if we have stats and not in comparison view
   let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, conversionRateShowedUp = 0, conversionRateBooked = 0, dqRate = 0;
-  let totalBooked, totalPickedUp, totalPickedUpFromBookings, totalShowedUp, totalConfirmed, totalDQ, totalPurchased, totalRescheduled, totalBookedInPeriod;
+  let totalBooked, totalBookedThatHappened, totalPickedUp, totalPickedUpFromBookings, totalPickedUpByBookDate, totalShowedUp, totalConfirmed, totalDQ, totalPurchased, totalRescheduled, totalBookedInPeriod;
   
   if (stats && comparisonView === 'none') {
     // Filter by source if not 'all'
@@ -1785,29 +1866,33 @@ export default function StatsDashboard() {
       const filtered = stats.sourceStats[sourceFilter];
       pickUpRate = filtered.pickUpRate || 0;
       showUpRateConfirmed = filtered.showUpRate || 0;
-      showUpRateBooked = filtered.showUpRate || 0;
+      showUpRateBooked = (filtered.totalBookedThatHappened ?? 0) > 0 ? ((filtered.totalShowedUp ?? 0) / filtered.totalBookedThatHappened) * 100 : 0;
       conversionRateShowedUp = filtered.conversionRate || 0;
       conversionRateBooked = filtered.totalBooked > 0 ? (filtered.totalPurchased / filtered.totalBooked) * 100 : 0;
       totalBooked = filtered.totalBooked;
+      totalBookedThatHappened = filtered.totalBookedThatHappened ?? filtered.totalBooked;
       totalBookedInPeriod = filtered.bookingsMadeInPeriod;
       totalPickedUp = filtered.totalPickedUp;
       totalPickedUpFromBookings = filtered.pickedUpFromBookings;
+      totalPickedUpByBookDate = filtered.totalPickedUpByBookDate ?? filtered.totalPickedUp;
       totalShowedUp = filtered.totalShowedUp;
       totalConfirmed = filtered.totalConfirmed;
-      totalDQ = (filtered.totalPickedUp ?? 0) - (filtered.totalConfirmed ?? 0);
-      dqRate = (filtered.totalPickedUp ?? 0) > 0 ? (totalDQ / filtered.totalPickedUp) * 100 : 0;
+      totalDQ = filtered.totalDQ ?? 0;
+      dqRate = filtered.dqRate ?? 0;
       totalPurchased = filtered.totalPurchased;
       totalRescheduled = 0; // Not tracked by source
     } else {
       pickUpRate = stats.bookingsMadeinPeriod > 0 ? (stats.totalPickedUpFromBookings / stats.bookingsMadeinPeriod) * 100 : 0;
       showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
-      showUpRateBooked = stats.totalBooked > 0 ? (stats.totalShowedUp / stats.totalBooked) * 100 : 0;
+      showUpRateBooked = (stats.totalBookedThatHappened ?? 0) > 0 ? (stats.totalShowedUp / stats.totalBookedThatHappened) * 100 : 0;
       conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
       conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
       totalBooked = stats.totalBooked;
+      totalBookedThatHappened = stats.totalBookedThatHappened ?? stats.totalBooked;
       totalBookedInPeriod = stats.bookingsMadeinPeriod;
       totalPickedUp = stats.totalPickedUp;
       totalPickedUpFromBookings = stats.totalPickedUpFromBookings;
+      totalPickedUpByBookDate = stats.totalPickedUpByBookDate ?? stats.totalPickedUp;
       totalShowedUp = stats.totalShowedUp;
       totalConfirmed = stats.totalConfirmed;
       totalDQ = stats.totalDQ ?? 0;
@@ -2456,7 +2541,7 @@ export default function StatsDashboard() {
               {(dqRate ?? 0).toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {totalDQ ?? 0} / {totalPickedUp ?? 0} picked up
+              {totalDQ ?? 0} / {totalPickedUpByBookDate ?? totalPickedUp ?? 0} picked up
             </div>
             {sourceFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
@@ -2490,7 +2575,7 @@ export default function StatsDashboard() {
               {showUpRateBooked.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {totalShowedUp} / {totalBooked} calls
+              {totalShowedUp} / {totalBookedThatHappened ?? totalBooked} calls (past only)
             </div>
             {sourceFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
@@ -2503,8 +2588,8 @@ export default function StatsDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalBooked}</div>
-                  <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalBooked}</div>
+                  <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalBookedThatHappened ?? stats.sourceStats.ads.totalBooked}</div>
+                  <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalBookedThatHappened ?? stats.sourceStats.organic.totalBooked}</div>
                 </div>
               </div>
             )}
@@ -2522,9 +2607,9 @@ export default function StatsDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalBooked}</div>
-                  <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalBooked}</div>
-                  <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalBooked}</div>
+                  <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalBookedThatHappened ?? stats.mediumStats.tiktok.totalBooked}</div>
+                  <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalBookedThatHappened ?? stats.mediumStats.instagram.totalBooked}</div>
+                  <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalBookedThatHappened ?? stats.mediumStats.other.totalBooked}</div>
                 </div>
               </div>
             )}
@@ -2580,10 +2665,10 @@ export default function StatsDashboard() {
             )}
           </div>
 
-          {/* Conversion Rate / Booked */}
+          {/* Success Rate (Purchased / Booked) */}
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Conversion Rate</h3>
+              <h3 className="text-sm font-medium text-gray-500">Success Rate</h3>
               <span className="text-xs text-gray-400">Purchased / Booked</span>
             </div>
             <div className="text-3xl font-bold text-purple-600">

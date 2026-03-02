@@ -801,7 +801,7 @@ export default function KajabiPurchasesPage() {
                             <span className="flex items-center gap-1">
                               <StatusBadge value={call.picked_up} label="P" title="Picked Up" />
                               <StatusBadge value={call.confirmed} label="C" title="Confirmed" />
-                              <StatusBadge value={call.showed_up} label="S" title="Showed Up" />
+                              <StatusBadge value={call.showed_up} label="S" title="Showed Up" outcomeLog={call.outcome_log} />
                               <StatusBadge value={call.purchased} label="$" title="Purchased" outcomeLog={call.outcome_log} />
                             </span>
                           </div>

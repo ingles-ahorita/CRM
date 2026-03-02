@@ -514,35 +514,51 @@ export default function ManagementPage() {
               }}
             >
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                Yesterday's show up rate
+                Yesterday
               </div>
-              <div style={{
-                fontSize: '28px',
-                fontWeight: '700',
-                color: (() => {
-                  if (chartLoading) return '#111827';
-                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                  const rate = yesterday?.showUpRate;
-                  if (rate == null) return '#111827';
-                  return rate >= 50 ? '#22c55e' : '#ef4444';
-                })(),
-              }}>
-                {chartLoading
-                  ? '…'
-                  : (() => {
-                      const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                      const rate = yesterday?.showUpRate;
-                      return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
-                    })()}
-              </div>
-              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
-                {chartLoading ? '…' : (() => {
-                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                  const showed = yesterday?.totalShowedUp ?? 0;
-                  const confirmed = yesterday?.totalConfirmed ?? 0;
-                  return confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—';
-                })()}
-              </div>
+              {(() => {
+                const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
+                const showed = yesterday?.totalShowedUp ?? 0;
+                const confirmed = yesterday?.totalConfirmed ?? 0;
+                const calls = yesterday?.calls ?? 0;
+                const purchased = yesterday?.totalPurchasedByCallDate ?? yesterday?.totalPurchased ?? 0;
+                const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
+                const successRate = calls > 0 ? (purchased / calls) * 100 : null;
+                const showUpRate = yesterday?.showUpRate ?? null;
+                const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
+                const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Show up rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(showUpRate, 50) }}>
+                        {chartLoading ? '…' : formatPct(showUpRate)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                        {chartLoading ? '…' : confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'}
+                      </div>
+                    </div>
+                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Conversion rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(conversionRate, 30) }}>
+                        {chartLoading ? '…' : formatPct(conversionRate)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                        {chartLoading ? '…' : showed > 0 ? `${purchased} / ${showed} showed up` : '—'}
+                      </div>
+                    </div>
+                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Success rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(successRate, 10) }}>
+                        {chartLoading ? '…' : formatPct(successRate)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                        {chartLoading ? '…' : calls > 0 ? `${purchased} / ${calls} called` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div
@@ -555,84 +571,51 @@ export default function ManagementPage() {
               }}
             >
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                Yesterday's success rate
+                Last week
               </div>
-              <div style={{
-                fontSize: '28px',
-                fontWeight: '700',
-                color: (() => {
-                  if (chartLoading) return '#111827';
-                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                  const bookings = yesterday?.bookings ?? 0;
-                  const purchased = yesterday?.totalPurchased ?? 0;
-                  const rate = bookings > 0 ? (purchased / bookings) * 100 : null;
-                  if (rate == null) return '#111827';
-                  return rate >= 10 ? '#22c55e' : '#ef4444';
-                })(),
-              }}>
-                {chartLoading
-                  ? '…'
-                  : (() => {
-                      const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                      const bookings = yesterday?.bookings ?? 0;
-                      const purchased = yesterday?.totalPurchased ?? 0;
-                      const rate = bookings > 0 ? (purchased / bookings) * 100 : null;
-                      return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
-                    })()}
-              </div>
-              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
-                {chartLoading ? '…' : (() => {
-                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                  const purchased = yesterday?.totalPurchased ?? 0;
-                  const bookings = yesterday?.bookings ?? 0;
-                  return bookings > 0 ? `${purchased} / ${bookings} booked` : '—';
-                })()}
-              </div>
-            </div>
-
-            <div
-              style={{
-                backgroundColor: '#fff',
-                borderRadius: '12px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                padding: '20px',
-                border: '1px solid #e5e7eb',
-              }}
-            >
-              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                Yesterday's conversion rate
-              </div>
-              <div style={{
-                fontSize: '28px',
-                fontWeight: '700',
-                color: (() => {
-                  if (chartLoading) return '#111827';
-                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                  const showed = yesterday?.totalShowedUp ?? 0;
-                  const purchased = yesterday?.totalPurchased ?? 0;
-                  const rate = showed > 0 ? (purchased / showed) * 100 : null;
-                  if (rate == null) return '#111827';
-                  return rate >= 30 ? '#22c55e' : '#ef4444';
-                })(),
-              }}>
-                {chartLoading
-                  ? '…'
-                  : (() => {
-                      const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                      const showed = yesterday?.totalShowedUp ?? 0;
-                      const purchased = yesterday?.totalPurchased ?? 0;
-                      const rate = showed > 0 ? (purchased / showed) * 100 : null;
-                      return rate != null ? `${Number(rate).toFixed(1)}%` : '—';
-                    })()}
-              </div>
-              <div style={{ fontSize: '13px', color: '#6b7280', marginTop: '8px' }}>
-                {chartLoading ? '…' : (() => {
-                  const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
-                  const purchased = yesterday?.totalPurchased ?? 0;
-                  const showed = yesterday?.totalShowedUp ?? 0;
-                  return showed > 0 ? `${purchased} / ${showed} showed up` : '—';
-                })()}
-              </div>
+              {(() => {
+                const last7 = chartSeries.length >= 7 ? chartSeries.slice(-7) : chartSeries;
+                const showed = last7.reduce((a, d) => a + (d.totalShowedUp ?? 0), 0);
+                const confirmed = last7.reduce((a, d) => a + (d.totalConfirmed ?? 0), 0);
+                const calls = last7.reduce((a, d) => a + (d.calls ?? 0), 0);
+                const purchased = last7.reduce((a, d) => a + (d.totalPurchasedByCallDate ?? d.totalPurchased ?? 0), 0);
+                const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
+                const successRate = calls > 0 ? (purchased / calls) * 100 : null;
+                const showUpRate = confirmed > 0 ? (showed / confirmed) * 100 : null;
+                const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
+                const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Show up rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(showUpRate, 50) }}>
+                        {chartLoading ? '…' : formatPct(showUpRate)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                        {chartLoading ? '…' : confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'}
+                      </div>
+                    </div>
+                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Conversion rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(conversionRate, 30) }}>
+                        {chartLoading ? '…' : formatPct(conversionRate)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                        {chartLoading ? '…' : showed > 0 ? `${purchased} / ${showed} showed up` : '—'}
+                      </div>
+                    </div>
+                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
+                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Success rate</div>
+                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(successRate, 10) }}>
+                        {chartLoading ? '…' : formatPct(successRate)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                        {chartLoading ? '…' : calls > 0 ? `${purchased} / ${calls} called` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
