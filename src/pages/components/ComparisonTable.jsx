@@ -24,23 +24,29 @@ const ComparisonTable = ({
     );
   }
 
-  const getChangeIndicator = (current, previous) => {
-    if (!previous || previous === 0) return null;
-    const change = ((current - previous) / previous) * 100;
-    return (
-      <span className={`text-xs ml-2 ${change > 0 ? 'text-green-600' : change < 0 ? 'text-red-600' : 'text-gray-500'}`}>
-        ({change > 0 ? '+' : ''}{change.toFixed(1)}%)
-      </span>
-    );
+  // Target-based color: green when >= target, red when < target
+  const getTargetColor = (value, target) => {
+    if (value == null) return 'text-gray-900';
+    return value >= target ? 'text-green-600' : 'text-red-600';
   };
+
+  // Rate cell with percentage and subtext (e.g. "85.7%" + "42 / 49 bookings")
+  const RateCell = ({ rate, subtext, target, colorClass, bgClass }) => (
+    <td className={`px-4 py-3 whitespace-nowrap text-center ${bgClass ?? ''}`}>
+      <div className={`text-sm font-medium ${colorClass ?? getTargetColor(rate, target ?? 0)}`}>
+        {rate?.toFixed(1) ?? '0.0'}%
+      </div>
+      <div className="text-xs text-gray-500 mt-0.5">{subtext}</div>
+    </td>
+  );
 
   return (
     <div className="bg-white rounded-lg shadow mb-8">
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div>
-        <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
-        <p className="text-sm text-gray-500 mt-1">{description}</p>
+            <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+            <p className="text-sm text-gray-500 mt-1">{description}</p>
           </div>
           <button
             onClick={() => setShowOrganicSplit(!showOrganicSplit)}
@@ -55,135 +61,112 @@ const ComparisonTable = ({
         </div>
       </div>
       
-      <div className="overflow-x-auto" style={{ width: '100%', maxWidth: '100%' }}>
-        <table className="divide-y divide-gray-200" style={{ minWidth: 'max-content' }}>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 {periodLabel}
               </th>
               {(periodLabel === 'Day' || periodLabel === 'Week') && (
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Book Date
                 </th>
               )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Bookings
+              <th className={`px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-emerald-50' : ''}`}>
+                Bookings
               </th>
               {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                 <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organic Bookings
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-emerald-50">
+                    Organic
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ads Bookings
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-emerald-50">
+                    Ads
                   </th>
                 </>
               )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Pick Up Rate
-              </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Pick Ups
+              <th className={`px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-sky-50' : ''}`}>
+                Pick Up
               </th>
               {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                 <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organic Pick Up Rate
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-sky-50">
+                    Organic
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ads Pick Up Rate
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-sky-50">
+                    Ads
                   </th>
                 </>
               )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Calls
+              <th className={`px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-amber-50' : ''}`}>
+                DQ
               </th>
               {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                 <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organic Calls
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-amber-50">
+                    Organic
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ads Calls
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-amber-50">
+                    Ads
                   </th>
                 </>
               )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Confirmation Rate
+              <th className={`px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-violet-50' : ''}`}>
+                Confirmation
               </th>
               {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                 <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organic Confirmation Rate
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-violet-50">
+                    Organic
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ads Confirmation Rate
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-violet-50">
+                    Ads
                   </th>
                 </>
               )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Total Confirmed
+              <th className={`px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-rose-50' : ''}`}>
+                Show Up
               </th>
               {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                 <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organic Confirmed
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-rose-50">
+                    Organic
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ads Confirmed
-                  </th>
-                </>
-              )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Show Up Rate
-              </th>
-              {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
-                <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organic Show Up Rate
-                  </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ads Show Up Rate
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-rose-50">
+                    Ads
                   </th>
                 </>
               )}
               {(periodLabel !== 'Day') && (
-                <>
-                  {periodLabel === 'Week' ? (
-                    <>
-                      {showOrganicSplit ? (
-                    <>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Organic Conversion Rate
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Ads Conversion Rate
-                      </th>
-                        </>
-                      ) : (
-                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Conversion Rate
-                        </th>
-                      )}
-                    </>
-                  ) : (
-                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Conversion Rate
+                showOrganicSplit && (periodLabel === 'Week' || periodLabel === 'Month') ? (
+                  <>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-teal-50">
+                      Conv. Organic
                     </th>
-                  )}
-                </>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-teal-50">
+                      Conv. Ads
+                    </th>
+                  </>
+                ) : (
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Conversion
+                  </th>
+                )
               )}
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Success
+              </th>
+              <th className={`px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-indigo-50' : ''}`}>
                 Purchased
               </th>
               {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                 <>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Organic Purchased
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-indigo-50">
+                    Organic
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ads Purchased
+                  <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-indigo-50">
+                    Ads
                   </th>
                 </>
               )}
@@ -191,224 +174,180 @@ const ComparisonTable = ({
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {data.map((item, index) => {
-              // Previous period in time is next in the array (more recent)
-              const prevItem = index < data.length - 1 ? data[index + 1] : null;
-              
+              const pickUpRate = item.pickUpRate ?? (item.bookingsMadeinPeriod > 0 ? (item.totalPickedUpFromBookings || 0) / item.bookingsMadeinPeriod * 100 : null);
+              const dqRate = item.dqRate ?? (item.totalPickedUpByBookDate > 0 ? (item.totalDQ || 0) / item.totalPickedUpByBookDate * 100 : null);
+              const confirmationRate = item.confirmationRate ?? (item.totalBooked > 0 ? (item.totalConfirmed || 0) / item.totalBooked * 100 : null);
+              const showUpRate = item.showUpRateConfirmed ?? (item.totalConfirmed > 0 ? (item.totalShowedUp || 0) / item.totalConfirmed * 100 : null);
+              const successRate = item.conversionRateBooked ?? (item.totalBooked > 0 ? (item.totalPurchased || 0) / item.totalBooked * 100 : null);
+
               return (
                 <tr key={index} className={index === 0 ? 'bg-blue-50 font-semibold' : 'hover:bg-gray-50'}>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
-                        {(periodLabel === 'Month') && (
-                          <span className="text-xs text-gray-500">{item.periodLabel}</span>
-                        )}
-                        {(periodLabel === 'Week') && (
-                          <span className="text-xs text-gray-500">
-                            {item.periodLabel} {index === 0 ? '🟢 Current Period' : `${periodLabel} -${index}`}
-                          </span>
-                        )}
-                        {(periodLabel === 'Day') && (
-                          <span className="text-xs text-gray-500">{item.periodLabel}</span>
-                        )}
-                      <br />
+                      {(periodLabel === 'Month') && <span className="text-xs text-gray-500">{item.periodLabel}</span>}
+                      {(periodLabel === 'Week') && (
+                        <span className="text-xs text-gray-500">
+                          {item.periodLabel} {index === 0 ? '🟢 Current' : `-${index}`}
+                        </span>
+                      )}
+                      {(periodLabel === 'Day') && <span className="text-xs text-gray-500">{item.periodLabel}</span>}
                     </div>
                   </td>
                   {(periodLabel === 'Day' || periodLabel === 'Week') && (
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <div className="text-sm text-gray-600">
-                        {(() => {
-                          if (periodLabel === 'Week' && item.weekStart && item.weekEnd) {
-                            const start = new Date(item.weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            const end = new Date(item.weekEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            return `${start} - ${end}`;
-                          } else if (periodLabel === 'Day' && item.dayStart) {
-                            return new Date(item.dayStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                          }
-                          return 'N/A';
-                        })()}
-                      </div>
+                    <td className="px-4 py-3 whitespace-nowrap text-center text-sm text-gray-600">
+                      {periodLabel === 'Week' && item.weekStart && item.weekEnd
+                        ? `${new Date(item.weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(item.weekEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                        : periodLabel === 'Day' && item.dayStart
+                          ? new Date(item.dayStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                          : '—'}
                     </td>
                   )}
-                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.bookingsMadeinPeriod}
-                    </div>
+                  <td className={`px-4 py-3 whitespace-nowrap text-center text-sm text-gray-900 ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-emerald-50' : ''}`}>
+                    {item.bookingsMadeinPeriod}
                   </td>
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-green-600">
-                          {typeof item.bookingsBySource?.organic === 'object' 
-                            ? item.bookingsBySource.organic.total || 0
-                            : item.bookingsBySource?.organic || 0}
-                        </div>
+                      <td className="px-4 py-3 whitespace-nowrap text-center text-sm text-green-600 bg-emerald-50">
+                        {typeof item.bookingsBySource?.organic === 'object' ? item.bookingsBySource.organic.total || 0 : item.bookingsBySource?.organic || 0}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-blue-600">
-                          {typeof item.bookingsBySource?.ads === 'object'
-                            ? item.bookingsBySource.ads.total || 0
-                            : item.bookingsBySource?.ads || 0}
-                        </div>
+                      <td className="px-4 py-3 whitespace-nowrap text-center text-sm text-blue-600 bg-emerald-50">
+                        {typeof item.bookingsBySource?.ads === 'object' ? item.bookingsBySource.ads.total || 0 : item.bookingsBySource?.ads || 0}
                       </td>
                     </>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.pickUpRate?.toFixed(1) || (item.bookingsMadeinPeriod > 0 
-                        ? ((item.totalPickedUpFromBookings || 0) / item.bookingsMadeinPeriod * 100).toFixed(1)
-                        : '0.0')}%
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.totalPickedUpFromBookings || 0}
-                    </div>
-                  </td>
+                  <RateCell
+                    rate={pickUpRate}
+                    subtext={`${item.totalPickedUpFromBookings || 0} / ${item.bookingsMadeinPeriod || 0} bookings`}
+                    target={null}
+                    colorClass="text-gray-900"
+                    bgClass={showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-sky-50' : ''}
+                  />
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-green-600">
-                          {item.sourceStats?.organic?.pickUpRate?.toFixed(1) || '0.0'}%
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-blue-600">
-                          {item.sourceStats?.ads?.pickUpRate?.toFixed(1) || '0.0'}%
-                        </div>
-                      </td>
+                      <RateCell
+                        rate={item.sourceStats?.organic?.pickUpRate}
+                        subtext={`${item.sourceStats?.organic?.pickedUpFromBookings ?? 0} / ${item.sourceStats?.organic?.bookingsMadeInPeriod ?? 0}`}
+                        target={null}
+                        colorClass="text-green-600"
+                        bgClass="bg-sky-50"
+                      />
+                      <RateCell
+                        rate={item.sourceStats?.ads?.pickUpRate}
+                        subtext={`${item.sourceStats?.ads?.pickedUpFromBookings ?? 0} / ${item.sourceStats?.ads?.bookingsMadeInPeriod ?? 0}`}
+                        target={null}
+                        colorClass="text-blue-600"
+                        bgClass="bg-sky-50"
+                      />
                     </>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.totalBooked}
-                    </div>
-                  </td>
+                  <RateCell
+                    rate={dqRate}
+                    subtext={`${item.totalDQ || 0} / ${item.totalPickedUpByBookDate ?? item.totalPickedUp ?? 0} picked up`}
+                    target={null}
+                    colorClass="text-gray-900"
+                    bgClass={showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-amber-50' : ''}
+                  />
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-green-600">
-                          {item.sourceStats?.organic?.totalBooked || 0}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-blue-600">
-                          {item.sourceStats?.ads?.totalBooked || 0}
-                        </div>
-                      </td>
+                      <RateCell
+                        rate={item.sourceStats?.organic?.dqRate}
+                        subtext={`${item.sourceStats?.organic?.totalDQ ?? 0} / ${item.sourceStats?.organic?.totalPickedUpByBookDate ?? item.sourceStats?.organic?.totalPickedUp ?? 0}`}
+                        target={null}
+                        colorClass="text-green-600"
+                        bgClass="bg-amber-50"
+                      />
+                      <RateCell
+                        rate={item.sourceStats?.ads?.dqRate}
+                        subtext={`${item.sourceStats?.ads?.totalDQ ?? 0} / ${item.sourceStats?.ads?.totalPickedUpByBookDate ?? item.sourceStats?.ads?.totalPickedUp ?? 0}`}
+                        target={null}
+                        colorClass="text-blue-600"
+                        bgClass="bg-amber-50"
+                      />
                     </>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.confirmationRate?.toFixed(1) || (item.totalBooked > 0 
-                        ? ((item.totalConfirmed || 0) / item.totalBooked * 100).toFixed(1)
-                        : '0.0')}%
-                    </div>
-                  </td>
+                  <RateCell
+                    rate={confirmationRate}
+                    subtext={`${item.totalConfirmed || 0} / ${item.totalBooked || 0} bookings`}
+                    target={75}
+                    bgClass={showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-violet-50' : ''}
+                  />
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-green-600">
-                          {item.sourceStats?.organic?.totalBooked > 0 
-                            ? ((item.sourceStats?.organic?.totalConfirmed || 0) / item.sourceStats?.organic?.totalBooked * 100).toFixed(1)
-                            : '0.0'}%
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-blue-600">
-                          {item.sourceStats?.ads?.totalBooked > 0 
-                            ? ((item.sourceStats?.ads?.totalConfirmed || 0) / item.sourceStats?.ads?.totalBooked * 100).toFixed(1)
-                            : '0.0'}%
-                        </div>
-                      </td>
+                      <RateCell
+                        rate={item.sourceStats?.organic?.totalBooked > 0 ? (item.sourceStats?.organic?.totalConfirmed || 0) / item.sourceStats?.organic?.totalBooked * 100 : null}
+                        subtext={`${item.sourceStats?.organic?.totalConfirmed ?? 0} / ${item.sourceStats?.organic?.totalBooked ?? 0}`}
+                        target={75}
+                        bgClass="bg-violet-50"
+                      />
+                      <RateCell
+                        rate={item.sourceStats?.ads?.totalBooked > 0 ? (item.sourceStats?.ads?.totalConfirmed || 0) / item.sourceStats?.ads?.totalBooked * 100 : null}
+                        subtext={`${item.sourceStats?.ads?.totalConfirmed ?? 0} / ${item.sourceStats?.ads?.totalBooked ?? 0}`}
+                        target={75}
+                        bgClass="bg-violet-50"
+                      />
                     </>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.totalConfirmed}
-                    </div>
-                  </td>
+                  <RateCell
+                    rate={showUpRate}
+                    subtext={`${item.totalShowedUp || 0} / ${item.totalConfirmed || 0} confirmed`}
+                    target={50}
+                    bgClass={showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-rose-50' : ''}
+                  />
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-green-600">
-                          {item.sourceStats?.organic?.totalConfirmed || 0}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-blue-600">
-                          {item.sourceStats?.ads?.totalConfirmed || 0}
-                        </div>
-                      </td>
-                    </>
-                  )}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm text-gray-900">
-                      {item.showUpRateConfirmed?.toFixed(1) || '0.0'}%
-                    </div>
-                  </td>
-                  {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
-                    <>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-green-600">
-                          {item.sourceStats?.organic?.showUpRate?.toFixed(1) || '0.0'}%
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm text-blue-600">
-                          {item.sourceStats?.ads?.showUpRate?.toFixed(1) || '0.0'}%
-                        </div>
-                      </td>
+                      <RateCell
+                        rate={item.sourceStats?.organic?.showUpRateConfirmed ?? item.sourceStats?.organic?.showUpRate}
+                        subtext={`${item.sourceStats?.organic?.totalShowedUp ?? 0} / ${item.sourceStats?.organic?.totalConfirmed ?? 0}`}
+                        target={50}
+                        bgClass="bg-rose-50"
+                      />
+                      <RateCell
+                        rate={item.sourceStats?.ads?.showUpRateConfirmed ?? item.sourceStats?.ads?.showUpRate}
+                        subtext={`${item.sourceStats?.ads?.totalShowedUp ?? 0} / ${item.sourceStats?.ads?.totalConfirmed ?? 0}`}
+                        target={50}
+                        bgClass="bg-rose-50"
+                      />
                     </>
                   )}
                   {(periodLabel !== 'Day') && (
-                    <>
-                      {periodLabel === 'Week' ? (
-                        <>
-                          {showOrganicSplit ? (
-                        <>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="text-sm text-green-600">
-                              {item.organicConversionRate?.toFixed(1) || '0.0'}%
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="text-sm text-blue-600">
-                              {item.adsConversionRate?.toFixed(1) || '0.0'}%
-                            </div>
-                          </td>
-                        </>
-                      ) : (
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900">
-                                {item.conversionRateShowedUp?.toFixed(1) || '0.0'}%
-                              </div>
-                            </td>
-                          )}
-                        </>
-                      ) : (
-                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900">
-                            {item.conversionRateShowedUp?.toFixed(1) || '0.0'}%
-                          </div>
-                        </td>
-                      )}
-                    </>
+                    showOrganicSplit && (periodLabel === 'Week' || periodLabel === 'Month') ? (
+                      <>
+                        <RateCell
+                          rate={item.organicConversionRate}
+                          subtext={`${item.sourceStats?.organic?.totalPurchased ?? 0} / ${item.sourceStats?.organic?.totalShowedUp ?? 0}`}
+                          target={30}
+                          bgClass="bg-teal-50"
+                        />
+                        <RateCell
+                          rate={item.adsConversionRate}
+                          subtext={`${item.sourceStats?.ads?.totalPurchased ?? 0} / ${item.sourceStats?.ads?.totalShowedUp ?? 0}`}
+                          target={30}
+                          bgClass="bg-teal-50"
+                        />
+                      </>
+                    ) : (
+                      <RateCell
+                        rate={item.conversionRateShowedUp}
+                        subtext={`${item.totalPurchased || 0} / ${item.totalShowedUp || 0} showed up`}
+                        target={30}
+                      />
+                    )
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <div className="text-sm font-semibold text-green-600">
-                      {item.totalPurchased}
-                    </div>
+                  <RateCell
+                    rate={successRate}
+                    subtext={`${item.totalPurchased || 0} / ${item.totalBooked || 0} calls`}
+                    target={10}
+                  />
+                  <td className={`px-4 py-3 whitespace-nowrap text-center ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-indigo-50' : ''}`}>
+                    <div className="text-sm font-semibold text-green-600">{item.totalPurchased}</div>
                   </td>
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm font-semibold text-green-600">
-                          {item.sourceStats?.organic?.totalPurchased || 0}
-                        </div>
+                      <td className="px-4 py-3 whitespace-nowrap text-center text-sm font-semibold text-green-600 bg-indigo-50">
+                        {item.sourceStats?.organic?.totalPurchased || 0}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm font-semibold text-blue-600">
-                          {item.sourceStats?.ads?.totalPurchased || 0}
-                        </div>
+                      <td className="px-4 py-3 whitespace-nowrap text-center text-sm font-semibold text-blue-600 bg-indigo-50">
+                        {item.sourceStats?.ads?.totalPurchased || 0}
                       </td>
                     </>
                   )}

@@ -30,7 +30,24 @@ function parseDateAsUTC(dateString) {
   return parseISO(isoString);
 }
 
-// Mock function - replace with your actual Supabase fetch
+// Supabase returns max 1000 rows by default. Paginate to fetch all.
+const PAGE_SIZE = 1000;
+async function fetchAllPages(buildQuery) {
+  const all = [];
+  let from = 0;
+  let hasMore = true;
+  while (hasMore) {
+    const to = from + PAGE_SIZE - 1;
+    const { data, error } = await buildQuery().range(from, to);
+    if (error) throw error;
+    const chunk = data || [];
+    all.push(...chunk);
+    hasMore = chunk.length >= PAGE_SIZE;
+    from += PAGE_SIZE;
+  }
+  return all;
+}
+
 // Dates are normalized to DEFAULT_TIMEZONE for consistent filtering
 async function fetchStatsData(startDate, endDate) {
   const totalStart = performance.now();
@@ -67,34 +84,38 @@ async function fetchStatsData(startDate, endDate) {
     endUTC = DateHelpers.fromZonedTime(endOfDayNormalized, DateHelpers.DEFAULT_TIMEZONE);
   }
   
-  // Fetch 1: Get calls booked in the date range for main metrics
+  // Fetch 1: Get calls booked in the date range for main metrics (paginated for 1000+)
   const stepBooked = performance.now();
-  const { data: bookedCalls, error: bookedError } = await supabase
-    .from('calls')
-    .select(`
-      picked_up,
-      showed_up,
-      confirmed,
-      purchased,
-      purchased_at,
-      is_reschedule,
-      lead_id,
-      phone,
-      book_date,
-      call_date,
-      source_type,
-      setters (id, name),
-      closers (id, name),
-      leads (phone, medium)
-    `)
-    .gte('call_date', startUTC.toISOString())
-    .lte('call_date', isNaN(endUTC) ? null : endUTC.toISOString());
-  log('1. Supabase booked calls', stepBooked);
-
-  if (bookedError) {
+  let bookedCalls;
+  try {
+    bookedCalls = await fetchAllPages(() =>
+      supabase
+        .from('calls')
+        .select(`
+          picked_up,
+          showed_up,
+          confirmed,
+          purchased,
+          purchased_at,
+          is_reschedule,
+          lead_id,
+          phone,
+          book_date,
+          call_date,
+          source_type,
+          setters (id, name),
+          closers (id, name),
+          leads (phone, medium)
+        `)
+        .gte('call_date', startUTC.toISOString())
+        .lte('call_date', isNaN(endUTC) ? null : endUTC.toISOString())
+        .order('call_date', { ascending: true })
+    );
+  } catch (bookedError) {
     console.error('Error fetching booked calls:', bookedError);
     return null;
   }
+  log('1. Supabase booked calls', stepBooked);
 
   // Fetch 2: Get all purchases from outcome_log in the date range for analysis
   // IMPORTANT: Purchases are filtered by purchase_date from outcome_log, not call_date from calls table
@@ -109,29 +130,33 @@ async function fetchStatsData(startDate, endDate) {
   }
 
   // Fetch bookings made in period with source breakdown (incl. is_reschedule for chart)
-  // Also used for DQ rate (book_date-based)
+  // Also used for DQ rate (book_date-based) (paginated for 1000+)
   const stepBookings = performance.now();
-  const { data: bookingsData, error: bookingsError } = await supabase
-    .from('calls')
-    .select(`
-      picked_up,
-      confirmed,
-      lead_id,
-      book_date,
-      source_type,
-      is_reschedule,
-      phone,
-      setters (id, name),
-      leads (phone, medium)
-    `)
-    .gte('book_date', startUTC.toISOString())
-    .lte('book_date', endUTC.toISOString());
-  log('3. Supabase bookings (book_date)', stepBookings);
-
-  if (bookingsError) {
+  let bookingsData;
+  try {
+    bookingsData = await fetchAllPages(() =>
+      supabase
+        .from('calls')
+        .select(`
+          picked_up,
+          confirmed,
+          lead_id,
+          book_date,
+          source_type,
+          is_reschedule,
+          phone,
+          setters (id, name),
+          leads (phone, medium)
+        `)
+        .gte('book_date', startUTC.toISOString())
+        .lte('book_date', endUTC.toISOString())
+        .order('book_date', { ascending: true })
+    );
+  } catch (bookingsError) {
     console.error('Error fetching bookings made in period:', bookingsError);
     return null;
   }
+  log('3. Supabase bookings (book_date)', stepBookings);
 
   const stepInMemory = performance.now();
   const bookingsMadeinPeriod = bookingsData?.length || 0;
@@ -569,6 +594,8 @@ const totalPurchased = purchasedCalls.length;
       ? (source.pickedUpFromBookings / source.bookingsMadeInPeriod) * 100 
       : 0;
     source.showUpRate = (source.totalBookedThatHappened ?? 0) > 0 ? (source.totalShowedUp / source.totalBookedThatHappened) * 100 : 0;
+    source.showUpRateConfirmed = (source.totalConfirmed ?? 0) > 0 ? (source.totalShowedUp / source.totalConfirmed) * 100 : 0;
+    source.confirmationRate = (source.totalBookedThatHappened ?? 0) > 0 ? (source.totalConfirmed / source.totalBookedThatHappened) * 100 : 0;
     source.conversionRate = source.totalShowedUp > 0 ? (source.totalPurchased / source.totalShowedUp) * 100 : 0;
     source.dqRate = source.totalPickedUpByBookDate > 0 ? (source.totalDQ / source.totalPickedUpByBookDate) * 100 : 0;
   });
@@ -697,6 +724,8 @@ const totalPurchased = purchasedCalls.length;
       ? (medium.pickedUpFromBookings / medium.bookingsMadeInPeriod) * 100 
       : 0;
     medium.showUpRate = (medium.totalBookedThatHappened ?? 0) > 0 ? (medium.totalShowedUp / medium.totalBookedThatHappened) * 100 : 0;
+    medium.showUpRateConfirmed = (medium.totalConfirmed ?? 0) > 0 ? (medium.totalShowedUp / medium.totalConfirmed) * 100 : 0;
+    medium.confirmationRate = (medium.totalBookedThatHappened ?? 0) > 0 ? (medium.totalConfirmed / medium.totalBookedThatHappened) * 100 : 0;
     medium.conversionRate = medium.totalShowedUp > 0 ? (medium.totalPurchased / medium.totalShowedUp) * 100 : 0;
   });
 
@@ -875,6 +904,9 @@ async function fetchMonthlyStats() {
       ? (monthStats.totalConfirmed / monthStats.totalBooked) * 100 
       : 0;
     
+    const organicConversionRate = monthStats.sourceStats?.organic?.conversionRate || 0;
+    const adsConversionRate = monthStats.sourceStats?.ads?.conversionRate || 0;
+    
     return {
       monthStart: startDateStr,
       monthEnd: endDateStr,
@@ -885,7 +917,9 @@ async function fetchMonthlyStats() {
       showUpRateBooked,
       conversionRateShowedUp,
       conversionRateBooked,
-      confirmationRate
+      confirmationRate,
+      organicConversionRate,
+      adsConversionRate
     };
   }).filter(Boolean).reverse();
   
@@ -989,33 +1023,34 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
   }
 
   const tQuery = performance.now();
-  let query = supabase
-    .from('outcome_log')
-    .select(`
-      *,
-      calls!inner!closer_notes_call_id_fkey (
-        *,
-        closers (id, name),
-        setters (id, name),
-        leads (id, customer_id)
-      ),
-      offers!offer_id (
-        id,
-        name
-      )
-    `)
-    .in('outcome', ['yes', 'refund'])
-    .gte('purchase_date', startUTC.toISOString())
-    .lte('purchase_date', endUTC.toISOString())
-    .order('purchase_date', { ascending: false });
-
-  const { data: outcomeLogs, error } = await query;
-  console.log(`[generalStats] fetchPurchasesForDateRange: outcome_log query took ${(performance.now() - tQuery).toFixed(0)}ms`);
-
-  if (error) {
-    console.error('Error fetching purchases:', error);
+  let outcomeLogs;
+  try {
+    outcomeLogs = await fetchAllPages(() =>
+      supabase
+        .from('outcome_log')
+        .select(`
+          *,
+          calls!inner!closer_notes_call_id_fkey (
+            *,
+            closers (id, name),
+            setters (id, name),
+            leads (id, customer_id)
+          ),
+          offers!offer_id (
+            id,
+            name
+          )
+        `)
+        .in('outcome', ['yes', 'refund'])
+        .gte('purchase_date', startUTC.toISOString())
+        .lte('purchase_date', endUTC.toISOString())
+        .order('purchase_date', { ascending: false })
+    );
+  } catch (err) {
+    console.error('Error fetching purchases:', err);
     return [];
   }
+  console.log(`[generalStats] fetchPurchasesForDateRange: outcome_log query took ${(performance.now() - tQuery).toFixed(0)}ms`);
 
   const tTransform = performance.now();
   // First, deduplicate outcome_log entries by call_id BEFORE transforming
@@ -1857,7 +1892,7 @@ export default function StatsDashboard() {
   // Removed full-page loading - now shows loading indicator in metrics area instead
 
   // Calculate metrics only if we have stats and not in comparison view
-  let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, conversionRateShowedUp = 0, conversionRateBooked = 0, dqRate = 0;
+  let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, confirmationRate = 0, conversionRateShowedUp = 0, conversionRateBooked = 0, dqRate = 0;
   let totalBooked, totalBookedThatHappened, totalPickedUp, totalPickedUpFromBookings, totalPickedUpByBookDate, totalShowedUp, totalConfirmed, totalDQ, totalPurchased, totalRescheduled, totalBookedInPeriod;
   
   if (stats && comparisonView === 'none') {
@@ -1865,7 +1900,8 @@ export default function StatsDashboard() {
     if (sourceFilter !== 'all' && stats.sourceStats && stats.sourceStats[sourceFilter]) {
       const filtered = stats.sourceStats[sourceFilter];
       pickUpRate = filtered.pickUpRate || 0;
-      showUpRateConfirmed = filtered.showUpRate || 0;
+      showUpRateConfirmed = filtered.showUpRateConfirmed ?? filtered.showUpRate ?? 0;
+      confirmationRate = filtered.confirmationRate ?? 0;
       showUpRateBooked = (filtered.totalBookedThatHappened ?? 0) > 0 ? ((filtered.totalShowedUp ?? 0) / filtered.totalBookedThatHappened) * 100 : 0;
       conversionRateShowedUp = filtered.conversionRate || 0;
       conversionRateBooked = filtered.totalBooked > 0 ? (filtered.totalPurchased / filtered.totalBooked) * 100 : 0;
@@ -1884,6 +1920,7 @@ export default function StatsDashboard() {
     } else {
       pickUpRate = stats.bookingsMadeinPeriod > 0 ? (stats.totalPickedUpFromBookings / stats.bookingsMadeinPeriod) * 100 : 0;
       showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
+      confirmationRate = (stats.totalBookedThatHappened ?? 0) > 0 ? (stats.totalConfirmed / stats.totalBookedThatHappened) * 100 : 0;
       showUpRateBooked = (stats.totalBookedThatHappened ?? 0) > 0 ? (stats.totalShowedUp / stats.totalBookedThatHappened) * 100 : 0;
       conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
       conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
@@ -2481,31 +2518,31 @@ export default function StatsDashboard() {
             )}
           </div>
 
-          {/* Show Up Rate / Confirmed */}
+          {/* Confirmation Rate (Confirmed / Booked) */}
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Show Up Rate</h3>
-              <span className="text-xs text-gray-400">Showed Up / Confirmed</span>
+              <h3 className="text-sm font-medium text-gray-500">Confirmation Rate</h3>
+              <span className="text-xs text-gray-400">Confirmed / Booked</span>
             </div>
-            <div className="text-3xl font-bold text-green-600">
-              {showUpRateConfirmed.toFixed(1)}%
+            <div className="text-3xl font-bold text-cyan-600">
+              {(confirmationRate ?? 0).toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {totalShowedUp} / {totalConfirmed} confirmed
+              {totalConfirmed ?? 0} / {totalBookedThatHappened ?? totalBooked ?? 0} bookings
             </div>
             {sourceFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
-                    Ads: {stats.sourceStats.ads.showUpRate.toFixed(1)}%
+                    Ads: {(stats.sourceStats.ads.confirmationRate ?? 0).toFixed(1)}%
                   </div>
                   <div className="text-green-600">
-                    Organic: {stats.sourceStats.organic.showUpRate.toFixed(1)}%
+                    Organic: {(stats.sourceStats.organic.confirmationRate ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalConfirmed}</div>
-                  <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalConfirmed}</div>
+                  <div>{stats.sourceStats.ads.totalConfirmed}/{stats.sourceStats.ads.totalBookedThatHappened ?? stats.sourceStats.ads.totalBooked}</div>
+                  <div>{stats.sourceStats.organic.totalConfirmed}/{stats.sourceStats.organic.totalBookedThatHappened ?? stats.sourceStats.organic.totalBooked}</div>
                 </div>
               </div>
             )}
@@ -2513,19 +2550,19 @@ export default function StatsDashboard() {
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-purple-600">
-                    TikTok: {stats.mediumStats.tiktok.showUpRate.toFixed(1)}%
+                    TikTok: {(stats.mediumStats.tiktok.confirmationRate ?? 0).toFixed(1)}%
                   </div>
                   <div className="text-pink-600">
-                    Instagram: {stats.mediumStats.instagram.showUpRate.toFixed(1)}%
+                    Instagram: {(stats.mediumStats.instagram.confirmationRate ?? 0).toFixed(1)}%
                   </div>
                   <div className="text-gray-600">
-                    Other: {stats.mediumStats.other.showUpRate.toFixed(1)}%
+                    Other: {(stats.mediumStats.other.confirmationRate ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalConfirmed}</div>
-                  <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalConfirmed}</div>
-                  <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalConfirmed}</div>
+                  <div>{stats.mediumStats.tiktok.totalConfirmed}/{stats.mediumStats.tiktok.totalBookedThatHappened ?? stats.mediumStats.tiktok.totalBooked}</div>
+                  <div>{stats.mediumStats.instagram.totalConfirmed}/{stats.mediumStats.instagram.totalBookedThatHappened ?? stats.mediumStats.instagram.totalBooked}</div>
+                  <div>{stats.mediumStats.other.totalConfirmed}/{stats.mediumStats.other.totalBookedThatHappened ?? stats.mediumStats.other.totalBooked}</div>
                 </div>
               </div>
             )}
@@ -2565,31 +2602,31 @@ export default function StatsDashboard() {
             )}
           </div>
 
-          {/* Show Up Rate / Booked */}
+          {/* Show Up Rate / Confirmed */}
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500">Show Up Rate</h3>
-              <span className="text-xs text-gray-400">Showed Up / Booked</span>
+              <span className="text-xs text-gray-400">Showed Up / Confirmed</span>
             </div>
             <div className="text-3xl font-bold text-green-600">
-              {showUpRateBooked.toFixed(1)}%
+              {showUpRateConfirmed.toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {totalShowedUp} / {totalBookedThatHappened ?? totalBooked} calls (past only)
+              {totalShowedUp} / {totalConfirmed} confirmed
             </div>
             {sourceFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
-                    Ads: {stats.sourceStats.ads.showUpRate.toFixed(1)}%
+                    Ads: {(stats.sourceStats.ads.showUpRateConfirmed ?? 0).toFixed(1)}%
                   </div>
                   <div className="text-green-600">
-                    Organic: {stats.sourceStats.organic.showUpRate.toFixed(1)}%
+                    Organic: {(stats.sourceStats.organic.showUpRateConfirmed ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalBookedThatHappened ?? stats.sourceStats.ads.totalBooked}</div>
-                  <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalBookedThatHappened ?? stats.sourceStats.organic.totalBooked}</div>
+                  <div>{stats.sourceStats.ads.totalShowedUp}/{stats.sourceStats.ads.totalConfirmed}</div>
+                  <div>{stats.sourceStats.organic.totalShowedUp}/{stats.sourceStats.organic.totalConfirmed}</div>
                 </div>
               </div>
             )}
@@ -2597,19 +2634,19 @@ export default function StatsDashboard() {
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-purple-600">
-                    TikTok: {stats.mediumStats.tiktok.showUpRate.toFixed(1)}%
+                    TikTok: {(stats.mediumStats.tiktok.showUpRateConfirmed ?? 0).toFixed(1)}%
                   </div>
                   <div className="text-pink-600">
-                    Instagram: {stats.mediumStats.instagram.showUpRate.toFixed(1)}%
+                    Instagram: {(stats.mediumStats.instagram.showUpRateConfirmed ?? 0).toFixed(1)}%
                   </div>
                   <div className="text-gray-600">
-                    Other: {stats.mediumStats.other.showUpRate.toFixed(1)}%
+                    Other: {(stats.mediumStats.other.showUpRateConfirmed ?? 0).toFixed(1)}%
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalBookedThatHappened ?? stats.mediumStats.tiktok.totalBooked}</div>
-                  <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalBookedThatHappened ?? stats.mediumStats.instagram.totalBooked}</div>
-                  <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalBookedThatHappened ?? stats.mediumStats.other.totalBooked}</div>
+                  <div>{stats.mediumStats.tiktok.totalShowedUp}/{stats.mediumStats.tiktok.totalConfirmed}</div>
+                  <div>{stats.mediumStats.instagram.totalShowedUp}/{stats.mediumStats.instagram.totalConfirmed}</div>
+                  <div>{stats.mediumStats.other.totalShowedUp}/{stats.mediumStats.other.totalConfirmed}</div>
                 </div>
               </div>
             )}

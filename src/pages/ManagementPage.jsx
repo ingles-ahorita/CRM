@@ -503,19 +503,17 @@ export default function ManagementPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'row', gap: '16px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
             <div
               style={{
-                flex: 1,
-                minWidth: '180px',
                 backgroundColor: '#fff',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                padding: '20px',
+                padding: '16px 20px',
                 border: '1px solid #e5e7eb',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
                 Yesterday
               </div>
               {(() => {
@@ -526,38 +524,25 @@ export default function ManagementPage() {
                 const purchased = yesterday?.totalPurchasedByCallDate ?? yesterday?.totalPurchased ?? 0;
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
                 const successRate = calls > 0 ? (purchased / calls) * 100 : null;
+                const confirmationRate = calls > 0 ? (confirmed / calls) * 100 : null;
                 const showUpRate = yesterday?.showUpRate ?? null;
                 const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
                 const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
+                const Metric = ({ label, value, subtext, thresh, first }) => (
+                  <div style={{ flex: 1, minWidth: 0, paddingLeft: first ? 0 : 16, paddingRight: 16, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
+                    <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>{label}</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: color(value, thresh) }}>
+                      {chartLoading ? '…' : formatPct(value)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{chartLoading ? '…' : subtext}</div>
+                  </div>
+                );
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Show up rate</div>
-                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(showUpRate, 50) }}>
-                        {chartLoading ? '…' : formatPct(showUpRate)}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                        {chartLoading ? '…' : confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'}
-                      </div>
-                    </div>
-                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Conversion rate</div>
-                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(conversionRate, 30) }}>
-                        {chartLoading ? '…' : formatPct(conversionRate)}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                        {chartLoading ? '…' : showed > 0 ? `${purchased} / ${showed} showed up` : '—'}
-                      </div>
-                    </div>
-                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Success rate</div>
-                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(successRate, 10) }}>
-                        {chartLoading ? '…' : formatPct(successRate)}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                        {chartLoading ? '…' : calls > 0 ? `${purchased} / ${calls} called` : '—'}
-                      </div>
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
+                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={50} />
+                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} bookings` : '—'} thresh={75} />
+                    <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
+                    <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
                   </div>
                 );
               })()}
@@ -565,58 +550,48 @@ export default function ManagementPage() {
 
             <div
               style={{
-                flex: 1,
-                minWidth: '180px',
                 backgroundColor: '#fff',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                padding: '20px',
+                padding: '16px 20px',
                 border: '1px solid #e5e7eb',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                Last week
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                This week
               </div>
               {(() => {
-                const last7 = chartSeries.length >= 7 ? chartSeries.slice(-7) : chartSeries;
-                const showed = last7.reduce((a, d) => a + (d.totalShowedUp ?? 0), 0);
-                const confirmed = last7.reduce((a, d) => a + (d.totalConfirmed ?? 0), 0);
-                const calls = last7.reduce((a, d) => a + (d.calls ?? 0), 0);
-                const purchased = last7.reduce((a, d) => a + (d.totalPurchasedByCallDate ?? d.totalPurchased ?? 0), 0);
+                const now = new Date();
+                const dayOfWeek = (now.getUTCDay() + 6) % 7;
+                const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - dayOfWeek));
+                const mondayStr = monday.toISOString().slice(0, 10);
+                const todayStr = now.toISOString().slice(0, 10);
+                const thisWeek = chartSeries.filter((d) => d.date && d.date >= mondayStr && d.date <= todayStr);
+                const showed = thisWeek.reduce((a, d) => a + (d.totalShowedUp ?? 0), 0);
+                const confirmed = thisWeek.reduce((a, d) => a + (d.totalConfirmed ?? 0), 0);
+                const calls = thisWeek.reduce((a, d) => a + (d.calls ?? 0), 0);
+                const purchased = thisWeek.reduce((a, d) => a + (d.totalPurchasedByCallDate ?? d.totalPurchased ?? 0), 0);
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
                 const successRate = calls > 0 ? (purchased / calls) * 100 : null;
+                const confirmationRate = calls > 0 ? (confirmed / calls) * 100 : null;
                 const showUpRate = confirmed > 0 ? (showed / confirmed) * 100 : null;
                 const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
                 const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
+                const Metric = ({ label, value, subtext, thresh, first }) => (
+                  <div style={{ flex: 1, minWidth: 0, paddingLeft: first ? 0 : 16, paddingRight: 16, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
+                    <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>{label}</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: color(value, thresh) }}>
+                      {chartLoading ? '…' : formatPct(value)}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>{chartLoading ? '…' : subtext}</div>
+                  </div>
+                );
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Show up rate</div>
-                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(showUpRate, 50) }}>
-                        {chartLoading ? '…' : formatPct(showUpRate)}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                        {chartLoading ? '…' : confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'}
-                      </div>
-                    </div>
-                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Conversion rate</div>
-                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(conversionRate, 30) }}>
-                        {chartLoading ? '…' : formatPct(conversionRate)}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                        {chartLoading ? '…' : showed > 0 ? `${purchased} / ${showed} showed up` : '—'}
-                      </div>
-                    </div>
-                    <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '12px' }}>
-                      <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>Success rate</div>
-                      <div style={{ fontSize: '22px', fontWeight: '700', color: color(successRate, 10) }}>
-                        {chartLoading ? '…' : formatPct(successRate)}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                        {chartLoading ? '…' : calls > 0 ? `${purchased} / ${calls} called` : '—'}
-                      </div>
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
+                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={50} />
+                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} bookings` : '—'} thresh={75} />
+                    <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
+                    <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
                   </div>
                 );
               })()}
