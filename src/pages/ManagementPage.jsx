@@ -503,9 +503,11 @@ export default function ManagementPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '200px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'row', gap: '16px', flexShrink: 0 }}>
             <div
               style={{
+                flex: 1,
+                minWidth: '180px',
                 backgroundColor: '#fff',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
@@ -563,6 +565,8 @@ export default function ManagementPage() {
 
             <div
               style={{
+                flex: 1,
+                minWidth: '180px',
                 backgroundColor: '#fff',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
