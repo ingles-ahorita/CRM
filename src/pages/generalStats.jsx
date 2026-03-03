@@ -278,10 +278,12 @@ const totalPurchased = purchasedCalls.length;
           id: closerId,
           name: call.closers.name,
           showedUp: 0,
+          confirmed: 0,
           purchased: 0
         };
       }
       if (call.showed_up) closerStats[closerId].showedUp++;
+      if (call.confirmed === true || call.confirmed === 'true') closerStats[closerId].confirmed++;
     }
   });
 
@@ -309,6 +311,7 @@ const totalPurchased = purchasedCalls.length;
             id: closerId,
             name: call.closers.name,
             showedUp: 0,
+            confirmed: 0,
             purchased: 0
           };
         }
@@ -2859,7 +2862,7 @@ export default function StatsDashboard() {
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900">Conversion Rate by Closer</h2>
-            <p className="text-sm text-gray-500 mt-1">Purchased / Showed Up per closer (UTC-normalized)</p>
+            <p className="text-sm text-gray-500 mt-1">Show Up Rate (Showed up / Confirmed) and Conversion Rate (Purchased / Showed up) per closer (UTC-normalized)</p>
           </div>
           
           <div className="overflow-x-auto">
@@ -2871,6 +2874,9 @@ export default function StatsDashboard() {
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Showed up
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Show Up Rate
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Purchased
@@ -2885,6 +2891,9 @@ export default function StatsDashboard() {
                   const conversionRate = closer.showedUp > 0 
                     ? (closer.purchased / closer.showedUp) * 100 
                     : 0;
+                  const showUpRate = (closer.confirmed ?? 0) > 0 
+                    ? ((closer.showedUp ?? 0) / (closer.confirmed ?? 0)) * 100 
+                    : null;
                   
                   return (
                     <tr key={closer.id} className="hover:bg-gray-50">
@@ -2893,6 +2902,14 @@ export default function StatsDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-gray-900">{closer.showedUp}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-medium text-gray-900">
+                          {showUpRate != null ? `${showUpRate.toFixed(1)}%` : '—'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {closer.showedUp ?? 0} / {closer.confirmed ?? 0} confirmed
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm font-semibold text-green-600">{closer.purchased}</div>

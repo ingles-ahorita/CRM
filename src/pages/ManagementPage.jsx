@@ -433,6 +433,9 @@ export default function ManagementPage() {
                                 <div style={{ fontWeight: '600', color: '#111827', marginTop: '4px', paddingTop: '4px', borderTop: '1px solid #e5e7eb' }}>
                                   Total: {v}
                                 </div>
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                                  {raw?.totalShowedUp ?? 0} / {raw?.totalConfirmed ?? 0} confirmed
+                                </div>
                               </>
                             ) : isPurchaseRate ? (
                               <>
@@ -446,6 +449,13 @@ export default function ManagementPage() {
                                 <div style={{ fontWeight: '600', color: '#111827' }}>{v}</div>
                                 <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
                                   {raw?.totalPurchased ?? 0} / {raw?.totalShowedUp ?? 0} showed up
+                                </div>
+                              </>
+                            ) : chartMetric === 'showUpRate' ? (
+                              <>
+                                <div style={{ fontWeight: '600', color: '#111827' }}>{v}</div>
+                                <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                                  {raw?.totalShowedUp ?? 0} / {raw?.totalConfirmed ?? 0} confirmed
                                 </div>
                               </>
                             ) : isShowUps ? (
@@ -464,13 +474,13 @@ export default function ManagementPage() {
                     />
                     {chartMetric === 'showUpRate' && chartSplitBySource ? (
                       <>
-                        <Line type="monotone" dataKey="valueOrganic" name="Organic" stroke="#f97316" strokeWidth={2} dot={{ fill: '#f97316', r: 4 }} activeDot={{ r: 6 }} connectNulls />
-                        <Line type="monotone" dataKey="valueAds" name="Ads" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }} connectNulls />
+                        <Line type="linear" dataKey="valueOrganic" name="Organic" stroke="#f97316" strokeWidth={2} dot={{ fill: '#f97316', r: 4 }} activeDot={{ r: 6 }} connectNulls />
+                        <Line type="linear" dataKey="valueAds" name="Ads" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 4 }} activeDot={{ r: 6 }} connectNulls />
                         <Legend wrapperStyle={{ fontSize: '11px' }} />
                       </>
                     ) : (chartMetric === 'showUpRate' || chartMetric === 'purchaseRate' || chartMetric === 'conversionRate') ? (
                       <Line
-                        type="monotone"
+                        type="linear"
                         dataKey="value"
                         stroke="#6366f1"
                         strokeWidth={2}
@@ -488,7 +498,7 @@ export default function ManagementPage() {
                       />
                     ) : (
                       <Line
-                        type="monotone"
+                        type="linear"
                         dataKey="value"
                         stroke="#6366f1"
                         strokeWidth={2}
