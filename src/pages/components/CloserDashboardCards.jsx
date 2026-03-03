@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart3 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { fetchPurchases as fetchKajabiPurchases } from '../../lib/kajabiApi';
+import { getCloserCommissionForMonth } from '../../lib/closerCommission';
 import * as DateHelpers from '../../utils/dateHelpers';
 
 export default function CloserDashboardCards({ closer }) {
@@ -37,7 +38,7 @@ export default function CloserDashboardCards({ closer }) {
       setLoading(true);
 
       const [commissionRes, conversionRes, pifRateRes, downsellRateRes, callsRes, last5Res, yesterdayRateRes] = await Promise.all([
-        loadCurrentMonthCommission(closer, currentMonthKey, startISO, endISO),
+        getCloserCommissionForMonth(closer, currentMonthKey),
         loadCurrentMonthConversionRate(closer, startISO, endISO),
         loadCurrentMonthPifRate(closer, startISO, endISO),
         loadCurrentMonthDownsellRate(closer, startISO, endISO),
@@ -108,66 +109,6 @@ export default function CloserDashboardCards({ closer }) {
     const showedUp = list.filter((c) => isTrue(c.showed_up)).length;
     const rate = confirmed > 0 ? Math.round((showedUp / confirmed) * 1000) / 10 : null;
     return { rate, showedUp, confirmed };
-  }
-
-  async function loadCurrentMonthCommission(closerId, monthKey, startISO, endISO) {
-    if (!startISO || !endISO) return 0;
-
-    const [year, monthNum] = monthKey.split('-').map(Number);
-    const prevMonthDate = new Date(Date.UTC(year, monthNum - 2, 1));
-    const prevStart = new Date(Date.UTC(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), 1, 0, 0, 0, 0));
-    const prevEnd = new Date(Date.UTC(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0, 23, 59, 59, 999));
-    const prevStartISO = prevStart.toISOString().split('T')[0] + 'T00:00:00.000Z';
-    const prevEndISO = prevEnd.toISOString().split('T')[0] + 'T23:59:59.999Z';
-
-    const [
-      { data: yesLogs },
-      { data: secondInstallments },
-      { data: refundLogs },
-      { data: sameMonthPurchases }
-    ] = await Promise.all([
-      supabase
-        .from('outcome_log')
-        .select('commission, calls!inner!call_id(closer_id)')
-        .eq('outcome', 'yes')
-        .gte('purchase_date', startISO)
-        .lte('purchase_date', endISO)
-        .then((r) => (r.error ? { data: [] } : r)),
-      supabase
-        .from('outcome_log')
-        .select('commission, calls!inner!call_id(closer_id)')
-        .eq('outcome', 'yes')
-        .eq('paid_second_installment', true)
-        .gte('purchase_date', prevStartISO)
-        .lte('purchase_date', prevEndISO)
-        .then((r) => (r.error ? { data: [] } : r)),
-      supabase
-        .from('outcome_log')
-        .select('commission, calls!inner!call_id(closer_id)')
-        .eq('outcome', 'refund')
-        .not('refund_date', 'is', null)
-        .gte('refund_date', startISO)
-        .lte('refund_date', endISO)
-        .then((r) => (r.error ? { data: [] } : r)),
-      supabase
-        .from('outcome_log')
-        .select('commission, outcome, calls!inner!call_id(closer_id)')
-        .in('outcome', ['yes', 'refund'])
-        .gte('purchase_date', startISO)
-        .lte('purchase_date', endISO)
-        .then((r) => (r.error ? { data: [] } : r))
-    ]);
-
-    const filterCloser = (arr) => (arr || []).filter((x) => x.calls?.closer_id === closerId);
-
-    const baseRevenue = filterCloser(yesLogs).reduce((s, x) => s + (Number(x.commission) || 0), 0);
-    const secondComm = filterCloser(secondInstallments).reduce((s, x) => s + (Number(x.commission) || 0), 0);
-    const refundsComm = filterCloser(refundLogs).reduce((s, x) => s + (Number(x.commission) || 0), 0);
-    const sameMonthRefundsComm = filterCloser(sameMonthPurchases)
-      .filter((p) => p.outcome === 'refund' && p.commission != null)
-      .reduce((s, p) => s + (Number(p.commission) || 0), 0);
-
-    return baseRevenue + secondComm + refundsComm + sameMonthRefundsComm;
   }
 
   async function loadCurrentMonthConversionRate(closerId, startISO, endISO) {

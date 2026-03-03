@@ -6,6 +6,7 @@ import { NotesModal } from './components/Modal';
 import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
 import { fetchPurchases as fetchKajabiPurchases, fetchTransactions as fetchKajabiTransactions } from '../lib/kajabiApi';
+import { getCloserCommissionBreakdown } from '../lib/closerCommission';
 import { LOCK_IN_OFFER_DB_ID, PAYOFF_OFFER_DB_ID } from '../lib/specialOffers';
 
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
@@ -40,6 +41,10 @@ export default function CloserStatsDashboard() {
   const [refundsLoading, setRefundsLoading] = useState(false);
   const [refundsCommission, setRefundsCommission] = useState(0);
   const [refundsCommissionLoading, setRefundsCommissionLoading] = useState(false);
+  const [sameMonthRefundsCommission, setSameMonthRefundsCommission] = useState(0);
+  const [sameMonthRefundsCommissionLoading, setSameMonthRefundsCommissionLoading] = useState(false);
+  const [commissionBreakdown, setCommissionBreakdown] = useState(null);
+  const [commissionBreakdownLoading, setCommissionBreakdownLoading] = useState(false);
   const [refundsList, setRefundsList] = useState([]);
   const [refundsListLoading, setRefundsListLoading] = useState(false);
   const [sameMonthRefundsList, setSameMonthRefundsList] = useState([]);
@@ -181,6 +186,30 @@ export default function CloserStatsDashboard() {
     loadPurchasesForCommission();
   }, [closer, selectedMonth]);
 
+  // Fetch same-month refund commission (refunds where purchase_date is in selected month)
+  useEffect(() => {
+    const loadSameMonthRefundsCommission = async () => {
+      if (!selectedMonth) return;
+      setSameMonthRefundsCommissionLoading(true);
+      const commission = await fetchSameMonthRefundsCommission(closer, selectedMonth);
+      setSameMonthRefundsCommission(commission);
+      setSameMonthRefundsCommissionLoading(false);
+    };
+    loadSameMonthRefundsCommission();
+  }, [closer, selectedMonth]);
+
+  // Fetch commission breakdown from shared lib (matches Closer Dashboard exactly)
+  useEffect(() => {
+    const loadCommissionBreakdown = async () => {
+      if (!closer || !selectedMonth) return;
+      setCommissionBreakdownLoading(true);
+      const breakdown = await getCloserCommissionBreakdown(closer, selectedMonth);
+      setCommissionBreakdown(breakdown);
+      setCommissionBreakdownLoading(false);
+    };
+    loadCommissionBreakdown();
+  }, [closer, selectedMonth]);
+
   // Fetch Kajabi amount-paid map for the selected month (for purchase log Amount column)
   useEffect(() => {
     if (!selectedMonth) {
@@ -215,6 +244,8 @@ export default function CloserStatsDashboard() {
   const isPageReady =
     !loading &&
     !purchasesForCommissionLoading &&
+    !sameMonthRefundsCommissionLoading &&
+    !commissionBreakdownLoading &&
     (viewMode === 'stats' ||
       (viewMode === 'purchases' && isPurchasesViewReady) ||
       (viewMode === 'refunds' && isRefundsViewReady) ||
@@ -430,42 +461,19 @@ export default function CloserStatsDashboard() {
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="text-sm font-medium text-gray-500">Comission ({selectedMonth})</div>
                 <div className="mt-2 text-3xl font-bold text-purple-600">
-                  ${(() => {
-                    const currentMonthRevenue = data.find(row => row.month === selectedMonth)?.revenue || 0;
-                    const secondInstallmentsComm = secondInstallmentsLoading ? 0 : secondInstallmentsCommission;
-                    const refundsComm = refundsCommissionLoading ? 0 : refundsCommission;
-                    
-                    // Calculate commission from same-month refunds in purchases table
-                    // These are refunds that happened in the same month as purchase
-                    // Their commission can be 0 (if clawback is 100%) or positive (if clawback < 100%)
-                    // Use purchasesForCommission which is always loaded, not purchases which is only loaded in purchases view
-                    const sameMonthRefundsComm = purchasesForCommissionLoading ? 0 : purchasesForCommission
-                      .filter(p => p.outcome === 'refund' && p.commission !== null && p.commission !== undefined)
-                      .reduce((sum, p) => sum + (p.commission || 0), 0);
-                    
-                    // Refunds commission is already negative, so adding it subtracts from total
-                    // Same-month refunds commission is positive (or 0), so adding it adds to total
-                    const totalCommission = currentMonthRevenue + secondInstallmentsComm + refundsComm + sameMonthRefundsComm;
-                    return totalCommission.toFixed(2);
-                  })()}
+                  ${commissionBreakdownLoading ? '...' : (commissionBreakdown?.total ?? 0).toFixed(2)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1 space-y-1">
-                  <div>Base: ${data.find(row => row.month === selectedMonth)?.revenue?.toFixed(2) || '0.00'}</div>
-                  {!secondInstallmentsLoading && secondInstallmentsCommission > 0 && (
-                    <div className="text-green-600">+ ${secondInstallmentsCommission.toFixed(2)} from second installments</div>
+                  <div>Base: ${commissionBreakdownLoading ? '...' : (commissionBreakdown?.base ?? 0).toFixed(2)}</div>
+                  {!commissionBreakdownLoading && (commissionBreakdown?.secondInstallments ?? 0) > 0 && (
+                    <div className="text-green-600">+ ${(commissionBreakdown.secondInstallments ?? 0).toFixed(2)} from second installments</div>
                   )}
-                  {(() => {
-                    // Use purchasesForCommission which is always loaded, not purchases which is only loaded in purchases view
-                    const sameMonthRefundsComm = purchasesForCommissionLoading ? 0 : purchasesForCommission
-                      .filter(p => p.outcome === 'refund' && p.commission !== null && p.commission !== undefined)
-                      .reduce((sum, p) => sum + (p.commission || 0), 0);
-                    return !purchasesForCommissionLoading && sameMonthRefundsComm > 0 && (
-                      <div className="text-green-600">+ ${sameMonthRefundsComm.toFixed(2)} from same-month refunds (clawback)</div>
-                    );
-                  })()}
-                  {!refundsCommissionLoading && (
-                    <div className={refundsCommission < 0 ? 'text-red-600' : 'text-gray-500'}>
-                      {refundsCommission > 0 ? '+' : ''}${refundsCommission.toFixed(2)} from previous-month refunds
+                  {!commissionBreakdownLoading && (commissionBreakdown?.sameMonthRefunds ?? 0) > 0 && (
+                    <div className="text-green-600">+ ${(commissionBreakdown.sameMonthRefunds ?? 0).toFixed(2)} from same-month refunds (clawback)</div>
+                  )}
+                  {!commissionBreakdownLoading && (
+                    <div className={(commissionBreakdown?.refunds ?? 0) < 0 ? 'text-red-600' : 'text-gray-500'}>
+                      {(commissionBreakdown?.refunds ?? 0) > 0 ? '+' : ''}${(commissionBreakdown?.refunds ?? 0).toFixed(2)} from previous-month refunds
                     </div>
                   )}
                 </div>
@@ -1192,6 +1200,36 @@ async function fetchPurchases(closer = null, month = null) {
   });
 
   return purchases;
+}
+
+async function fetchSameMonthRefundsCommission(closer = null, month = null) {
+  if (!month) return 0;
+
+  const [year, monthNum] = month.split('-');
+  const monthDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 15));
+  const monthRange = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+  if (!monthRange) return 0;
+
+  const startDateISO = monthRange.startDate.toISOString();
+  const endDateISO = monthRange.endDate.toISOString();
+
+  let query = supabase
+    .from('outcome_log')
+    .select('commission, calls!inner!call_id(closer_id)')
+    .eq('outcome', 'refund')
+    .gte('purchase_date', startDateISO)
+    .lte('purchase_date', endDateISO);
+
+  if (closer) query = query.eq('calls.closer_id', closer);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('Error fetching same-month refunds commission:', error);
+    return 0;
+  }
+
+  const filtered = (data || []).filter((x) => !closer || x.calls?.closer_id === closer);
+  return filtered.reduce((sum, x) => sum + (Number(x.commission) || 0), 0);
 }
 
 async function fetchSecondInstallments(closer = null, currentMonth = null) {

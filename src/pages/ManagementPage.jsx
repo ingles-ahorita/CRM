@@ -531,7 +531,7 @@ export default function ManagementPage() {
                 const showed = yesterday?.totalShowedUp ?? 0;
                 const confirmed = yesterday?.totalConfirmed ?? 0;
                 const calls = yesterday?.calls ?? 0;
-                const purchased = yesterday?.totalPurchasedByCallDate ?? yesterday?.totalPurchased ?? 0;
+                const purchased = yesterday?.totalPurchased ?? 0;
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
                 const successRate = calls > 0 ? (purchased / calls) * 100 : null;
                 const confirmationRate = calls > 0 ? (confirmed / calls) * 100 : null;
@@ -580,7 +580,7 @@ export default function ManagementPage() {
                 const showed = thisWeek.reduce((a, d) => a + (d.totalShowedUp ?? 0), 0);
                 const confirmed = thisWeek.reduce((a, d) => a + (d.totalConfirmed ?? 0), 0);
                 const calls = thisWeek.reduce((a, d) => a + (d.calls ?? 0), 0);
-                const purchased = thisWeek.reduce((a, d) => a + (d.totalPurchasedByCallDate ?? d.totalPurchased ?? 0), 0);
+                const purchased = thisWeek.reduce((a, d) => a + (d.totalPurchased ?? 0), 0);
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
                 const successRate = calls > 0 ? (purchased / calls) * 100 : null;
                 const confirmationRate = calls > 0 ? (confirmed / calls) * 100 : null;
