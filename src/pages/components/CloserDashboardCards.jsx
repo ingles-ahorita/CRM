@@ -11,6 +11,7 @@ export default function CloserDashboardCards({ closer }) {
   const [loading, setLoading] = useState(true);
   const [currentMonthCommission, setCurrentMonthCommission] = useState(0);
   const [currentMonthConversionRate, setCurrentMonthConversionRate] = useState(null);
+  const [historicConversionRate, setHistoricConversionRate] = useState(null);
   const [currentMonthPifRate, setCurrentMonthPifRate] = useState(null);
   const [currentMonthDownsellRate, setCurrentMonthDownsellRate] = useState(null);
   const [noShowCalls, setNoShowCalls] = useState([]);
@@ -37,9 +38,10 @@ export default function CloserDashboardCards({ closer }) {
     async function load() {
       setLoading(true);
 
-      const [commissionRes, conversionRes, pifRateRes, downsellRateRes, callsRes, last5Res, yesterdayRateRes] = await Promise.all([
+      const [commissionRes, conversionRes, historicConversionRes, pifRateRes, downsellRateRes, callsRes, last5Res, yesterdayRateRes] = await Promise.all([
         getCloserCommissionForMonth(closer, currentMonthKey),
         loadCurrentMonthConversionRate(closer, startISO, endISO),
+        loadHistoricConversionRate(closer),
         loadCurrentMonthPifRate(closer, startISO, endISO),
         loadCurrentMonthDownsellRate(closer, startISO, endISO),
         supabase
@@ -47,6 +49,7 @@ export default function CloserDashboardCards({ closer }) {
           .select('id, call_date, lead_id, leads(id, name, email)')
           .eq('closer_id', closer)
           .eq('showed_up', false)
+          .lte('call_date', new Date().toISOString())
           .order('call_date', { ascending: false })
           .limit(20),
         supabase
@@ -54,6 +57,7 @@ export default function CloserDashboardCards({ closer }) {
           .select('id, call_date, lead_id, leads(id, name, email), outcome_log!call_id(outcome)')
           .eq('closer_id', closer)
           .eq('showed_up', true)
+          .lte('call_date', new Date().toISOString())
           .order('call_date', { ascending: false })
           .limit(5)
           .then((r) => (r.error ? { data: [] } : r)),
@@ -63,6 +67,7 @@ export default function CloserDashboardCards({ closer }) {
       if (cancelled) return;
       setCurrentMonthCommission(commissionRes);
       setCurrentMonthConversionRate(conversionRes);
+      setHistoricConversionRate(historicConversionRes);
       setCurrentMonthPifRate(pifRateRes);
       setCurrentMonthDownsellRate(downsellRateRes);
       setYesterdayShowUpRate(yesterdayRateRes);
@@ -130,6 +135,28 @@ export default function CloserDashboardCards({ closer }) {
         .eq('outcome', 'yes')
         .gte('purchase_date', startISO)
         .lte('purchase_date', endISO)
+        .then((r) => (r.error ? { data: [] } : r))
+    ]);
+    const purchaseCount = (yesLogs || []).filter((x) => x.calls?.closer_id === closerId).length;
+    const showed = typeof showedUpCount === 'number' ? showedUpCount : 0;
+    if (showed === 0) return null;
+    return Math.round((purchaseCount / showed) * 1000) / 10;
+  }
+
+  async function loadHistoricConversionRate(closerId) {
+    const [
+      { count: showedUpCount },
+      { data: yesLogs }
+    ] = await Promise.all([
+      supabase
+        .from('calls')
+        .select('id', { count: 'exact', head: true })
+        .eq('closer_id', closerId)
+        .eq('showed_up', true),
+      supabase
+        .from('outcome_log')
+        .select('id, calls!inner!call_id(closer_id)')
+        .eq('outcome', 'yes')
         .then((r) => (r.error ? { data: [] } : r))
     ]);
     const purchaseCount = (yesLogs || []).filter((x) => x.calls?.closer_id === closerId).length;
@@ -324,6 +351,23 @@ export default function CloserDashboardCards({ closer }) {
             <p className="text-xs text-gray-400 mt-0.5">% with weekly_classes offer</p>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-6 self-start relative">
+        <button
+          type="button"
+          onClick={() => navigate(`/closer-stats/${closer}`)}
+          className="absolute top-3 right-3 p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+          title="View closer stats"
+          aria-label="View closer stats"
+        >
+          <BarChart3 size={18} />
+        </button>
+        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Historic conversion rate</h2>
+        <div className="text-3xl font-bold text-gray-900">
+          {loading ? '—' : (historicConversionRate != null ? `${historicConversionRate}%` : '—')}
+        </div>
+        <p className="text-xs text-gray-400 mt-1">Purchases / showed up (all time)</p>
       </div>
 
       <div className="bg-white rounded-lg shadow p-4 self-start">

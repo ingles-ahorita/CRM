@@ -38,6 +38,22 @@ export default function ManagementPage() {
   const [chartSplitBySource, setChartSplitBySource] = useState(false);
   const [chartDays, setChartDays] = useState(7);
 
+  const ADS_VSL_PATH = '/ads-new-masterclass-job';
+  const ADS_OPT_IN_PATH = '/ads-opt-in-masterclass';
+  const ORGANIC_VSL_PATH = '/masterclass-job';
+  const ORGANIC_OPT_IN_PATHS = '/pro,/';
+  const [gaOptInBooking, setGaOptInBooking] = useState({
+    loading: true,
+    optInAds: null,
+    optInOrganic: null,
+    bookingAds: null,
+    bookingOrganic: null,
+    viewsAds: 0,
+    eventsAds: 0,
+    viewsOrganic: 0,
+    eventsOrganic: 0,
+  });
+
   const [dataState, setDataState] = useState({
     leads: [],
     loading: true,
@@ -129,6 +145,82 @@ export default function ManagementPage() {
     fetchDashboard();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (chartDays - 1));
+    const startStr = startDate.toISOString().slice(0, 10);
+    const endStr = endDate.toISOString().slice(0, 10);
+    const params = { startDate: startStr, endDate: endStr };
+    const sessionParams = { ...params, metric: 'sessions' };
+    async function fetchGaRates() {
+      setGaOptInBooking((p) => ({ ...p, loading: true }));
+      try {
+        const [
+          resAdsVsl,
+          resAdsOptIn,
+          resOrgVsl,
+          resOrgOptIn,
+          resAdsViews,
+          resOrgViews,
+        ] = await Promise.all([
+          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_VSL_PATH }).toString()}`),
+          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_OPT_IN_PATH }).toString()}`),
+          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ORGANIC_VSL_PATH }).toString()}`),
+          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePaths: ORGANIC_OPT_IN_PATHS }).toString()}`),
+          fetch(`/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ADS_VSL_PATH }).toString()}`),
+          fetch(`/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ORGANIC_VSL_PATH }).toString()}`),
+        ]);
+        const parse = async (res) => {
+          const json = await res.json().catch(() => ({}));
+          return res.ok ? json : null;
+        };
+        const [adsVsl, adsOptIn, orgVsl, orgOptIn, adsViews, orgViews] = await Promise.all([
+          parse(resAdsVsl),
+          parse(resAdsOptIn),
+          parse(resOrgVsl),
+          parse(resOrgOptIn),
+          parse(resAdsViews),
+          parse(resOrgViews),
+        ]);
+        if (cancelled) return;
+        const sumSessions = (rows) => (rows || []).reduce((a, r) => a + (r.sessions ?? 0), 0);
+        const sumViewsAndEvents = (rows) => (rows || []).reduce(
+          (a, r) => ({ views: a.views + (r.views ?? 0), events: a.events + (r.eventCount ?? 0) }),
+          { views: 0, events: 0 }
+        );
+        const sessAdsVsl = sumSessions(adsVsl?.rows);
+        const sessAdsOptIn = sumSessions(adsOptIn?.rows);
+        const sessOrgVsl = sumSessions(orgVsl?.rows);
+        const sessOrgOptIn = sumSessions(orgOptIn?.rows);
+        const { views: vAds, events: eAds } = sumViewsAndEvents(adsViews?.rows);
+        const { views: vOrg, events: eOrg } = sumViewsAndEvents(orgViews?.rows);
+        const optInAds = sessAdsOptIn > 0 ? (sessAdsVsl / sessAdsOptIn) * 100 : null;
+        const optInOrganic = sessOrgOptIn > 0 ? (sessOrgVsl / sessOrgOptIn) * 100 : null;
+        const bookingAds = vAds > 0 ? (eAds / vAds) * 100 : null;
+        const bookingOrganic = vOrg > 0 ? (eOrg / vOrg) * 100 : null;
+        setGaOptInBooking({
+          loading: false,
+          optInAds,
+          optInOrganic,
+          bookingAds,
+          bookingOrganic,
+          viewsAds: vAds,
+          eventsAds: eAds,
+          viewsOrganic: vOrg,
+          eventsOrganic: eOrg,
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setGaOptInBooking((p) => ({ ...p, loading: false, optInAds: null, optInOrganic: null, bookingAds: null, bookingOrganic: null }));
+        }
+      }
+    }
+    fetchGaRates();
+    return () => { cancelled = true; };
+  }, [chartDays]);
 
   useEffect(() => {
     let cancelled = false;
@@ -225,17 +317,54 @@ export default function ManagementPage() {
 
         {/* Management dashboard - cards + chart; cards fit content height, chart has fixed height */}
         <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '24px' }}>
-          <div
-            style={{
-              backgroundColor: '#fff',
-              borderRadius: '12px',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-              padding: '20px',
-              width: '200px',
-              flexShrink: 0,
-              border: '1px solid #e5e7eb',
-            }}
-          >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '16px 20px',
+                border: '1px solid #e5e7eb',
+                minWidth: '240px',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                Opt-in &amp; booking rate (last {chartDays} days)
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Opt-in conversion rate</div>
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'baseline' }}>
+                    <span><span style={{ color: '#3b82f6', fontWeight: 600 }}>Ads:</span> {gaOptInBooking.loading ? '…' : gaOptInBooking.optInAds != null ? `${gaOptInBooking.optInAds.toFixed(1)}%` : '—'}</span>
+                    <span><span style={{ color: '#f97316', fontWeight: 600 }}>Organic:</span> {gaOptInBooking.loading ? '…' : gaOptInBooking.optInOrganic != null ? `${gaOptInBooking.optInOrganic.toFixed(1)}%` : '—'}</span>
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>VSL sessions / opt-in sessions</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '4px' }}>Booking rate</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'baseline' }}>
+                      <span><span style={{ color: '#3b82f6', fontWeight: 600 }}>Ads:</span> {gaOptInBooking.loading ? '…' : gaOptInBooking.bookingAds != null ? `${gaOptInBooking.bookingAds.toFixed(1)}%` : '—'}</span>
+                      <span><span style={{ color: '#f97316', fontWeight: 600 }}>Organic:</span> {gaOptInBooking.loading ? '…' : gaOptInBooking.bookingOrganic != null ? `${gaOptInBooking.bookingOrganic.toFixed(1)}%` : '—'}</span>
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '4px' }}>
+                      <div><span style={{ color: '#3b82f6' }}>Ads:</span> {gaOptInBooking.loading ? '…' : `${gaOptInBooking.eventsAds} / ${gaOptInBooking.viewsAds} views`}</div>
+                      <div><span style={{ color: '#f97316' }}>Organic:</span> {gaOptInBooking.loading ? '…' : `${gaOptInBooking.eventsOrganic} / ${gaOptInBooking.viewsOrganic} views`}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '20px',
+                minWidth: '240px',
+                border: '1px solid #e5e7eb',
+              }}
+            >
             <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
               Yesterday's avg attendance
             </div>
@@ -261,6 +390,7 @@ export default function ManagementPage() {
             {dashboardStats.error && (
               <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>From academic app</div>
             )}
+            </div>
           </div>
 
           <div
@@ -549,7 +679,7 @@ export default function ManagementPage() {
                 );
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
-                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={50} />
+                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} bookings` : '—'} thresh={75} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
                     <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
@@ -598,7 +728,7 @@ export default function ManagementPage() {
                 );
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
-                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={50} />
+                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} bookings` : '—'} thresh={75} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
                     <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
