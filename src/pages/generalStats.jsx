@@ -6,6 +6,15 @@ import ComparisonTable from './components/ComparisonTable';
 import PeriodSelector from './components/PeriodSelector';
 import { ViewNotesModal } from './components/Modal';
 import { parseISO } from 'date-fns';
+import {
+  getWeekBoundsUTC,
+  getWeekBoundsForOffset,
+  getLastDaysUTC,
+  getDayBoundsUTC,
+  getMonthRangeInTimezone,
+  formatDateUTCStart,
+  formatDateUTCEnd,
+} from '../utils/dateHelpers';
 import { formatInTimeZone } from 'date-fns-tz';
 import * as DateHelpers from '../utils/dateHelpers';
 import {
@@ -222,13 +231,14 @@ async function fetchStatsData(startDate, endDate) {
   // Use booked calls for main analysis
   const calls = bookedCalls;
 
-  // Filter out rescheduled leads
+  // Filter out rescheduled leads (same logic as management-series: accept true or 'true')
+  const isReschedule = (c) => c?.is_reschedule === true || c?.is_reschedule === 'true';
   const rescheduledLeadIds = new Set(
-    calls.filter(c => c.is_reschedule === true).map(c => c.lead_id)
+    calls.filter(isReschedule).map(c => c.lead_id)
   );
 
   const filteredCalls = calls.filter(call => {
-    const keep = call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id);
+    const keep = isReschedule(call) || !rescheduledLeadIds.has(call.lead_id);
     return keep;
   });
 
@@ -254,16 +264,30 @@ async function fetchStatsData(startDate, endDate) {
 // Calculate totals (call_date-based for main metrics)
 const totalBooked = filteredCalls.length;
 const totalBookedThatHappened = callsThatHappened.length;
-const totalPickedUp = filteredCalls.filter(c => c.picked_up === true).length;
+const totalPickedUp = filteredCalls.filter(c => c.picked_up === true || c.picked_up === 'true').length;
 // Show up / confirmed: only from calls that already happened (not future call_date)
-const totalShowedUp = callsThatHappened.filter(c => c.showed_up === true).length;
-const totalConfirmed = callsThatHappened.filter(c => c.confirmed === true).length;
+const totalShowedUp = callsThatHappened.filter(c => c.showed_up === true || c.showed_up === 'true').length;
+const totalConfirmed = callsThatHappened.filter(c => c.confirmed === true || c.confirmed === 'true').length;
 
 // Use purchased calls count for total purchases (already filtered by date)
 // Both filteredCalls and purchasedCalls are filtered using UTC-normalized date ranges
 // This ensures conversion rate calculations are consistent with UTC timezone
 const totalPurchased = purchasedCalls.length;
-  
+
+  // Count PIF and downsell among purchases (same filter as purchased: yes + partial refunds)
+  const isCountedPurchase = (call) => {
+    if (call.outcome === 'yes') return true;
+    if (call.outcome === 'refund') {
+      const clawback = call.clawback ?? 100;
+      return clawback < 100;
+    }
+    return false;
+  };
+  const totalPif = purchasedCalls.filter(c => isCountedPurchase(c) && c.offer_installments != null && Number(c.offer_installments) === 0).length;
+  const totalDownsell = purchasedCalls.filter(c => isCountedPurchase(c) && c.offer_weekly_classes != null && c.offer_weekly_classes !== undefined).length;
+  const pifPercent = totalPurchased > 0 ? (totalPif / totalPurchased) * 100 : 0;
+  const downsellPercent = totalPurchased > 0 ? (totalDownsell / totalPurchased) * 100 : 0;
+
   // Group by closer - count show-ups and purchases
   // IMPORTANT: Both show-ups (from call_date) and purchases (from purchase_date) 
   // are filtered using the same UTC-normalized date ranges to ensure accurate conversion rates
@@ -378,7 +402,7 @@ const totalPurchased = purchasedCalls.length;
       const setterId = call.setters.id;
       if (setterStats[setterId]) {
         if (call.showed_up === true) setterStats[setterId].totalShowedUp++;
-        if (call.confirmed === true) setterStats[setterId].totalConfirmed++;
+        if (call.confirmed === true || call.confirmed === 'true') setterStats[setterId].totalConfirmed++;
       }
     }
   });
@@ -749,6 +773,10 @@ const totalPurchased = purchasedCalls.length;
     totalDQ,
     dqRate,
     totalPurchased,
+    totalPif,
+    totalDownsell,
+    pifPercent,
+    downsellPercent,
     totalRescheduled: filteredCalls.filter(c => c.is_reschedule).length,
     closers: Object.values(closerStats),
     setters: Object.values(setterStats),
@@ -759,29 +787,23 @@ const totalPurchased = purchasedCalls.length;
 }
 
 // New function to fetch weekly stats for comparison - optimized with parallel requests
+// Uses UTC for week boundaries (Mon 00:00 UTC – Sun 23:59 UTC), week always starts Monday
 async function fetchWeeklyStats() {
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  
-  // Build all week date ranges first
+  const { weekStart: mondayOfCurrentWeek } = getWeekBoundsUTC(now);
+
   const weekRanges = [];
   for (let weekOffset = 0; weekOffset < 12; weekOffset++) {
-    const weekEnd = new Date(now);
-    weekEnd.setDate(now.getDate() - (weekOffset * 7));
-    
-    const weekStart = new Date(weekEnd);
-    const weekDayOfWeek = weekEnd.getDay();
-    const weekDiff = weekDayOfWeek === 0 ? -6 : 1 - weekDayOfWeek;
-    weekStart.setDate(weekEnd.getDate() + weekDiff);
-    weekStart.setHours(0, 0, 0, 0);
-    
+    const weekStart = new Date(mondayOfCurrentWeek);
+    weekStart.setUTCDate(weekStart.getUTCDate() - (weekOffset * 7));
+
     const weekEndAdjusted = new Date(weekStart);
-    weekEndAdjusted.setDate(weekStart.getDate() + 6);
-    weekEndAdjusted.setHours(23, 59, 59, 999);
-    
+    weekEndAdjusted.setUTCDate(weekEndAdjusted.getUTCDate() + 6);
+    weekEndAdjusted.setUTCHours(23, 59, 59, 999);
+
     const startDateStr = weekStart.toISOString();
     const endDateStr = weekEndAdjusted.toISOString();
-    
+
     weekRanges.push({ startDateStr, endDateStr });
   }
   
@@ -830,48 +852,27 @@ async function fetchWeeklyStats() {
   return weeksData.reverse();
 }
 
-// Fetch monthly stats for comparison
+// Fetch monthly stats for comparison (UTC)
 async function fetchMonthlyStats() {
   const now = new Date();
-  
-  // Determine start year and month (July = month 6, 0-indexed)
-  let startYear = now.getFullYear();
-  let startMonth = 6; // July (0-indexed, so 6 = July)
-  
-  // If current month is before July, start from July of previous year
-  if (now.getMonth() < 6) {
-    startYear = now.getFullYear() - 1;
-  }
-  
-  // Calculate number of months from July to current month
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  let totalMonths;
-  
-  if (currentYear === startYear) {
-    // Same year: from July (6) to current month
-    totalMonths = currentMonth - 6 + 1;
-  } else {
-    // Different year: from July of startYear to current month of currentYear
-    totalMonths = (12 - 6) + currentMonth + 1; // Months from July to Dec + months from Jan to current
-  }
-  
-  // Build all month date ranges from July to current month
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth();
+
+  // Start from July (month 6) of current or previous year
+  let startYear = currentMonth >= 6 ? currentYear : currentYear - 1;
+  const startMonth = 6;
+  const totalMonths = (currentYear - startYear) * 12 + (currentMonth - startMonth) + 1;
+
   const monthRanges = [];
   for (let i = 0; i < totalMonths; i++) {
     const year = startYear + Math.floor((startMonth + i) / 12);
     const month = (startMonth + i) % 12;
-    
-    // Start of the month
-    const monthStart = new Date(year, month, 1, 0, 0, 0, 0);
-    
-    // End of the month (last millisecond of last day)
-    const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
-    
-    const startDateStr = monthStart.toISOString();
-    const endDateStr = monthEnd.toISOString();
-    const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    
+    const monthDate = new Date(Date.UTC(year, month, 15));
+    const range = getMonthRangeInTimezone(monthDate, 'UTC');
+    if (!range) continue;
+    const startDateStr = formatDateUTCStart(range.startDate);
+    const endDateStr = formatDateUTCEnd(range.endDate);
+    const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
     monthRanges.push({ startDateStr, endDateStr, monthLabel });
   }
   
@@ -929,27 +930,16 @@ async function fetchMonthlyStats() {
   return monthsData;
 }
 
-// Fetch daily stats for comparison
+// Fetch daily stats for comparison (UTC)
 async function fetchDailyStats(numDays = 30) {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  
-  // Build all day date ranges first
-  const dayRanges = [];
-  for (let dayOffset = 0; dayOffset < numDays; dayOffset++) {
-    const dayEnd = new Date(now);
-    dayEnd.setDate(now.getDate() - dayOffset);
-    dayEnd.setHours(23, 59, 59, 999);
-    
-    const dayStart = new Date(dayEnd);
-    dayStart.setHours(0, 0, 0, 0);
-    
-    const startDateStr = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, '0')}-${String(dayStart.getDate()).padStart(2, '0')}T00:00:00`;
-    const endDateStr = `${dayEnd.getFullYear()}-${String(dayEnd.getMonth() + 1).padStart(2, '0')}-${String(dayEnd.getDate()).padStart(2, '0')}T23:59:59.999`;
-    const dayLabel = dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' });
-    
-    dayRanges.push({ startDateStr, endDateStr, dayLabel });
-  }
+  const dateStrings = getLastDaysUTC(numDays);
+  const dayRanges = dateStrings.map((dateStr) => {
+    const { dayStart, dayEnd } = getDayBoundsUTC(dateStr);
+    const startDateStr = formatDateUTCStart(dayStart);
+    const endDateStr = formatDateUTCEnd(dayEnd);
+    const dayLabel = dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short', timeZone: 'UTC' });
+    return { startDateStr, endDateStr, dayLabel };
+  });
   
   // Fetch all days in parallel
   const dayPromises = dayRanges.map(({ startDateStr, endDateStr }) => 
@@ -1041,7 +1031,9 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
           ),
           offers!offer_id (
             id,
-            name
+            name,
+            installments,
+            weekly_classes
           )
         `)
         .in('outcome', ['yes', 'refund'])
@@ -1086,6 +1078,8 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       commission: outcomeLog.paid_second_installment ? outcomeLog.commission * 2 : outcomeLog.commission,
       offer_id: outcomeLog.offer_id,
       offer_name: outcomeLog.offers?.name || null,
+      offer_installments: outcomeLog.offers?.installments,
+      offer_weekly_classes: outcomeLog.offers?.weekly_classes,
       discount: outcomeLog.discount,
       purchased_at: outcomeLog.purchase_date,
       purchased: true
@@ -1512,114 +1506,76 @@ function KajabiPurchaseRow({ row, onOpenLinkModal, onContextMenu }) {
 }
 
 export default function StatsDashboard() {
-  const formatDateLocal = (date) => {
-    // Format as YYYY-MM-DDTHH:mm:ss (local time, without timezone specifier)
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
-  };
-
   const getStartOfWeek = () => {
-    const today = new Date();
-    const dayOfWeek = today.getDay(); // 0 (Sunday) to 6 (Saturday)
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Monday as start of week
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + diff);
-    monday.setHours(0, 0, 0, 0);
-
-    // Format as YYYY-MM-DD in local timezone
-    return formatDateLocal(monday);
+    const { weekStart } = getWeekBoundsUTC(new Date());
+    return formatDateUTCStart(weekStart);
   };
 
   const navigate = useNavigate();
 
   const getCurrentMonthKey = () => {
     const n = new Date();
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+    return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}`;
+  };
+
+  const getTodayUTC = () => {
+    const now = new Date();
+    return formatDateUTCEnd(now);
   };
 
   const getInitialMonthRange = () => {
     const monthKey = getCurrentMonthKey();
     const [y, m] = monthKey.split('-').map(Number);
     const monthDate = new Date(Date.UTC(y, m - 1, 15));
-    const range = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
-    if (range) return { start: range.startDate.toISOString(), end: range.endDate.toISOString() };
-    const monday = getStartOfWeek();
-    return { start: monday, end: `${new Date().toISOString().slice(0, 10)}T23:59:59.999Z` };
+    const range = getMonthRangeInTimezone(monthDate, 'UTC');
+    if (range) return { start: formatDateUTCStart(range.startDate), end: formatDateUTCEnd(range.endDate) };
+    return { start: getStartOfWeek(), end: getTodayUTC() };
   };
 
   const initialRange = getInitialMonthRange();
   const [startDate, setStartDate] = useState(initialRange.start);
 
-  const getTodayLocal = () => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // Set to end of the day
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    const hours = String(today.getHours()).padStart(2, '0');
-    const minutes = String(today.getMinutes()).padStart(2, '0');
-    const seconds = String(today.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
-  };
-
-  /** Get start/end dates for a range preset. Returns { start, end } in local format. */
+  /** Get start/end dates for a range preset. Returns { start, end } in UTC ISO format. */
   const getRangePresetDates = (preset) => {
-    const today = new Date();
-    const endOfToday = new Date(today);
-    endOfToday.setHours(23, 59, 59, 999);
+    const now = new Date();
     if (!preset) return null;
     if (preset === 'last7') {
-      const start = new Date(today);
-      start.setDate(start.getDate() - 6);
-      start.setHours(0, 0, 0, 0);
-      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+      const days = getLastDaysUTC(7);
+      const { dayStart } = getDayBoundsUTC(days[0]);
+      return { start: formatDateUTCStart(dayStart), end: formatDateUTCEnd(now) };
     }
     if (preset === 'last14') {
-      const start = new Date(today);
-      start.setDate(start.getDate() - 13);
-      start.setHours(0, 0, 0, 0);
-      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+      const days = getLastDaysUTC(14);
+      const { dayStart } = getDayBoundsUTC(days[0]);
+      return { start: formatDateUTCStart(dayStart), end: formatDateUTCEnd(now) };
     }
     if (preset === 'last30') {
-      const start = new Date(today);
-      start.setDate(start.getDate() - 29);
-      start.setHours(0, 0, 0, 0);
-      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+      const days = getLastDaysUTC(30);
+      const { dayStart } = getDayBoundsUTC(days[0]);
+      return { start: formatDateUTCStart(dayStart), end: formatDateUTCEnd(now) };
     }
     if (preset === 'last90') {
-      const start = new Date(today);
-      start.setDate(start.getDate() - 89);
-      start.setHours(0, 0, 0, 0);
-      return { start: formatDateLocal(start), end: formatDateLocal(endOfToday) };
+      const days = getLastDaysUTC(90);
+      const { dayStart } = getDayBoundsUTC(days[0]);
+      return { start: formatDateUTCStart(dayStart), end: formatDateUTCEnd(now) };
     }
     if (preset === 'currentMonth') {
-      const monthDate = new Date(today.getFullYear(), today.getMonth(), 15);
-      const range = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
-      if (range) return { start: range.startDate.toISOString(), end: range.endDate.toISOString() };
+      const monthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 15));
+      const range = getMonthRangeInTimezone(monthDate, 'UTC');
+      if (range) return { start: formatDateUTCStart(range.startDate), end: formatDateUTCEnd(range.endDate) };
     }
     if (preset === 'previousMonth') {
-      const prev = new Date(today.getFullYear(), today.getMonth() - 1, 15);
-      const range = DateHelpers.getMonthRangeInTimezone(prev, DateHelpers.DEFAULT_TIMEZONE);
-      if (range) return { start: range.startDate.toISOString(), end: range.endDate.toISOString() };
+      const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+      const range = getMonthRangeInTimezone(prev, 'UTC');
+      if (range) return { start: formatDateUTCStart(range.startDate), end: formatDateUTCEnd(range.endDate) };
     }
     if (preset === 'thisWeek') {
-      return { start: getStartOfWeek(), end: getTodayLocal() };
+      const { weekStart, weekEnd } = getWeekBoundsUTC(now);
+      return { start: formatDateUTCStart(weekStart), end: formatDateUTCEnd(now) };
     }
     if (preset === 'lastWeek') {
-      const monday = new Date(today);
-      const dayOfWeek = monday.getDay();
-      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      monday.setDate(monday.getDate() + diff - 7);
-      monday.setHours(0, 0, 0, 0);
-      const sunday = new Date(monday);
-      sunday.setDate(monday.getDate() + 6);
-      sunday.setHours(23, 59, 59, 999);
-      return { start: formatDateLocal(monday), end: formatDateLocal(sunday) };
+      const { weekStart, weekEnd } = getWeekBoundsForOffset(1);
+      return { start: formatDateUTCStart(weekStart), end: formatDateUTCEnd(weekEnd) };
     }
     return null;
   };
@@ -1686,69 +1642,46 @@ export default function StatsDashboard() {
     const monthDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 15));
     
     // Get month range using date helpers
-    const monthRange = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+    const monthRange = getMonthRangeInTimezone(monthDate, 'UTC');
     
     if (monthRange) {
-      const newStartDate = monthRange.startDate.toISOString();
-      const newEndDate = monthRange.endDate.toISOString();
+      const newStartDate = formatDateUTCStart(monthRange.startDate);
+      const newEndDate = formatDateUTCEnd(monthRange.endDate);
       setStartDate(newStartDate);
       setEndDate(newEndDate);
       loadStats(newStartDate, newEndDate);
     }
   };
 
-  const parseDateLocal = (dateString) => {
-    const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day, 0, 0, 0, 0);
-  };
-
   const goToPreviousWeek = () => {
-    // Parse the current start date as a local date
-    const currentStart = new Date(startDate);
-    const dayOfWeek = currentStart.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    currentStart.setDate(currentStart.getDate() + diff);
-    
-    // Go back 7 days to previous Monday
-    currentStart.setDate(currentStart.getDate() - 7);
-    
-    // End date is 6 days after start (Sunday)
-    const newEnd = new Date(currentStart);
-    newEnd.setDate(currentStart.getDate() + 6);
-    newEnd.setHours(23, 59, 59, 999);
-    
-    setSelectedMonth(null); // Clear month selection when navigating weeks
+    const currentStart = parseISO(startDate.includes('Z') ? startDate : startDate + 'Z');
+    const { weekStart } = getWeekBoundsUTC(currentStart);
+    const prevWeek = new Date(weekStart);
+    prevWeek.setUTCDate(prevWeek.getUTCDate() - 7);
+    const { weekStart: prevStart, weekEnd: prevEnd } = getWeekBoundsUTC(prevWeek);
+    setSelectedMonth(null);
     setRangePreset('');
-    setStartDate(formatDateLocal(currentStart));
-    setEndDate(formatDateLocal(newEnd));
+    setStartDate(formatDateUTCStart(prevStart));
+    setEndDate(formatDateUTCEnd(prevEnd));
   };
 
   const goToNextWeek = () => {
-    // Parse the current start date as a local date
-    const currentStart = new Date(startDate);
-    const dayOfWeek = currentStart.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    currentStart.setDate(currentStart.getDate() + diff);
-    
-    // Go forward 7 days to next Monday
-    currentStart.setDate(currentStart.getDate() + 7);
-    
-    // End date is 6 days after start (Sunday)
-    const newEnd = new Date(currentStart);
-    newEnd.setDate(currentStart.getDate() + 6);
-    newEnd.setHours(23, 59, 59, 999);
-    
-    setSelectedMonth(null); // Clear month selection when navigating weeks
+    const currentStart = parseISO(startDate.includes('Z') ? startDate : startDate + 'Z');
+    const { weekStart } = getWeekBoundsUTC(currentStart);
+    const nextWeek = new Date(weekStart);
+    nextWeek.setUTCDate(nextWeek.getUTCDate() + 7);
+    const { weekStart: nextStart, weekEnd: nextEnd } = getWeekBoundsUTC(nextWeek);
+    setSelectedMonth(null);
     setRangePreset('');
-    setStartDate(formatDateLocal(currentStart));
-    setEndDate(formatDateLocal(newEnd));
+    setStartDate(formatDateUTCStart(nextStart));
+    setEndDate(formatDateUTCEnd(nextEnd));
   };
 
   const goToCurrentWeek = () => {
     setSelectedMonth(null);
     setRangePreset('thisWeek');
     setStartDate(getStartOfWeek());
-    setEndDate(getTodayLocal());
+    setEndDate(getTodayUTC());
   };
 
 

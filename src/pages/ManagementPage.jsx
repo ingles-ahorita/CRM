@@ -16,6 +16,7 @@ import {getDailySlotsTotal} from '../utils/ocuppancy';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
 import {useSearchParams} from 'react-router-dom';
+import { getWeekBoundsUTC } from '../utils/dateHelpers';
 import { EndShiftModal } from './components/EndShiftModal';
 import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
 
@@ -312,7 +313,7 @@ export default function ManagementPage() {
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb',boxSizing: 'border-box', padding: '24px', display: 'flex', width: '100%', position: 'relative'}}>
       <div style={{ width: '90%', maxWidth: 1280, margin: '0 auto' }}>
         <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
-          Management
+          Quick view
         </h1>
 
         {/* Management dashboard - cards + chart; cards fit content height, chart has fixed height */}
@@ -702,14 +703,13 @@ export default function ManagementPage() {
               </div>
               {(() => {
                 const now = new Date();
-                const dayOfWeek = (now.getUTCDay() + 6) % 7;
-                const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - dayOfWeek));
-                const mondayStr = monday.toISOString().slice(0, 10);
+                const { weekStart } = getWeekBoundsUTC(now);
+                const mondayStr = weekStart.toISOString().slice(0, 10);
                 const todayStr = now.toISOString().slice(0, 10);
                 const thisWeek = chartSeries.filter((d) => d.date && d.date >= mondayStr && d.date <= todayStr);
                 const showed = thisWeek.reduce((a, d) => a + (d.totalShowedUp ?? 0), 0);
                 const confirmed = thisWeek.reduce((a, d) => a + (d.totalConfirmed ?? 0), 0);
-                const calls = thisWeek.reduce((a, d) => a + (d.calls ?? 0), 0);
+                const calls = thisWeek.reduce((a, d) => a + (d.callsDeduped ?? d.calls ?? 0), 0);
                 const purchased = thisWeek.reduce((a, d) => a + (d.totalPurchased ?? 0), 0);
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
                 const successRate = calls > 0 ? (purchased / calls) * 100 : null;

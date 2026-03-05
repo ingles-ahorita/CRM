@@ -1,4 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
+
+// Custom tooltip that shows immediately (avoids native title delay) and escapes overflow
+const ConversionTooltip = ({ children, text }) => {
+  const [visible, setVisible] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const onMouseEnter = useCallback((e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPos({ x: rect.left + rect.width / 2, y: rect.top });
+    setVisible(true);
+  }, []);
+  const onMouseLeave = useCallback(() => setVisible(false), []);
+  if (!text) return children;
+  return (
+    <span
+      className="block cursor-help relative"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {children}
+      {visible && (
+        <span
+          className="fixed z-[9999] px-2.5 py-1.5 text-xs font-medium text-white bg-gray-900 rounded shadow-lg whitespace-nowrap -translate-x-1/2 -translate-y-full -top-1"
+          style={{ left: pos.x, top: pos.y }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  );
+};
 
 const ComparisonTable = ({ 
   data, 
@@ -31,12 +61,16 @@ const ComparisonTable = ({
   };
 
   // Rate cell with percentage and subtext (e.g. "85.7%" + "42 / 49 bookings")
-  const RateCell = ({ rate, subtext, target, colorClass, bgClass }) => (
+  const RateCell = ({ rate, subtext, target, colorClass, bgClass, tooltip }) => (
     <td className={`px-4 py-3 whitespace-nowrap text-center ${bgClass ?? ''}`}>
-      <div className={`text-sm font-medium ${colorClass ?? getTargetColor(rate, target ?? 0)}`}>
-        {rate?.toFixed(1) ?? '0.0'}%
-      </div>
-      <div className="text-xs text-gray-500 mt-0.5">{subtext}</div>
+      <ConversionTooltip text={tooltip}>
+        <div>
+          <div className={`text-sm font-medium ${colorClass ?? getTargetColor(rate, target ?? 0)}`}>
+            {rate?.toFixed(1) ?? '0.0'}%
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">{subtext}</div>
+        </div>
+      </ConversionTooltip>
     </td>
   );
 
@@ -196,9 +230,9 @@ const ComparisonTable = ({
                   {(periodLabel === 'Day' || periodLabel === 'Week') && (
                     <td className="px-4 py-3 whitespace-nowrap text-center text-sm text-gray-600">
                       {periodLabel === 'Week' && item.weekStart && item.weekEnd
-                        ? `${new Date(item.weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(item.weekEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                        ? `${new Date(item.weekStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} - ${new Date(item.weekEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`
                         : periodLabel === 'Day' && item.dayStart
-                          ? new Date(item.dayStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                          ? new Date(item.dayStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
                           : '—'}
                     </td>
                   )}
@@ -317,12 +351,14 @@ const ComparisonTable = ({
                           subtext={`${item.sourceStats?.organic?.totalPurchased ?? 0} / ${item.sourceStats?.organic?.totalShowedUp ?? 0}`}
                           target={30}
                           bgClass="bg-teal-50"
+                          tooltip={`PIF: ${(item.pifPercent ?? 0).toFixed(1)}% • Downsell: ${(item.downsellPercent ?? 0).toFixed(1)}%`}
                         />
                         <RateCell
                           rate={item.adsConversionRate}
                           subtext={`${item.sourceStats?.ads?.totalPurchased ?? 0} / ${item.sourceStats?.ads?.totalShowedUp ?? 0}`}
                           target={30}
                           bgClass="bg-teal-50"
+                          tooltip={`PIF: ${(item.pifPercent ?? 0).toFixed(1)}% • Downsell: ${(item.downsellPercent ?? 0).toFixed(1)}%`}
                         />
                       </>
                     ) : (
@@ -330,6 +366,7 @@ const ComparisonTable = ({
                         rate={item.conversionRateShowedUp}
                         subtext={`${item.totalPurchased || 0} / ${item.totalShowedUp || 0} showed up`}
                         target={30}
+                        tooltip={`PIF: ${(item.pifPercent ?? 0).toFixed(1)}% • Downsell: ${(item.downsellPercent ?? 0).toFixed(1)}%`}
                       />
                     )
                   )}

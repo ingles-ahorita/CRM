@@ -62,7 +62,7 @@ function FilterPanel({ state, setState, mode = 'full' }) {
       flexDirection: 'column',
       gap: '16px'
     }}>
-      {(activeTab === 'all' || activeTab === 'follow ups') && (
+      {(activeTab === 'all' || activeTab === 'follow ups' || activeTab === 'no shows') && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>Date range</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -155,18 +155,19 @@ export function HeaderTabs({ state, setState, mode = 'full' }) {
   const update = (updates) => setState && setState(prev => ({ ...prev, ...updates }));
   return (
     <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', borderBottom: '2px solid #e5e7eb', flexWrap: 'wrap', alignItems: 'center' }}>
-      {['yesterday', 'today', 'tomorrow', 'tomorrow + 1', 'follow ups', 'all'].filter(tab => !(mode === 'setter' && tab === 'tomorrow'))
+      {['yesterday', 'today', 'tomorrow', 'tomorrow + 1', 'no shows', 'follow ups', 'all'].filter(tab => !(mode === 'setter' && tab === 'tomorrow'))
         .map(tab => (
           <button
             key={tab}
             onClick={() => {
-              const shouldClearDates = tab !== 'all' && tab !== 'follow ups' && activeTab !== 'all' && activeTab !== 'follow ups';
+              const rangeTabs = ['all', 'follow ups', 'no shows'];
+              const shouldClearDates = !rangeTabs.includes(tab) && !rangeTabs.includes(activeTab);
               update({
                 activeTab: tab,
                 searchTerm: '',
                 showSearch: false,
-                startDate: shouldClearDates ? '' : (tab === 'all' || tab === 'follow ups' ? startDate : ''),
-                endDate: shouldClearDates ? '' : (tab === 'all' || tab === 'follow ups' ? endDate : ''),
+                startDate: shouldClearDates ? '' : (rangeTabs.includes(tab) ? startDate : ''),
+                endDate: shouldClearDates ? '' : (rangeTabs.includes(tab) ? endDate : ''),
                 setterFilter: '',
                 closerFilter: ''
               });

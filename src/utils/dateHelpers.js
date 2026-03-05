@@ -1,5 +1,5 @@
 import { fromZonedTime, toZonedTime, format, formatInTimeZone } from 'date-fns-tz';
-import { startOfMonth, endOfMonth, getYear, getMonth, parseISO } from 'date-fns';
+import { startOfMonth, endOfMonth, getYear, getMonth, parseISO, addDays, subDays, subWeeks } from 'date-fns';
 
 /**
  * Default timezone for normalization (can be changed based on business needs)
@@ -135,6 +135,84 @@ export function getMonthRangeInTimezone(dateValue, timezone = DEFAULT_TIMEZONE) 
     startDate: startUTC,
     endDate: endUTC
   };
+}
+
+/**
+ * Get week bounds in UTC (Monday 00:00 UTC – Sunday 23:59:59.999 UTC).
+ * Week always starts on Monday. Use for consistent weekly stats.
+ * @param {Date|string} dateValue - Any date in the target week
+ * @returns {{ weekStart: Date, weekEnd: Date }}
+ */
+export function getWeekBoundsUTC(dateValue) {
+  const date = typeof dateValue === 'string' ? parseISO(dateValue.includes('Z') ? dateValue : dateValue + 'Z') : new Date(dateValue);
+  const dayOfWeek = (date.getUTCDay() + 6) % 7; // 0 = Monday, 6 = Sunday
+  const weekStart = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - dayOfWeek, 0, 0, 0, 0));
+  const weekEnd = addDays(weekStart, 6);
+  weekEnd.setUTCHours(23, 59, 59, 999);
+  return { weekStart, weekEnd };
+}
+
+/**
+ * Last N days in UTC (YYYY-MM-DD), oldest first. Ends at today (UTC).
+ * @param {number} n - Number of days
+ * @returns {string[]}
+ */
+export function getLastDaysUTC(n) {
+  const out = [];
+  const today = new Date(Date.UTC(
+    new Date().getUTCFullYear(),
+    new Date().getUTCMonth(),
+    new Date().getUTCDate(),
+    0, 0, 0, 0
+  ));
+  for (let i = n - 1; i >= 0; i--) {
+    const d = subDays(today, i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+/**
+ * Day bounds in UTC for a given date (00:00:00.000Z – 23:59:59.999Z).
+ * @param {Date|string} dateValue
+ * @returns {{ dayStart: Date, dayEnd: Date }}
+ */
+export function getDayBoundsUTC(dateValue) {
+  const date = typeof dateValue === 'string' ? parseISO(dateValue.includes('Z') ? dateValue : dateValue + 'Z') : new Date(dateValue);
+  const y = date.getUTCFullYear(), m = date.getUTCMonth(), d = date.getUTCDate();
+  const dayStart = new Date(Date.UTC(y, m, d, 0, 0, 0, 0));
+  const dayEnd = new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
+  return { dayStart, dayEnd };
+}
+
+/**
+ * Week bounds for a given week offset (0 = current week, 1 = previous week, etc.).
+ * @param {number} weekOffset
+ * @returns {{ weekStart: Date, weekEnd: Date }}
+ */
+export function getWeekBoundsForOffset(weekOffset = 0) {
+  const now = new Date();
+  const { weekStart } = getWeekBoundsUTC(now);
+  const targetWeekStart = weekOffset === 0 ? weekStart : subWeeks(weekStart, weekOffset);
+  return getWeekBoundsUTC(targetWeekStart);
+}
+
+/**
+ * Format date as ISO UTC string for start of day (00:00:00.000Z).
+ * @param {Date} date
+ */
+export function formatDateUTCStart(date) {
+  const y = date.getUTCFullYear(), m = date.getUTCMonth(), d = date.getUTCDate();
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00.000Z`;
+}
+
+/**
+ * Format date as ISO UTC string for end of day (23:59:59.999Z).
+ * @param {Date} date
+ */
+export function formatDateUTCEnd(date) {
+  const y = date.getUTCFullYear(), m = date.getUTCMonth(), d = date.getUTCDate();
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}T23:59:59.999Z`;
 }
 
 /**

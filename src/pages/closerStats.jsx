@@ -54,6 +54,8 @@ export default function CloserStatsDashboard() {
   const [purchaseAmountMap, setPurchaseAmountMap] = useState({});
   const [purchaseAmountMapLoading, setPurchaseAmountMapLoading] = useState(false);
   const [purchaseLogTab, setPurchaseLogTab] = useState('purchases'); // 'purchases' | 'lockins' | 'payoffs'
+  const [commissionByMonth, setCommissionByMonth] = useState({}); // { [monthKey]: { total, base, ... } }
+  const [commissionByMonthLoading, setCommissionByMonthLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -210,6 +212,21 @@ export default function CloserStatsDashboard() {
     loadCommissionBreakdown();
   }, [closer, selectedMonth]);
 
+  // Fetch commission breakdown for each month in the table (matches card calculations)
+  useEffect(() => {
+    if (!closer || !data?.length) return;
+    const monthsToFetch = data.filter(row => row.month >= '2025-10').map(row => row.month);
+    if (monthsToFetch.length === 0) return;
+    setCommissionByMonthLoading(true);
+    Promise.all(monthsToFetch.map(month => getCloserCommissionBreakdown(closer, month)))
+      .then(breakdowns => {
+        const map = {};
+        monthsToFetch.forEach((month, i) => { map[month] = breakdowns[i]; });
+        setCommissionByMonth(map);
+      })
+      .finally(() => setCommissionByMonthLoading(false));
+  }, [closer, data]);
+
   // Fetch Kajabi amount-paid map for the selected month (for purchase log Amount column)
   useEffect(() => {
     if (!selectedMonth) {
@@ -346,59 +363,6 @@ export default function CloserStatsDashboard() {
         
         {viewMode === 'stats' ? (
           <>
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Month
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Show-Ups
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Purchases
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Base Commission
-                      </th>
-                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-green-50">
-                        Conversion Rate
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {data.filter(row => row.month >= '2025-10').map((row, index) => (
-                      <tr key={index} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {row.month}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 font-semibold">
-                          {row.showUps}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 font-semibold">
-                          {row.purchases}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-bold text-gray-900">
-                          ${row.revenue?.toFixed(2)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-semibold bg-green-50">
-                          <span className={`${
-                            row.conversionRate >= 70 ? 'text-green-600' : 
-                            row.conversionRate >= 50 ? 'text-yellow-600' : 
-                            'text-red-600'
-                          }`}>
-                            {row.conversionRate > 0 ? `${row.conversionRate?.toFixed(2)}%` : '-%'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
             {/* Current Month Stats */}
             {(() => {
               const currentMonthData = data.find(row => row.month === selectedMonth);
@@ -491,6 +455,68 @@ export default function CloserStatsDashboard() {
                     (current.purchases > best.purchases) ? current : best
                   ).purchases : 0} purchases
                 </div>
+              </div>
+            </div>
+
+            {/* Monthly Table - below cards; uses same calculations as cards (getCloserCommissionBreakdown) */}
+            <div className="mt-6 bg-white rounded-lg shadow overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Month
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Show-Ups
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Purchases
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Commission
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider bg-green-50">
+                        Conversion Rate
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {data.filter(row => row.month >= '2025-10').map((row, index) => {
+                      const comm = commissionByMonth[row.month];
+                      const commissionValue = commissionByMonthLoading ? null : (comm?.total ?? row.revenue);
+                      return (
+                        <tr key={index} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {row.month}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 font-semibold">
+                            {row.showUps}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900 font-semibold">
+                            {row.purchases}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-bold text-gray-900">
+                            {commissionByMonthLoading ? (
+                              <span className="text-gray-400">...</span>
+                            ) : (
+                              `$${(commissionValue ?? 0).toFixed(2)}`
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-semibold bg-green-50">
+                            <span className={`${
+                              row.conversionRate >= 70 ? 'text-green-600' : 
+                              row.conversionRate >= 50 ? 'text-yellow-600' : 
+                              'text-red-600'
+                            }`}>
+                              {row.conversionRate > 0 ? `${row.conversionRate?.toFixed(2)}%` : '-%'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           </>
@@ -953,7 +979,6 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
     
     // Count 'yes' outcomes as purchases
     if (monthP && outcomeLog.outcome === 'yes') {
-      console.log(monthP.month, outcomeLog.outcome);
       monthP.purchases++;
       // Add commission to revenue if available
       if (outcomeLog.commission) {
@@ -965,7 +990,6 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
     if (monthP && outcomeLog.outcome === 'refund') {
       const clawbackPercentage = outcomeLog.clawback ?? 100;
       if (clawbackPercentage < 100) {
-        console.log(monthP.month, 'refund with clawback < 100%:', clawbackPercentage);
         monthP.purchases++;
       }
     }

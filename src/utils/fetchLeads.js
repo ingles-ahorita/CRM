@@ -46,7 +46,20 @@ let query = supabase
 
 
   // Filter by date based on active tab
-  if (activeTab === 'follow ups') {
+  if (activeTab === 'no shows') {
+    query = query.eq('confirmed', true).eq('showed_up', false);
+    // Apply date range when provided; otherwise no date filter (like 'all') so it always shows results
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      query = query.gte(sortField, start.toISOString());
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query = query.lte(sortField, end.toISOString());
+    }
+  } else if (activeTab === 'follow ups') {
     // For follow ups tab, filter at DB level based on lockIn filter:
     // - If lockIn filter is active: show calls with 'lock_in' outcome
     // - Otherwise: show calls with 'follow_up' outcome
@@ -68,7 +81,7 @@ let query = supabase
       end.setHours(23, 59, 59, 999);
       query = query.lte(sortField, end.toISOString());
     }
-  } else if (activeTab !== 'all') {
+  } else if (activeTab !== 'all' && activeTab !== 'no shows') {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
@@ -106,7 +119,7 @@ let query = supabase
         .lt(sortField, dayAfterTomorrowPlusOne.toISOString());
         updateDataState({ currentDate: dayAfterTomorrow.toLocaleDateString('en-CA')});
     }
-  } else {
+  } else if (activeTab === 'all') {
     // When viewing 'all', optionally filter by provided date range
     // Use the chosen sortField (book_date or call_date) as the date column
     if (startDate) {
@@ -164,8 +177,8 @@ if (searchTerm) {
       console.log("Filtering by closer_id:", closerFilter);
     }
 
-  // Only apply limit if no email filter and showing 'all'
-  if (!searchTerm && activeTab === 'all') {
+  // Only apply limit if no email filter and showing 'all' or 'no shows' (without date range)
+  if (!searchTerm && (activeTab === 'all' || (activeTab === 'no shows' && !startDate && !endDate))) {
     query = query.limit(100);
   }
 

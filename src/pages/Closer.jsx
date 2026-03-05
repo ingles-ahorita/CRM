@@ -44,6 +44,8 @@ import { useSimpleAuth } from '../useSimpleAuth';
       activeTab: 'today',
       sortBy: 'call_date',
       sortOrder: 'asc',
+      startDate: '',
+      endDate: '',
       filters: {
         confirmed: false,
         cancelled: false,
@@ -114,9 +116,14 @@ import { useSimpleAuth } from '../useSimpleAuth';
       headerState.sortOrder,
       setDataState,
       closer, null,
-      headerState.filters
+      headerState.filters,
+      undefined,
+      headerState.startDate,
+      headerState.endDate,
+      '',
+      ''
     );
-  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters]);
+  }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate]);
 
 
 

@@ -5,6 +5,15 @@ import ComparisonTable from './components/ComparisonTable';
 import PeriodSelector from './components/PeriodSelector';
 import { ViewNotesModal } from './components/Modal';
 import { Mail, Phone } from 'lucide-react';
+import {
+  getWeekBoundsUTC,
+  getWeekBoundsForOffset,
+  getLastDaysUTC,
+  getDayBoundsUTC,
+  getMonthRangeInTimezone,
+  formatDateUTCStart,
+  formatDateUTCEnd,
+} from '../utils/dateHelpers';
 import * as DateHelpers from '../utils/dateHelpers';
 
 // Fetch stats data grouped by UTM parameters
@@ -734,29 +743,13 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
   return purchases;
 }
 
-// Fetch weekly stats for comparison
+// Fetch weekly stats for comparison (UTC, Monday start)
 async function fetchWeeklyUTMStats() {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  
   const weekRanges = [];
   for (let weekOffset = 0; weekOffset < 12; weekOffset++) {
-    const weekEnd = new Date(now);
-    weekEnd.setDate(now.getDate() - (weekOffset * 7));
-    
-    const weekStart = new Date(weekEnd);
-    const weekDayOfWeek = weekEnd.getDay();
-    const weekDiff = weekDayOfWeek === 0 ? -6 : 1 - weekDayOfWeek;
-    weekStart.setDate(weekEnd.getDate() + weekDiff);
-    weekStart.setHours(0, 0, 0, 0);
-    
-    const weekEndAdjusted = new Date(weekStart);
-    weekEndAdjusted.setDate(weekStart.getDate() + 6);
-    weekEndAdjusted.setHours(23, 59, 59, 999);
-    
-    const startDateStr = weekStart.toISOString();
-    const endDateStr = weekEndAdjusted.toISOString();
-    
+    const { weekStart, weekEnd } = getWeekBoundsForOffset(weekOffset);
+    const startDateStr = formatDateUTCStart(weekStart);
+    const endDateStr = formatDateUTCEnd(weekEnd);
     weekRanges.push({ startDateStr, endDateStr });
   }
   
@@ -795,19 +788,19 @@ async function fetchWeeklyUTMStats() {
   return weeksData.reverse();
 }
 
-// Fetch monthly stats for comparison
+// Fetch monthly stats for comparison (UTC)
 async function fetchMonthlyUTMStats() {
   const now = new Date();
-  
   const monthRanges = [];
   for (let monthOffset = 0; monthOffset < 4; monthOffset++) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1, 0, 0, 0, 0);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 0, 23, 59, 59, 999);
-    
-    const startDateStr = monthStart.toISOString();
-    const endDateStr = monthEnd.toISOString();
-    const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-    
+    const y = now.getUTCFullYear();
+    const m = now.getUTCMonth() - monthOffset;
+    const monthDate = new Date(Date.UTC(y + Math.floor(m / 12), ((m % 12) + 12) % 12, 15));
+    const range = getMonthRangeInTimezone(monthDate, 'UTC');
+    if (!range) continue;
+    const startDateStr = formatDateUTCStart(range.startDate);
+    const endDateStr = formatDateUTCEnd(range.endDate);
+    const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
     monthRanges.push({ startDateStr, endDateStr, monthLabel });
   }
   
@@ -854,26 +847,16 @@ async function fetchMonthlyUTMStats() {
   return monthsData.reverse();
 }
 
-// Fetch daily stats for comparison
+// Fetch daily stats for comparison (UTC)
 async function fetchDailyUTMStats(numDays = 30) {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  
-  const dayRanges = [];
-  for (let dayOffset = 0; dayOffset < numDays; dayOffset++) {
-    const dayEnd = new Date(now);
-    dayEnd.setDate(now.getDate() - dayOffset);
-    dayEnd.setHours(23, 59, 59, 999);
-    
-    const dayStart = new Date(dayEnd);
-    dayStart.setHours(0, 0, 0, 0);
-    
-    const startDateStr = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, '0')}-${String(dayStart.getDate()).padStart(2, '0')}T00:00:00`;
-    const endDateStr = `${dayEnd.getFullYear()}-${String(dayEnd.getMonth() + 1).padStart(2, '0')}-${String(dayEnd.getDate()).padStart(2, '0')}T23:59:59.999`;
-    const dayLabel = dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' });
-    
-    dayRanges.push({ startDateStr, endDateStr, dayLabel });
-  }
+  const dateStrings = getLastDaysUTC(numDays);
+  const dayRanges = dateStrings.map((dateStr) => {
+    const { dayStart, dayEnd } = getDayBoundsUTC(dateStr);
+    const startDateStr = formatDateUTCStart(dayStart);
+    const endDateStr = formatDateUTCEnd(dayEnd);
+    const dayLabel = dayStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short', timeZone: 'UTC' });
+    return { startDateStr, endDateStr, dayLabel };
+  });
   
   const dayPromises = dayRanges.map(({ startDateStr, endDateStr }) => 
     fetchUTMStatsData(startDateStr, endDateStr)
@@ -911,42 +894,18 @@ async function fetchDailyUTMStats(numDays = 30) {
 }
 
 export default function UTMStatsDashboard() {
-  const formatDateLocal = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+  const getStartOfWeek = () => {
+    const { weekStart } = getWeekBoundsUTC(new Date());
+    return formatDateUTCStart(weekStart);
   };
 
-  const getStartOfWeek = () => {
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + diff);
-    monday.setHours(0, 0, 0, 0);
-    return formatDateLocal(monday);
+  const getTodayUTC = () => {
+    return formatDateUTCEnd(new Date());
   };
 
   const navigate = useNavigate();
   const [startDate, setStartDate] = useState(getStartOfWeek);
-  
-  const getTodayLocal = () => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    const hours = String(today.getHours()).padStart(2, '0');
-    const minutes = String(today.getMinutes()).padStart(2, '0');
-    const seconds = String(today.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
-  };
-  
-  const [endDate, setEndDate] = useState(getTodayLocal());
+  const [endDate, setEndDate] = useState(getTodayUTC);
   const [comparisonView, setComparisonView] = useState('none');
   const [selectedDays, setSelectedDays] = useState(30);
   const [weeklyStats, setWeeklyStats] = useState([]);
@@ -958,38 +917,28 @@ export default function UTMStatsDashboard() {
   const [utmFilter, setUtmFilter] = useState('all'); // 'all', 'source', 'medium', 'campaign', 'source_medium', 'source_campaign', 'campaign_pattern'
 
   const goToPreviousWeek = () => {
-    const currentStart = new Date(startDate);
-    const dayOfWeek = currentStart.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    currentStart.setDate(currentStart.getDate() + diff);
-    currentStart.setDate(currentStart.getDate() - 7);
-    
-    const newEnd = new Date(currentStart);
-    newEnd.setDate(currentStart.getDate() + 6);
-    newEnd.setHours(23, 59, 59, 999);
-    
-    setStartDate(formatDateLocal(currentStart));
-    setEndDate(formatDateLocal(newEnd));
+    const currentStart = new Date(startDate.includes('Z') ? startDate : startDate + 'Z');
+    const { weekStart } = getWeekBoundsUTC(currentStart);
+    const prevWeek = new Date(weekStart);
+    prevWeek.setUTCDate(prevWeek.getUTCDate() - 7);
+    const { weekStart: prevStart, weekEnd: prevEnd } = getWeekBoundsUTC(prevWeek);
+    setStartDate(formatDateUTCStart(prevStart));
+    setEndDate(formatDateUTCEnd(prevEnd));
   };
 
   const goToNextWeek = () => {
-    const currentStart = new Date(startDate);
-    const dayOfWeek = currentStart.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    currentStart.setDate(currentStart.getDate() + diff);
-    currentStart.setDate(currentStart.getDate() + 7);
-    
-    const newEnd = new Date(currentStart);
-    newEnd.setDate(currentStart.getDate() + 6);
-    newEnd.setHours(23, 59, 59, 999);
-    
-    setStartDate(formatDateLocal(currentStart));
-    setEndDate(formatDateLocal(newEnd));
+    const currentStart = new Date(startDate.includes('Z') ? startDate : startDate + 'Z');
+    const { weekStart } = getWeekBoundsUTC(currentStart);
+    const nextWeek = new Date(weekStart);
+    nextWeek.setUTCDate(nextWeek.getUTCDate() + 7);
+    const { weekStart: nextStart, weekEnd: nextEnd } = getWeekBoundsUTC(nextWeek);
+    setStartDate(formatDateUTCStart(nextStart));
+    setEndDate(formatDateUTCEnd(nextEnd));
   };
 
   const goToCurrentWeek = () => {
     setStartDate(getStartOfWeek());
-    setEndDate(getTodayLocal());
+    setEndDate(getTodayUTC());
   };
 
   const [stats, setStats] = useState(null);
