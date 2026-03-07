@@ -288,7 +288,8 @@ export default function ManagementPage() {
       headerState.startDate,
       headerState.endDate,
       headerState.setterFilter,
-      headerState.closerFilter
+      headerState.closerFilter,
+      'call_date'  // Always filter by call_date so confirmation/occupancy are based on when calls happen
     );
     const loadSlots = async () => {
       try {
@@ -661,7 +662,7 @@ export default function ManagementPage() {
                 const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
                 const showed = yesterday?.totalShowedUp ?? 0;
                 const confirmed = yesterday?.totalConfirmed ?? 0;
-                const calls = yesterday?.calls ?? 0;
+                const calls = yesterday?.callsForConfirmation ?? yesterday?.callsDeduped ?? yesterday?.calls ?? 0;
                 const purchased = yesterday?.totalPurchased ?? 0;
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
                 const successRate = calls > 0 ? (purchased / calls) * 100 : null;
@@ -681,7 +682,7 @@ export default function ManagementPage() {
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
                     <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
-                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} bookings` : '—'} thresh={75} />
+                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
                     <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
                   </div>
@@ -709,7 +710,7 @@ export default function ManagementPage() {
                 const thisWeek = chartSeries.filter((d) => d.date && d.date >= mondayStr && d.date <= todayStr);
                 const showed = thisWeek.reduce((a, d) => a + (d.totalShowedUp ?? 0), 0);
                 const confirmed = thisWeek.reduce((a, d) => a + (d.totalConfirmed ?? 0), 0);
-                const calls = thisWeek.reduce((a, d) => a + (d.callsDeduped ?? d.calls ?? 0), 0);
+                const calls = thisWeek.reduce((a, d) => a + (d.callsForConfirmation ?? d.callsDeduped ?? d.calls ?? 0), 0);
                 const purchased = thisWeek.reduce((a, d) => a + (d.totalPurchased ?? 0), 0);
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
                 const successRate = calls > 0 ? (purchased / calls) * 100 : null;
@@ -729,7 +730,7 @@ export default function ManagementPage() {
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
                     <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
-                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} bookings` : '—'} thresh={75} />
+                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
                     <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
                   </div>

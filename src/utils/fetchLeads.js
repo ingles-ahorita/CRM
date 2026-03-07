@@ -10,7 +10,11 @@ export async function fetchAll(searchTerm, activeTab = 'all' ,
    sortField = 'book_date', order = 'desc', 
    setDataState,
     closerId, setterId, 
-    filters, leadId, startDate, endDate, setterFilter, closerFilter)  {
+    filters, leadId, startDate, endDate, setterFilter, closerFilter,
+    dateFilterField)  {
+  // dateFilterField: when provided, use this for date filtering instead of sortField.
+  // E.g. 'call_date' ensures confirmation counts are always based on when the call happens.
+  const dateField = dateFilterField ?? sortField;
 
 
 
@@ -52,12 +56,12 @@ let query = supabase
     if (startDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
-      query = query.gte(sortField, start.toISOString());
+      query = query.gte(dateField, start.toISOString());
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      query = query.lte(sortField, end.toISOString());
+      query = query.lte(dateField, end.toISOString());
     }
   } else if (activeTab === 'follow ups') {
     // For follow ups tab, filter at DB level based on lockIn filter:
@@ -74,12 +78,12 @@ let query = supabase
     if (startDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
-      query = query.gte(sortField, start.toISOString());
+      query = query.gte(dateField, start.toISOString());
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      query = query.lte(sortField, end.toISOString());
+      query = query.lte(dateField, end.toISOString());
     }
   } else if (activeTab !== 'all' && activeTab !== 'no shows') {
     const today = new Date();
@@ -99,38 +103,37 @@ let query = supabase
 
     if (activeTab === 'today') {
       query = query
-        .gte(sortField, today.toISOString())
-        .lt(sortField, tomorrow.toISOString());
+        .gte(dateField, today.toISOString())
+        .lt(dateField, tomorrow.toISOString());
         updateDataState({ currentDate: today.toLocaleDateString('en-CA')});
     } else if (activeTab === 'yesterday') {
-      console.log('this is yesterday', yesterday);
       query = query
-        .gte(sortField, yesterday.toISOString())
-        .lt(sortField, today.toISOString());
+        .gte(dateField, yesterday.toISOString())
+        .lt(dateField, today.toISOString());
         updateDataState({ currentDate: yesterday.toLocaleDateString('en-CA')});
     } else if (activeTab === 'tomorrow') {
       query = query
-        .gte(sortField, tomorrow.toISOString())
-        .lt(sortField, dayAfterTomorrow.toISOString());
+        .gte(dateField, tomorrow.toISOString())
+        .lt(dateField, dayAfterTomorrow.toISOString());
         updateDataState({ currentDate: tomorrow.toLocaleDateString('en-CA')});
     } else if (activeTab === 'tomorrow + 1') {
       query = query
-        .gte(sortField, dayAfterTomorrow.toISOString())
-        .lt(sortField, dayAfterTomorrowPlusOne.toISOString());
+        .gte(dateField, dayAfterTomorrow.toISOString())
+        .lt(dateField, dayAfterTomorrowPlusOne.toISOString());
         updateDataState({ currentDate: dayAfterTomorrow.toLocaleDateString('en-CA')});
     }
   } else if (activeTab === 'all') {
     // When viewing 'all', optionally filter by provided date range
-    // Use the chosen sortField (book_date or call_date) as the date column
+    // Use dateField (dateFilterField or sortField) for date filtering
     if (startDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
-      query = query.gte(sortField, start.toISOString());
+      query = query.gte(dateField, start.toISOString());
     }
     if (endDate) {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
-      query = query.lte(sortField, end.toISOString());
+      query = query.lte(dateField, end.toISOString());
     }
   }
 
