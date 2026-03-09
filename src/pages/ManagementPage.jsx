@@ -55,6 +55,14 @@ export default function ManagementPage() {
     eventsOrganic: 0,
   });
 
+  const [occupancyNext3, setOccupancyNext3] = useState({
+    loading: true,
+    availableSlots: null,
+    occupancyPct: null,
+    freeSlotsByDay: null,
+    error: null,
+  });
+
   const [dataState, setDataState] = useState({
     leads: [],
     loading: true,
@@ -225,6 +233,83 @@ export default function ManagementPage() {
 
   useEffect(() => {
     let cancelled = false;
+    async function fetchOccupancyNext3() {
+      setOccupancyNext3((p) => ({ ...p, loading: true, error: null }));
+      try {
+        const res = await fetch('/api/closer-availability');
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          setOccupancyNext3({ loading: false, availableSlots: null, occupancyPct: null, freeSlotsByDay: null, error: data.error || `HTTP ${res.status}` });
+          return;
+        }
+        // hours = available time from schedule; busyHours = 45-min blocks. Availability uses hour boundaries, so 1 hour ≈ 1 block.
+        const now = new Date();
+        const refTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+        const refToday = now.toLocaleDateString('en-CA', { timeZone: refTz });
+        const refD = new Date(now);
+        const next3Dates = [refToday];
+        for (let i = 1; i < 3; i++) {
+          refD.setDate(refD.getDate() + 1);
+          next3Dates.push(refD.toLocaleDateString('en-CA', { timeZone: refTz }));
+        }
+        const next3Set = new Set(next3Dates);
+        const refHour = parseInt(now.toLocaleString('en-US', { timeZone: refTz, hour: 'numeric', hour12: false }), 10) || 0;
+        const refMinute = parseInt(now.toLocaleString('en-US', { timeZone: refTz, minute: 'numeric' }), 10) || 0;
+        const refMinsIntoDay = refHour * 60 + refMinute;
+        const firstCountableBlockHour = Math.ceil((refMinsIntoDay + 60) / 60);
+        let totalAvailableSlots = 0;
+        let totalBusySlots = 0;
+        const freeByDate = {};
+        (data.hoursGrid || []).forEach((row) => {
+          (row.days || []).forEach((day) => {
+            if (day?.date && next3Set.has(day.date)) {
+              const isToday = day.date === refToday;
+              const availableSlots = Math.round(day.hours || 0);
+              const busySlots = Math.floor(day.busyHours ?? 0);
+              let avail;
+              let busy;
+              if (isToday && firstCountableBlockHour >= 24) {
+                avail = 0;
+                busy = 0;
+              } else if (isToday) {
+                const lastBlockHour = 20;
+                const countableBlocks = Math.max(0, lastBlockHour - firstCountableBlockHour + 1);
+                avail = Math.min(availableSlots, countableBlocks);
+                busy = Math.min(busySlots, countableBlocks);
+              } else {
+                avail = availableSlots;
+                busy = busySlots;
+              }
+              const free = Math.max(0, avail - busy);
+              totalAvailableSlots += avail;
+              totalBusySlots += busy;
+              freeByDate[day.date] = (freeByDate[day.date] || 0) + free;
+            }
+          });
+        });
+        const freeSlots = Math.max(0, totalAvailableSlots - totalBusySlots);
+        const occupancyPct = totalAvailableSlots > 0 ? Math.round((totalBusySlots / totalAvailableSlots) * 100) : null;
+        const freeSlotsByDay = next3Dates.map((date) => ({ date, free: freeByDate[date] || 0 }));
+        setOccupancyNext3({
+          loading: false,
+          availableSlots: freeSlots,
+          occupancyPct,
+          freeSlotsByDay,
+          error: null,
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setOccupancyNext3({ loading: false, availableSlots: null, occupancyPct: null, freeSlotsByDay: null, error: err.message });
+        }
+      }
+    }
+    fetchOccupancyNext3();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     const fetchSeries = async () => {
       setChartLoading(true);
       try {
@@ -357,41 +442,86 @@ export default function ManagementPage() {
                 </div>
               </div>
             </div>
-            <div
-              style={{
-                backgroundColor: '#fff',
-                borderRadius: '12px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                padding: '20px',
-                minWidth: '240px',
-                border: '1px solid #e5e7eb',
-              }}
-            >
-            <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-              Yesterday's avg attendance
-            </div>
-            <div style={{ fontSize: '28px', fontWeight: '700', color: '#111827' }}>
-              {dashboardStats.loading
-                ? '…'
-                : dashboardStats.error
-                  ? '—'
-                  : dashboardStats.avgAttendance != null
-                    ? `${Number(dashboardStats.avgAttendance).toFixed(2)}`
-                    : '—'}
-            </div>
-            <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '13px', color: '#4b5563' }}>
-              <span>
-                <strong>Classes:</strong>{' '}
-                {dashboardStats.loading ? '…' : dashboardStats.numberOfClasses != null ? dashboardStats.numberOfClasses : '—'}
-              </span>
-              <span>
-                <strong>Students:</strong>{' '}
-                {dashboardStats.loading ? '…' : dashboardStats.numberOfStudents != null ? dashboardStats.numberOfStudents : '—'}
-              </span>
-            </div>
-            {dashboardStats.error && (
-              <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>From academic app</div>
-            )}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <div
+                style={{
+                  backgroundColor: '#fff',
+                  borderRadius: '12px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  padding: '16px',
+                  flex: 1,
+                  minWidth: '140px',
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                  Yesterday's avg attendance
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#111827' }}>
+                  {dashboardStats.loading
+                    ? '…'
+                    : dashboardStats.error
+                      ? '—'
+                      : dashboardStats.avgAttendance != null
+                        ? `${Number(dashboardStats.avgAttendance).toFixed(2)}`
+                        : '—'}
+                </div>
+                <div style={{ display: 'flex', gap: '12px', marginTop: '8px', fontSize: '12px', color: '#4b5563' }}>
+                  <span>
+                    <strong>Classes:</strong>{' '}
+                    {dashboardStats.loading ? '…' : dashboardStats.numberOfClasses != null ? dashboardStats.numberOfClasses : '—'}
+                  </span>
+                  <span>
+                    <strong>Students:</strong>{' '}
+                    {dashboardStats.loading ? '…' : dashboardStats.numberOfStudents != null ? dashboardStats.numberOfStudents : '—'}
+                  </span>
+                </div>
+                {dashboardStats.error && (
+                  <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '4px' }}>From academic app</div>
+                )}
+              </div>
+              <div
+                style={{
+                  backgroundColor: '#fff',
+                  borderRadius: '12px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  padding: '16px',
+                  flex: 1,
+                  minWidth: '140px',
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                  Occupancy (next 3 days)
+                </div>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <div
+                    title={occupancyNext3.freeSlotsByDay?.length
+                      ? occupancyNext3.freeSlotsByDay.map((d) => {
+                          const dt = new Date(d.date + 'T12:00:00');
+                          const label = dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                          return `${label}: ${d.free}`;
+                        }).join('\n')
+                      : undefined}
+                    style={{ cursor: occupancyNext3.freeSlotsByDay ? 'help' : undefined }}
+                  >
+                    <div style={{ fontSize: '10px', color: '#9ca3af', marginBottom: '2px' }}>Free slots</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
+                      {occupancyNext3.loading ? '…' : occupancyNext3.error ? '—' : occupancyNext3.availableSlots != null ? `${occupancyNext3.availableSlots}` : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '10px', color: '#9ca3af', marginBottom: '2px' }}>Rate</div>
+                    <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
+                      {occupancyNext3.loading ? '…' : occupancyNext3.error ? '—' : occupancyNext3.occupancyPct != null ? `${occupancyNext3.occupancyPct}%` : '—'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '9px', color: '#9ca3af', marginTop: '4px' }}>45-min blocks</div>
+                {occupancyNext3.error && (
+                  <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>From Calendly closers</div>
+                )}
+              </div>
             </div>
           </div>
 

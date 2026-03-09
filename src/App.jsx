@@ -25,6 +25,7 @@ import AllLeadsPage from './pages/AllLeadsPage';
 import CreateCallPage from './pages/CreateCallPage';
 import GoogleAnalyticsPage from './pages/GoogleAnalyticsPage';
 import MultipayCompletionPage from './pages/MultipayCompletionPage';
+import CloserAvailabilityPage from './pages/CloserAvailabilityPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -98,6 +99,11 @@ function AppRoutes() {
       <Route path="/multipay-completion" element={
         <ProtectedRoute>
           <MultipayCompletionPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/closer-availability" element={
+        <ProtectedRoute>
+          <CloserAvailabilityPage />
         </ProtectedRoute>
       } />
 
