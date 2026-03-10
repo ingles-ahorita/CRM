@@ -303,7 +303,9 @@ const totalPurchased = purchasedCalls.length;
           name: call.closers.name,
           showedUp: 0,
           confirmed: 0,
-          purchased: 0
+          purchased: 0,
+          pif: 0,
+          payoffs: 0
         };
       }
       if (call.showed_up) closerStats[closerId].showedUp++;
@@ -336,11 +338,21 @@ const totalPurchased = purchasedCalls.length;
             name: call.closers.name,
             showedUp: 0,
             confirmed: 0,
-            purchased: 0
+            purchased: 0,
+            pif: 0,
+            payoffs: 0
           };
         }
         // Count purchases - purchase_date is already in UTC and filtered by UTC-normalized range
         closerStats[closerId].purchased++;
+        // PIF = Pay In Full (installments === 0)
+        if (call.offer_installments != null && Number(call.offer_installments) === 0) {
+          closerStats[closerId].pif++;
+        }
+        // Payoffs = PIF flag or paid second installment
+        if (call.PIF === true || call.paid_second_installment === true) {
+          closerStats[closerId].payoffs++;
+        }
       }
     }
   });
@@ -1076,6 +1088,8 @@ async function fetchPurchasesForDateRange(startDate, endDate) {
       purchase_date: outcomeLog.purchase_date,
       outcome: outcomeLog.outcome,
       clawback: outcomeLog.clawback,
+      PIF: outcomeLog.PIF,
+      paid_second_installment: outcomeLog.paid_second_installment,
       commission: outcomeLog.paid_second_installment ? outcomeLog.commission * 2 : outcomeLog.commission,
       offer_id: outcomeLog.offer_id,
       offer_name: outcomeLog.offers?.name || null,
@@ -2816,6 +2830,12 @@ export default function StatsDashboard() {
                     Purchased
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    PIF Rate
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Payoffs
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Conversion Rate
                   </th>
                 </tr>
@@ -2824,6 +2844,9 @@ export default function StatsDashboard() {
                 {stats.closers.map((closer) => {
                   const conversionRate = closer.showedUp > 0 
                     ? (closer.purchased / closer.showedUp) * 100 
+                    : 0;
+                  const pifRate = (closer.purchased ?? 0) > 0 
+                    ? ((closer.pif ?? 0) / closer.purchased) * 100 
                     : 0;
                   const showUpRate = (closer.confirmed ?? 0) > 0 
                     ? ((closer.showedUp ?? 0) / (closer.confirmed ?? 0)) * 100 
@@ -2847,6 +2870,17 @@ export default function StatsDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm font-semibold text-green-600">{closer.purchased}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-medium text-gray-900">
+                          {pifRate.toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {(closer.pif ?? 0)} / {(closer.purchased ?? 0)} purchased
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{closer.payoffs ?? 0}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="inline-flex items-center">
