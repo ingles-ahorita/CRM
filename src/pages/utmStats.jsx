@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { parseISO } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import ComparisonTable from './components/ComparisonTable';
 import PeriodSelector from './components/PeriodSelector';
 import { ViewNotesModal } from './components/Modal';
@@ -15,6 +17,16 @@ import {
   formatDateUTCEnd,
 } from '../utils/dateHelpers';
 import * as DateHelpers from '../utils/dateHelpers';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 // Fetch stats data grouped by UTM parameters
 async function fetchUTMStatsData(startDate, endDate) {
@@ -664,6 +676,45 @@ async function fetchUTMStatsData(startDate, endDate) {
     discrepancy: _totalBookedRaw - totalCallsFromSourceBreakdown
   });
 
+  // Booked calls per day by UTM source (for chart)
+  const tz = DateHelpers.DEFAULT_TIMEZONE;
+  const dayBuckets = {};
+  filteredBookingsMade.forEach(booking => {
+    if (!booking.book_date) return;
+    const dayKey = formatInTimeZone(parseISO(booking.book_date.includes('Z') ? booking.book_date : booking.book_date + 'Z'), tz, 'yyyy-MM-dd');
+    const source = getUTMValue(booking, 'source') || 'Unknown';
+    if (!dayBuckets[dayKey]) dayBuckets[dayKey] = {};
+    dayBuckets[dayKey][source] = (dayBuckets[dayKey][source] || 0) + 1;
+  });
+  const allSourceKeys = new Set();
+  Object.values(dayBuckets).forEach(b => Object.keys(b).forEach(k => allSourceKeys.add(k)));
+  const sourceKeysSorted = Array.from(allSourceKeys).sort();
+  // Fallback: if no sources (e.g. zero organic bookings), use "Organic" so chart still renders
+  const chartSourceKeys = sourceKeysSorted.length > 0 ? sourceKeysSorted : ['Organic'];
+  const startDateObj = parseISO(startDate.includes('Z') ? startDate : startDate + 'Z');
+  const endDateObj = parseISO(endDate.includes('Z') ? endDate : endDate + 'Z');
+  const allDays = [];
+  const cursor = new Date(startDateObj);
+  while (cursor <= endDateObj) {
+    const dayKey = formatInTimeZone(cursor, tz, 'yyyy-MM-dd');
+    allDays.push(dayKey);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  const bookingsPerDay = allDays.map(date => {
+    const b = dayBuckets[date] || {};
+    let total = 0;
+    const row = { date };
+    chartSourceKeys.forEach(source => {
+      const count = source === 'Organic' && sourceKeysSorted.length === 0
+        ? Object.values(b).reduce((s, n) => s + n, 0)
+        : (b[source] || 0);
+      row[source] = count;
+      total += count;
+    });
+    row.total = total;
+    return row;
+  });
+
   return {
     totalBooked, // Bookings made in period (from breakdown)
     totalCalls, // Calls that happened in period (from breakdown)
@@ -677,7 +728,9 @@ async function fetchUTMStatsData(startDate, endDate) {
     campaigns: sortedCampaigns,
     sourceMediums: sortedSourceMediums,
     sourceCampaigns: sortedSourceCampaigns,
-    campaignPatterns: sortedCampaignPatterns
+    campaignPatterns: sortedCampaignPatterns,
+    bookingsPerDay,
+    bookingsPerDaySourceKeys: chartSourceKeys,
   };
 }
 
@@ -1226,6 +1279,51 @@ export default function UTMStatsDashboard() {
           {/* Overall Metrics Grid */}
           {comparisonView === 'none' && (
             <>
+              {/* Booked calls per day by source */}
+              {stats?.bookingsPerDay?.length > 0 && stats?.bookingsPerDaySourceKeys?.length > 0 && (
+                <div className="bg-white p-6 rounded-lg shadow mb-8">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Booked calls per day by source</h2>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={stats.bookingsPerDay}
+                        margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 11 }}
+                          tickFormatter={(v) => (v ? v.slice(5) : '')}
+                        />
+                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <Tooltip
+                          content={({ active, payload, label }) => {
+                            if (!active || !payload?.length || !label) return null;
+                            const row = payload[0]?.payload;
+                            if (!row) return null;
+                            return (
+                              <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-sm">
+                                <div className="font-medium text-gray-900 mb-1">{label}</div>
+                                {stats.bookingsPerDaySourceKeys.map((source) => (
+                                  <div key={source}>{source}: {row[source] ?? 0}</div>
+                                ))}
+                                <div className="text-gray-700 border-t border-gray-100 mt-1 pt-1">Total: {row.total ?? 0}</div>
+                              </div>
+                            );
+                          }}
+                        />
+                        <Legend />
+                        {stats.bookingsPerDaySourceKeys.map((source, idx) => {
+                          const colors = ['#22c55e', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+                          return (
+                            <Bar key={source} dataKey={source} name={source} stackId="booked" fill={colors[idx % colors.length]} />
+                          );
+                        })}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
                 {/* Pick Up Rate */}
                 <div className="bg-white p-6 rounded-lg shadow">

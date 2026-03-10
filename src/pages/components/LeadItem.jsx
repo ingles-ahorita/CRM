@@ -29,7 +29,7 @@ const formatStatusValue = (value) => {
   console.log("no color found", time, isRescheduled, called);
 }
 
-export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full', calltimeLoading = false }) {
+export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full', calltimeLoading = false, onDeleteCall: onDeleteCallProp }) {
   const location = useLocation();
 const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith('/lead/');
   // Add CSS for loading spinner animation
@@ -795,6 +795,16 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           <ThreeDotsMenu
             onEdit={() => setIsModalOpen(true)}
             onDelete={() => console.log('Delete')}
+            onDeleteCall={onDeleteCallProp ?? (async () => {
+              try {
+                const { error } = await supabase.from('calls').delete().eq('id', lead.id);
+                if (error) throw error;
+                showToast('Call deleted', 'success');
+              } catch (err) {
+                console.error('Error deleting call:', err);
+                showToast(err?.message || 'Failed to delete call', 'error');
+              }
+            })}
             mode={mode}
             modalSetter={setShowNoteModal}
             setMode={setModeState}
@@ -939,7 +949,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 
 
-const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, showToast}) => {
+const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSetter, lead, showToast}) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -1154,6 +1164,34 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, sho
         </button>
       )}
       
+      {onDeleteCall && (
+        <button 
+          onClick={async (e) => { 
+            e.stopPropagation(); 
+            if (!window.confirm('Are you sure you want to delete this call? This cannot be undone.')) {
+              setMenuOpen(false);
+              return;
+            }
+            setMenuOpen(false);
+            await onDeleteCall();
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: '#ef4444',
+            fontWeight: '300',
+            fontSize: '14px',
+            outline: 'none'
+          }}
+        >
+          Delete call
+        </button>
+      )}
+
       <button 
         onClick={(e) => { 
           e.stopPropagation(); 
@@ -1200,7 +1238,7 @@ const ThreeDotsMenu = ({ onEdit, onDelete, mode, setMode, modalSetter, lead, sho
 
 // compact version
 
-export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltimeLoading = false }) {
+export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltimeLoading = false, onDeleteCall: onDeleteCallProp }) {
   const navigate = useNavigate();
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1208,7 +1246,13 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
   const [transferNote, setTransferNote] = useState(null);
   const [loadingNote, setLoadingNote] = useState(false);
   const [showTransferNoteModal, setShowTransferNoteModal] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const { setter: currentSetter } = useParams();
+
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
 
   const setterOptions = Object.entries(setterMap).map(([id, name]) => ({
     id,
@@ -1462,8 +1506,19 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
                   <ThreeDotsMenu
     onEdit={() => setIsModalOpen(true)}
     onDelete={() => console.log('Delete')}
+    onDeleteCall={onDeleteCallProp ?? (async () => {
+      try {
+        const { error } = await supabase.from('calls').delete().eq('id', lead.id);
+        if (error) throw error;
+        showToast('Call deleted', 'success');
+      } catch (err) {
+        console.error('Error deleting call:', err);
+        showToast(err?.message || 'Failed to delete call', 'error');
+      }
+    })}
     mode={'full'}
     lead={lead}
+    showToast={showToast}
   />
 
   </div>
@@ -1546,6 +1601,25 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
         </div>
       </Modal>
 
+      {/* Toast Notification */}
+      {toast.show && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            backgroundColor: toast.type === 'success' ? '#10b981' : '#ef4444',
+            color: 'white',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 10000,
+            fontSize: '14px'
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
       
     </div>
   );

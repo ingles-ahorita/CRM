@@ -169,7 +169,17 @@
             setterMap={dataState.setterMap}
             closerMap={dataState.closerMap}
             mode={localStorage.getItem('userRole')}
-            calltimeLoading={dataState.calltimeLoading}/>
+            calltimeLoading={dataState.calltimeLoading}
+            onDeleteCall={async () => {
+              try {
+                const { error } = await supabase.from('calls').delete().eq('id', call.id);
+                if (error) throw error;
+                setDataState(prev => ({ ...prev, leads: prev.leads.filter(l => l.id !== call.id) }));
+              } catch (err) {
+                console.error('Error deleting call:', err);
+                alert(err?.message || 'Failed to delete call');
+              }
+            }}/>
           ))}
 
           {/* Kajabi transactions for this lead (using leads.customer_id) */}

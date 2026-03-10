@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { parseISO } from 'date-fns';
-import { fromZonedTime } from 'date-fns-tz';
+import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import * as DateHelpers from '../utils/dateHelpers';
 import {
   PieChart,
@@ -291,6 +291,70 @@ async function fetchUTMAnalytics(startDate, endDate) {
     };
   }).sort((a, b) => b.conversionRate - a.conversionRate);
 
+  // Booked calls per day by source (for bar chart) - fetch bookings by book_date in range
+  const { data: bookingCalls } = await supabase
+    .from('calls')
+    .select('id, book_date, utm_source, source_type, is_reschedule, lead_id')
+    .gte('book_date', startISO)
+    .lte('book_date', endISO);
+
+  const organicBookingCalls = (bookingCalls || []).filter(c => !isAdsSource(c.source_type));
+  const rescheduledLeadIdsBookings = new Set(
+    organicBookingCalls.filter(c => c.is_reschedule === true).map(c => c.lead_id)
+  );
+  const dedupedBookings = organicBookingCalls.filter(call => {
+    const keepReschedule =
+      call.is_reschedule === true || !rescheduledLeadIdsBookings.has(call.lead_id);
+    return keepReschedule;
+  });
+  const bookingsForChart = dedupedBookings.filter(call => {
+    const sourceIsNull = call.utm_source == null || call.utm_source === undefined;
+    if (sourceIsNull && call.is_reschedule === true) return false;
+    return true;
+  });
+
+  const tz = DateHelpers.DEFAULT_TIMEZONE;
+  const dayBuckets = {};
+  bookingsForChart.forEach(booking => {
+    if (!booking.book_date) return;
+    const source = booking.utm_source ?? 'Unknown';
+    if (isAdsSource(source)) return; // exclude ads from organic chart
+    const dayKey = formatInTimeZone(
+      parseISO(booking.book_date.includes('Z') ? booking.book_date : booking.book_date + 'Z'),
+      tz,
+      'yyyy-MM-dd'
+    );
+    if (!dayBuckets[dayKey]) dayBuckets[dayKey] = {};
+    dayBuckets[dayKey][source] = (dayBuckets[dayKey][source] || 0) + 1;
+  });
+  const allSourceKeys = new Set();
+  Object.values(dayBuckets).forEach(b => Object.keys(b).forEach(k => allSourceKeys.add(k)));
+  const sourceKeysSorted = Array.from(allSourceKeys).sort();
+  const chartSourceKeys = sourceKeysSorted.length > 0 ? sourceKeysSorted : ['Organic'];
+  const chartStart = parseISO(startISO);
+  const chartEnd = parseISO(endISO);
+  const allDays = [];
+  const cursor = new Date(chartStart);
+  while (cursor <= chartEnd) {
+    const dayKey = formatInTimeZone(cursor, tz, 'yyyy-MM-dd');
+    allDays.push(dayKey);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  const bookingsPerDay = allDays.map(date => {
+    const b = dayBuckets[date] || {};
+    let total = 0;
+    const row = { date };
+    chartSourceKeys.forEach(source => {
+      const count = source === 'Organic' && sourceKeysSorted.length === 0
+        ? Object.values(b).reduce((s, n) => s + n, 0)
+        : (b[source] || 0);
+      row[source] = count;
+      total += count;
+    });
+    row.total = total;
+    return row;
+  });
+
   return {
     pieData,
     organicDaily,
@@ -300,6 +364,8 @@ async function fetchUTMAnalytics(startDate, endDate) {
     mediumKeys: Array.from(allMediums),
     conversionByPlatform,
     conversionByCampaign,
+    bookingsPerDay,
+    bookingsPerDaySourceKeys: chartSourceKeys,
   };
 }
 
@@ -377,6 +443,8 @@ export default function UTMAnalyticsPage() {
   const [conversionByCampaign, setConversionByCampaign] = useState([]);
   const [conversionChartMode, setConversionChartMode] = useState('platform'); // 'platform' | 'campaign'
   const [loading, setLoading] = useState(false);
+  const [bookingsPerDay, setBookingsPerDay] = useState([]);
+  const [bookingsPerDaySourceKeys, setBookingsPerDaySourceKeys] = useState([]);
 
   const loadAnalytics = async (s, e) => {
     setLoading(true);
@@ -389,6 +457,8 @@ export default function UTMAnalyticsPage() {
     setCampaignData(result.campaignData ?? []);
     setConversionByPlatform(result.conversionByPlatform ?? []);
     setConversionByCampaign(result.conversionByCampaign ?? []);
+    setBookingsPerDay(result.bookingsPerDay ?? []);
+    setBookingsPerDaySourceKeys(result.bookingsPerDaySourceKeys ?? []);
     setLoading(false);
   };
 
@@ -544,6 +614,57 @@ export default function UTMAnalyticsPage() {
               <div className="text-4xl font-bold text-gray-900">{totalOrganicCalls}</div>
               <p className="text-xs text-gray-500 mt-1">Reschedules deduped; ads excluded</p>
             </div>
+
+            {/* Booked calls per day by source (vertical bar chart) */}
+            {bookingsPerDay.length > 0 && bookingsPerDaySourceKeys.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-6 mb-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Booked calls per day by source</h2>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={bookingsPerDay}
+                      margin={{ top: 8, right: 16, left: 8, bottom: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 11 }}
+                        tickFormatter={(v) => (v ? v.slice(5) : '')}
+                      />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <RechartsTooltip
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload?.length || !label) return null;
+                          const row = payload[0]?.payload;
+                          if (!row) return null;
+                          return (
+                            <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-sm">
+                              <div className="font-medium text-gray-900 mb-1">{label}</div>
+                              {bookingsPerDaySourceKeys
+                                .filter((source) => (row[source] ?? 0) > 0)
+                                .map((source) => (
+                                  <div key={source}>{source}: {row[source]}</div>
+                                ))}
+                              <div className="text-gray-700 border-t border-gray-100 mt-1 pt-1">Total: {row.total ?? 0}</div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Legend />
+                      {bookingsPerDaySourceKeys.map((source, idx) => (
+                        <Bar
+                          key={source}
+                          dataKey={source}
+                          name={source}
+                          stackId="booked"
+                          fill={CHART_COLORS[idx % CHART_COLORS.length]}
+                        />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Pie: calls per utm_source (Recharts, hover tooltip) */}
