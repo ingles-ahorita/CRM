@@ -1,4 +1,4 @@
-  import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
+  import {LeadItem, LeadItemCompact, LeadListHeader, deleteCallWithDependencies} from './components/LeadItem';
   import { useState, useEffect } from 'react';
   import { useParams, useNavigate } from 'react-router-dom';
   import { fetchAll } from '../utils/fetchLeads';
@@ -172,8 +172,7 @@
             calltimeLoading={dataState.calltimeLoading}
             onDeleteCall={async () => {
               try {
-                const { error } = await supabase.from('calls').delete().eq('id', call.id);
-                if (error) throw error;
+                await deleteCallWithDependencies(call.id);
                 setDataState(prev => ({ ...prev, leads: prev.leads.filter(l => l.id !== call.id) }));
               } catch (err) {
                 console.error('Error deleting call:', err);

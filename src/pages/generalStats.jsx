@@ -531,6 +531,7 @@ const totalPurchased = purchasedCalls.length;
       ? (country.pickedUpFromBookings / country.bookingsMadeInPeriod) * 100 
       : 0;
     country.showUpRate = country.totalBooked > 0 ? (country.totalShowedUp / country.totalBooked) * 100 : 0;
+    country.confirmationRate = country.totalBooked > 0 ? (country.totalConfirmed / country.totalBooked) * 100 : 0;
     country.conversionRate = country.totalShowedUp > 0 ? (country.totalPurchased / country.totalShowedUp) * 100 : 0;
   });
 
@@ -2981,6 +2982,15 @@ export default function StatsDashboard() {
                       Pick Up Rate
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Confirmed
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Confirmation Rate
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Show Ups
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Show Up Rate
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -3015,6 +3025,15 @@ export default function StatsDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-gray-900">{country.pickUpRate.toFixed(1)}%</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.totalConfirmed || 0}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{(country.confirmationRate ?? 0).toFixed(1)}%</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm text-gray-900">{country.totalShowedUp || 0}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-gray-900">{country.showUpRate.toFixed(1)}%</div>

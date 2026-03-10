@@ -29,6 +29,17 @@ const formatStatusValue = (value) => {
   console.log("no color found", time, isRescheduled, called);
 }
 
+/** Delete a call and all dependent rows (outcome_log, transfer_log, setter_notes, etc.) */
+export async function deleteCallWithDependencies(callId) {
+  const tablesWithCallId = ['outcome_log', 'transfer_log', 'setter_notes', 'purchase_logs'];
+  for (const table of tablesWithCallId) {
+    const { error } = await supabase.from(table).delete().eq('call_id', callId);
+    if (error) console.warn(`Delete from ${table} for call ${callId}:`, error);
+  }
+  const { error } = await supabase.from('calls').delete().eq('id', callId);
+  if (error) throw error;
+}
+
 export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full', calltimeLoading = false, onDeleteCall: onDeleteCallProp }) {
   const location = useLocation();
 const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith('/lead/');
@@ -797,8 +808,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             onDelete={() => console.log('Delete')}
             onDeleteCall={onDeleteCallProp ?? (async () => {
               try {
-                const { error } = await supabase.from('calls').delete().eq('id', lead.id);
-                if (error) throw error;
+                await deleteCallWithDependencies(lead.id);
                 showToast('Call deleted', 'success');
               } catch (err) {
                 console.error('Error deleting call:', err);
@@ -1508,8 +1518,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
     onDelete={() => console.log('Delete')}
     onDeleteCall={onDeleteCallProp ?? (async () => {
       try {
-        const { error } = await supabase.from('calls').delete().eq('id', lead.id);
-        if (error) throw error;
+        await deleteCallWithDependencies(lead.id);
         showToast('Call deleted', 'success');
       } catch (err) {
         console.error('Error deleting call:', err);

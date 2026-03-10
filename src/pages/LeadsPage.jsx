@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Navigate } from 'react';
-import {LeadItem, LeadItemCompact, LeadListHeader} from './components/LeadItem';
+import {LeadItem, LeadItemCompact, LeadListHeader, deleteCallWithDependencies} from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
 import {getDailySlotsTotal} from '../utils/ocuppancy';
 import Header from './components/Header';
@@ -189,6 +189,15 @@ useEffect(() => {
               mode='full'
               currentUserId={userId}
               calltimeLoading={dataState.calltimeLoading}
+              onDeleteCall={async () => {
+                try {
+                  await deleteCallWithDependencies(lead.id);
+                  setDataState(prev => ({ ...prev, leads: prev.leads.filter(l => l.id !== lead.id) }));
+                } catch (err) {
+                  console.error('Error deleting call:', err);
+                  alert(err?.message || 'Failed to delete call');
+                }
+              }}
             />
           ))}
 
@@ -209,6 +218,15 @@ useEffect(() => {
       setterMap={dataState.setterMap}
       closerMap={dataState.closerMap}
       calltimeLoading={dataState.calltimeLoading}
+      onDeleteCall={async () => {
+        try {
+          await deleteCallWithDependencies(lead.id);
+          setDataState(prev => ({ ...prev, leads: prev.leads.filter(l => l.id !== lead.id) }));
+        } catch (err) {
+          console.error('Error deleting call:', err);
+          alert(err?.message || 'Failed to delete call');
+        }
+      }}
     />
   ))}
 </div>
