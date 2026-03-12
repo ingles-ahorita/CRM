@@ -173,6 +173,20 @@ export function getLastDaysUTC(n) {
 }
 
 /**
+ * Day bounds in local timezone (browser's timezone).
+ * Use for tab filtering (Today, Yesterday, etc.) so users see their local day.
+ * @param {Date|string} dateValue
+ * @returns {{ dayStart: Date, dayEnd: Date }}
+ */
+export function getDayBoundsLocal(dateValue) {
+  const date = typeof dateValue === 'string' ? parseISO(dateValue.includes('Z') ? dateValue : dateValue + 'Z') : new Date(dateValue);
+  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+  const dayStart = new Date(y, m, d, 0, 0, 0, 0);
+  const dayEnd = new Date(y, m, d, 23, 59, 59, 999);
+  return { dayStart, dayEnd };
+}
+
+/**
  * Day bounds in UTC for a given date (00:00:00.000Z – 23:59:59.999Z).
  * @param {Date|string} dateValue
  * @returns {{ dayStart: Date, dayEnd: Date }}

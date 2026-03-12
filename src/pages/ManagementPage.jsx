@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
+import { Users, BookOpen } from 'lucide-react';
 import {LeadItemCompact, LeadListHeader} from './components/LeadItem';
 import { fetchAll } from '../utils/fetchLeads';
 import {getDailySlotsTotal} from '../utils/ocuppancy';
@@ -101,7 +102,7 @@ export default function ManagementPage() {
   });
 
   // Enable real-time updates for admin view
-  useRealtimeLeads(dataState, setDataState, headerState.activeTab);
+  useRealtimeLeads(dataState, setDataState, headerState.activeTab, null, null, headerState.sortBy);
 
   useEffect(() => {
     let cancelled = false;
@@ -374,7 +375,7 @@ export default function ManagementPage() {
       headerState.endDate,
       headerState.setterFilter,
       headerState.closerFilter,
-      'call_date'  // Always filter by call_date so confirmation/occupancy are based on when calls happen
+      headerState.sortBy  // Filter by same field as sort toggle (book_date or call_date)
     );
     const loadSlots = async () => {
       try {
@@ -396,23 +397,23 @@ export default function ManagementPage() {
   }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate, headerState.setterFilter, headerState.closerFilter]);
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb',boxSizing: 'border-box', padding: '24px', display: 'flex', width: '100%', position: 'relative'}}>
-      <div style={{ width: '90%', maxWidth: 1280, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', boxSizing: 'border-box', padding: '24px', width: '100%', maxWidth: '100vw', overflowX: 'hidden', position: 'relative' }}>
+      <div style={{ width: '100%', maxWidth: 1280, margin: '0 auto', minWidth: 0 }}>
         <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>
           Quick view
         </h1>
 
-        {/* Management dashboard - cards + chart; cards fit content height, chart has fixed height */}
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+        {/* Management dashboard - cards + chart; responsive, no horizontal scroll */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-start', marginBottom: '24px', minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: '0 1 auto', minWidth: 0, maxWidth: 280 }}>
             <div
               style={{
                 backgroundColor: '#fff',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                padding: '16px 20px',
+                padding: '12px 14px',
                 border: '1px solid #e5e7eb',
-                minWidth: '240px',
+                minWidth: 0,
               }}
             >
               <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
@@ -442,19 +443,20 @@ export default function ManagementPage() {
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', minWidth: 0 }}>
               <div
                 style={{
                   backgroundColor: '#fff',
                   borderRadius: '12px',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                  padding: '16px',
+                  padding: '12px 14px',
                   flex: 1,
-                  minWidth: '140px',
+                  minWidth: 0,
                   border: '1px solid #e5e7eb',
+                  overflow: 'visible',
                 }}
               >
-                <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
                   Yesterday's avg attendance
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: '700', color: '#111827' }}>
@@ -466,13 +468,13 @@ export default function ManagementPage() {
                         ? `${Number(dashboardStats.avgAttendance).toFixed(2)}`
                         : '—'}
                 </div>
-                <div style={{ display: 'flex', gap: '12px', marginTop: '8px', fontSize: '12px', color: '#4b5563' }}>
-                  <span>
-                    <strong>Classes:</strong>{' '}
+                <div style={{ display: 'flex', flexDirection: 'row', gap: '12px', flexWrap: 'wrap', marginTop: '8px', fontSize: '12px', color: '#4b5563' }}>
+                  <span title="Classes" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <BookOpen size={14} style={{ flexShrink: 0, color: '#6b7280' }} />
                     {dashboardStats.loading ? '…' : dashboardStats.numberOfClasses != null ? dashboardStats.numberOfClasses : '—'}
                   </span>
-                  <span>
-                    <strong>Students:</strong>{' '}
+                  <span title="Students" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Users size={14} style={{ flexShrink: 0, color: '#6b7280' }} />
                     {dashboardStats.loading ? '…' : dashboardStats.numberOfStudents != null ? dashboardStats.numberOfStudents : '—'}
                   </span>
                 </div>
@@ -485,13 +487,13 @@ export default function ManagementPage() {
                   backgroundColor: '#fff',
                   borderRadius: '12px',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                  padding: '16px',
+                  padding: '12px 14px',
                   flex: 1,
-                  minWidth: '140px',
+                  minWidth: '100px',
                   border: '1px solid #e5e7eb',
                 }}
               >
-                <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <div style={{ fontSize: '10px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
                   Occupancy (next 3 days)
                 </div>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -527,7 +529,7 @@ export default function ManagementPage() {
 
           <div
             style={{
-              flex: 1,
+              flex: '1 1 360px',
               minWidth: 0,
               backgroundColor: '#fff',
               borderRadius: '12px',
@@ -536,11 +538,10 @@ export default function ManagementPage() {
               padding: '20px',
               display: 'flex',
               flexDirection: 'column',
-              height: '100%',
               minHeight: '280px',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexShrink: 0, flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexShrink: 0, flexWrap: 'wrap', gap: '8px', width: '100%', overflow: 'visible' }}>
               <select
                 value={chartDays}
                 onChange={(e) => setChartDays(Number(e.target.value))}
@@ -563,7 +564,7 @@ export default function ManagementPage() {
                 <option value={30}>Last 30 days</option>
                 <option value={90}>Last 90 days</option>
               </select>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0, justifyContent: 'flex-end' }}>
                 {chartMetric === 'showUpRate' && (
                   <button
                     type="button"
@@ -577,6 +578,7 @@ export default function ManagementPage() {
                       fontSize: '12px',
                       fontWeight: '500',
                       cursor: 'pointer',
+                      flexShrink: 0,
                     }}
                   >
                     Split by organic/ads
@@ -595,17 +597,19 @@ export default function ManagementPage() {
                     color: '#374151',
                     cursor: 'pointer',
                     outline: 'none',
+                    maxWidth: '100%',
+                    minWidth: 0,
                   }}
                 >
                   <option value="showUpRate">Show up rate (%)</option>
                   <option value="purchaseRate">Success rate (%)</option>
-                  <option value="conversionRate">Conversion rate, closers (%)</option>
+                  <option value="conversionRate">Conversion rate (%)</option>
                   <option value="bookings">Bookings</option>
                   <option value="calls">Show ups</option>
                 </select>
               </div>
             </div>
-            <div style={{ flex: 1, minHeight: '220px', height: '220px' }}>
+            <div style={{ flex: 1, minHeight: '240px', height: '240px', minWidth: 0 }} className="chart-container">
               {chartLoading ? (
                 <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
                   Loading…
@@ -615,7 +619,7 @@ export default function ManagementPage() {
                   No data
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer width="100%" height={240}>
                   <LineChart
                     data={chartSeries.map((d) => {
                       const bookings = d.bookings ?? 0;
@@ -775,7 +779,7 @@ export default function ManagementPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: '0 1 auto', minWidth: 0, maxWidth: 400 }}>
             <div
               style={{
                 backgroundColor: '#fff',
@@ -801,7 +805,7 @@ export default function ManagementPage() {
                 const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
                 const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
                 const Metric = ({ label, value, subtext, thresh, first }) => (
-                  <div style={{ flex: 1, minWidth: 0, paddingLeft: first ? 0 : 16, paddingRight: 16, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
+                  <div style={{ flex: '1 1 80px', minWidth: 0, paddingLeft: first ? 0 : 16, paddingRight: 16, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
                     <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>{label}</div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: color(value, thresh) }}>
                       {chartLoading ? '…' : formatPct(value)}
@@ -810,7 +814,7 @@ export default function ManagementPage() {
                   </div>
                 );
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
+                  <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
                     <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
@@ -849,7 +853,7 @@ export default function ManagementPage() {
                 const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
                 const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
                 const Metric = ({ label, value, subtext, thresh, first }) => (
-                  <div style={{ flex: 1, minWidth: 0, paddingLeft: first ? 0 : 16, paddingRight: 16, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
+                  <div style={{ flex: '1 1 80px', minWidth: 0, paddingLeft: first ? 0 : 16, paddingRight: 16, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
                     <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '2px' }}>{label}</div>
                     <div style={{ fontSize: '20px', fontWeight: '700', color: color(value, thresh) }}>
                       {chartLoading ? '…' : formatPct(value)}
@@ -858,7 +862,7 @@ export default function ManagementPage() {
                   </div>
                 );
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'row', gap: 0 }}>
+                  <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
                     <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
@@ -880,11 +884,13 @@ export default function ManagementPage() {
         {(headerState.activeTab !== 'all') && (
           <div style={{ 
             display: 'flex', 
+            flexWrap: 'wrap',
             gap: '16px', 
             marginBottom: '16px',
             padding: '12px',
             backgroundColor: '#f3f4f6',
-            borderRadius: '8px'
+            borderRadius: '8px',
+            minWidth: 0,
           }}>
             { (headerState.sortBy === 'call_date') && (
               <>

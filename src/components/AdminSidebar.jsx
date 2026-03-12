@@ -250,8 +250,12 @@ export default function AdminSidebar({ children }) {
       <div
         style={{
           marginLeft: sidebarOpen ? '300px' : '0',
+          width: sidebarOpen ? 'calc(100vw - 300px)' : '100%',
+          maxWidth: '100vw',
           transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          minHeight: '100vh'
+          minHeight: '100vh',
+          overflowX: 'hidden',
+          boxSizing: 'border-box',
         }}
       >
         {children}

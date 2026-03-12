@@ -56,7 +56,7 @@ const [headerState, setHeaderState] = useState({
 });
 
   // Enable real-time updates for admin view
-  useRealtimeLeads(dataState, setDataState, headerState.activeTab);
+  useRealtimeLeads(dataState, setDataState, headerState.activeTab, null, null, headerState.sortBy);
 
 
 useEffect(() => {
@@ -98,7 +98,8 @@ useEffect(() => {
     headerState.startDate,
     headerState.endDate,
     headerState.setterFilter,
-    headerState.closerFilter
+    headerState.closerFilter,
+    headerState.sortBy  // Filter by same field as sort toggle (book_date or call_date)
   );
   const loadSlots = async () => {
     console.log('loading slots');

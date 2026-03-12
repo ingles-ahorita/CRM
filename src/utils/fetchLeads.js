@@ -1,5 +1,7 @@
 import { supabase } from '../lib/supabaseClient';
-import { runAnalysis } from '../pages/reactionTime'; 
+import { runAnalysis } from '../pages/reactionTime';
+import { getDayBoundsLocal } from '../utils/dateHelpers';
+import { subDays, addDays } from 'date-fns'; 
 
 
 
@@ -86,41 +88,36 @@ let query = supabase
       query = query.lte(dateField, end.toISOString());
     }
   } else if (activeTab !== 'all' && activeTab !== 'no shows') {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const dayAfterTomorrow = new Date(tomorrow);
-    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
-
-    const dayAfterTomorrowPlusOne = new Date(dayAfterTomorrow);
-    dayAfterTomorrowPlusOne.setDate(dayAfterTomorrowPlusOne.getDate() + 1);
+    // Use local timezone day bounds for tabs (Today, Yesterday, etc.) so users see their local day
+    const now = new Date();
+    const { dayStart: todayStart, dayEnd: todayEnd } = getDayBoundsLocal(now);
+    const { dayStart: yesterdayStart, dayEnd: yesterdayEnd } = getDayBoundsLocal(subDays(now, 1));
+    const { dayStart: tomorrowStart } = getDayBoundsLocal(addDays(now, 1));
+    const { dayStart: dayAfterTomorrowStart } = getDayBoundsLocal(addDays(now, 2));
+    const { dayStart: dayAfterTomorrowPlusOneStart } = getDayBoundsLocal(addDays(now, 3));
 
     if (activeTab === 'today') {
       query = query
-        .gte(dateField, today.toISOString())
-        .lt(dateField, tomorrow.toISOString());
-        updateDataState({ currentDate: today.toLocaleDateString('en-CA')});
+        .gte(dateField, todayStart.toISOString())
+        .lte(dateField, todayEnd.toISOString());
+      updateDataState({ currentDate: todayStart.toISOString().slice(0, 10) });
     } else if (activeTab === 'yesterday') {
       query = query
-        .gte(dateField, yesterday.toISOString())
-        .lt(dateField, today.toISOString());
-        updateDataState({ currentDate: yesterday.toLocaleDateString('en-CA')});
+        .gte(dateField, yesterdayStart.toISOString())
+        .lte(dateField, yesterdayEnd.toISOString());
+      updateDataState({ currentDate: yesterdayStart.toISOString().slice(0, 10) });
     } else if (activeTab === 'tomorrow') {
+      const { dayEnd: tomorrowEnd } = getDayBoundsLocal(addDays(now, 1));
       query = query
-        .gte(dateField, tomorrow.toISOString())
-        .lt(dateField, dayAfterTomorrow.toISOString());
-        updateDataState({ currentDate: tomorrow.toLocaleDateString('en-CA')});
+        .gte(dateField, tomorrowStart.toISOString())
+        .lte(dateField, tomorrowEnd.toISOString());
+      updateDataState({ currentDate: tomorrowStart.toISOString().slice(0, 10) });
     } else if (activeTab === 'tomorrow + 1') {
+      const { dayEnd: dayAfterTomorrowEnd } = getDayBoundsLocal(addDays(now, 2));
       query = query
-        .gte(dateField, dayAfterTomorrow.toISOString())
-        .lt(dateField, dayAfterTomorrowPlusOne.toISOString());
-        updateDataState({ currentDate: dayAfterTomorrow.toLocaleDateString('en-CA')});
+        .gte(dateField, dayAfterTomorrowStart.toISOString())
+        .lte(dateField, dayAfterTomorrowEnd.toISOString());
+      updateDataState({ currentDate: dayAfterTomorrowStart.toISOString().slice(0, 10) });
     }
   } else if (activeTab === 'all') {
     // When viewing 'all', optionally filter by provided date range

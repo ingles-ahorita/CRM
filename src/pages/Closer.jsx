@@ -104,7 +104,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
   };
 
   // Enable real-time updates for this closer
-  useRealtimeLeads(dataState, setDataState, headerState.activeTab, null, closer);
+  useRealtimeLeads(dataState, setDataState, headerState.activeTab, null, closer, headerState.sortBy);
 
     
 
@@ -121,7 +121,8 @@ import { useSimpleAuth } from '../useSimpleAuth';
       headerState.startDate,
       headerState.endDate,
       '',
-      ''
+      '',
+      headerState.sortBy  // Filter by same field as sort toggle (book_date or call_date)
     );
   }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters, headerState.startDate, headerState.endDate]);
 

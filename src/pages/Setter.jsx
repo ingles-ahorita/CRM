@@ -107,7 +107,7 @@ import { supabase } from '../lib/supabaseClient';
   
 
   // Enable real-time updates for this setter
-  useRealtimeLeads(dataState, setDataState, headerState.activeTab, setter, null);
+  useRealtimeLeads(dataState, setDataState, headerState.activeTab, setter, null, headerState.sortBy);
     
 
   useEffect(() => {
@@ -118,7 +118,13 @@ import { supabase } from '../lib/supabaseClient';
       headerState.sortOrder,
       setDataState,
       null, setter,
-      headerState.filters
+      headerState.filters,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      headerState.sortBy  // Filter by same field as sort toggle (book_date or call_date)
     );
   }, [headerState.searchTerm, headerState.activeTab, headerState.sortBy, headerState.sortOrder, headerState.filters]);
 

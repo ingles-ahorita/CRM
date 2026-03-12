@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { getDayBoundsLocal } from '../utils/dateHelpers';
+import { subDays, addDays } from 'date-fns';
 
-export function useRealtimeLeads(dataState, setDataState, activeTab = 'all', setterId = null, closerId = null) {
+export function useRealtimeLeads(dataState, setDataState, activeTab = 'all', setterId = null, closerId = null, dateFilterField = 'book_date') {
   const subscriptionRef = useRef(null);
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export function useRealtimeLeads(dataState, setDataState, activeTab = 'all', set
         subscriptionRef.current.unsubscribe();
       }
     };
-  }, [activeTab, setterId, closerId]);
+  }, [activeTab, setterId, closerId, dateFilterField]);
 
   const handleInsert = async (newLead) => {
     // Check if the new lead should be included based on current filters
@@ -138,32 +140,32 @@ export function useRealtimeLeads(dataState, setDataState, activeTab = 'all', set
   };
 
   const shouldIncludeLead = (lead) => {
-    // Apply the same filtering logic as your fetchAll function
+    // Apply the same filtering logic as fetchAll - use dateFilterField (call_date or book_date)
+    // and local timezone day bounds for tab filtering
+    const dateValue = lead[dateFilterField];
+    if (!dateValue) return false;
+
     const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    const { dayStart: todayStart, dayEnd: todayEnd } = getDayBoundsLocal(now);
+    const { dayStart: yesterdayStart, dayEnd: yesterdayEnd } = getDayBoundsLocal(subDays(now, 1));
+    const { dayStart: tomorrowStart, dayEnd: tomorrowEnd } = getDayBoundsLocal(addDays(now, 1));
+    const { dayStart: dayAfterTomorrowStart, dayEnd: dayAfterTomorrowEnd } = getDayBoundsLocal(addDays(now, 2));
 
     // Filter by user type
     if (setterId && lead.setter_id !== setterId) return false;
     if (closerId && lead.closer_id !== closerId) return false;
 
-    // Filter by date based on active tab
+    // Filter by date based on active tab (use same local timezone boundaries as fetchAll)
     if (activeTab === 'today') {
-      return lead.book_date >= today.toISOString() && lead.book_date < tomorrow.toISOString();
+      return dateValue >= todayStart.toISOString() && dateValue <= todayEnd.toISOString();
     } else if (activeTab === 'yesterday') {
-      return lead.book_date >= yesterday.toISOString() && lead.book_date < today.toISOString();
+      return dateValue >= yesterdayStart.toISOString() && dateValue <= yesterdayEnd.toISOString();
     } else if (activeTab === 'tomorrow') {
-      const dayAfterTomorrow = new Date(tomorrow);
-      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
-      return lead.book_date >= tomorrow.toISOString() && lead.book_date < dayAfterTomorrow.toISOString();
+      return dateValue >= tomorrowStart.toISOString() && dateValue <= tomorrowEnd.toISOString();
+    } else if (activeTab === 'tomorrow + 1') {
+      return dateValue >= dayAfterTomorrowStart.toISOString() && dateValue <= dayAfterTomorrowEnd.toISOString();
     }
-    
+
     // For 'all' tab, include all leads
     return true;
   };
