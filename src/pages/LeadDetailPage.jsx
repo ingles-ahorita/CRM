@@ -171,6 +171,10 @@
             closerList={dataState.closerList ?? []}
             mode={localStorage.getItem('userRole')}
             calltimeLoading={dataState.calltimeLoading}
+            onLeadUpdated={(callId, updates) => setDataState(prev => ({
+              ...prev,
+              leads: prev.leads.map(l => l.id === callId ? { ...l, ...updates } : l)
+            }))}
             onDeleteCall={async () => {
               try {
                 await deleteCallWithDependencies(call.id);

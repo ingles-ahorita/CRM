@@ -312,171 +312,184 @@ export default function CloserDashboardCards({ closer }) {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-      <div className="bg-white rounded-lg shadow p-6 self-start relative">
-        <button
-          type="button"
-          onClick={() => navigate(`/closer-stats/${closer}`)}
-          className="absolute top-3 right-3 p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-          title="View closer stats"
-          aria-label="View closer stats"
-        >
-          <BarChart3 size={18} />
-        </button>
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Commission (current month)</h2>
-        <div className="text-3xl font-bold text-purple-600">
-          {loading ? '—' : `$${typeof currentMonthCommission === 'number' ? currentMonthCommission.toFixed(2) : '0.00'}`}
-        </div>
-        <p className="text-xs text-gray-400 mt-1">{currentMonthKey}</p>
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">Conversion rate</p>
-          <p className="text-3xl font-semibold text-gray-900">
-            {loading ? '—' : (currentMonthConversionRate != null ? `${currentMonthConversionRate}%` : '—')}
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5">Purchases / showed up (current month)</p>
-        </div>
-        <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">PIF rate</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {loading ? '—' : (currentMonthPifRate != null ? `${currentMonthPifRate}%` : '—')}
+    <div className="mb-6 closer-dashboard-cards">
+      <style>{`
+        .closer-dashboard-cards .closer-dashboard-stats-btn,
+        .closer-dashboard-cards .closer-dashboard-stats-btn svg { color: #6b7280 !important; stroke: #6b7280 !important; }
+        .closer-dashboard-cards .closer-dashboard-stats-btn:hover,
+        .closer-dashboard-cards .closer-dashboard-stats-btn:hover svg { color: #4b5563 !important; stroke: #4b5563 !important; }
+      `}</style>
+      <div className="flex flex-col lg:flex-row" style={{ gap: '16px' }}>
+        {/* Left: Commission, Historic, Last 5, then Recent no-shows with Yesterday stacked below it */}
+        <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 items-start" style={{ columnGap: '12px', rowGap: 0 }}>
+          {/* Commission (top) + Historic (below) - stacked */}
+          <div className="flex flex-col gap-2 col-span-1 min-w-0">
+          <div className="bg-white rounded-lg shadow-sm p-3 relative min-w-0">
+            <button
+              type="button"
+              onClick={() => navigate(`/closer-stats/${closer}`)}
+              className="closer-dashboard-stats-btn absolute top-2 right-2 p-1 rounded hover:bg-gray-100"
+              title="View closer stats"
+              aria-label="View closer stats"
+            >
+              <BarChart3 size={14} stroke="#6b7280" />
+            </button>
+            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5 pr-7">Commission (current month)</h2>
+            <p className="text-lg font-bold text-purple-600">
+              {loading ? '—' : `$${typeof currentMonthCommission === 'number' ? currentMonthCommission.toFixed(2) : '0.00'}`}
             </p>
-            <p className="text-xs text-gray-400 mt-0.5">Single payment %</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">Downsell rate</p>
-            <p className="text-lg font-semibold text-gray-900">
-              {loading ? '—' : (currentMonthDownsellRate != null ? `${currentMonthDownsellRate}%` : '—')}
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">% with weekly_classes offer</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6 self-start relative">
-        <button
-          type="button"
-          onClick={() => navigate(`/closer-stats/${closer}`)}
-          className="absolute top-3 right-3 p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-          title="View closer stats"
-          aria-label="View closer stats"
-        >
-          <BarChart3 size={18} />
-        </button>
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Historic conversion rate</h2>
-        <div className="text-3xl font-bold text-gray-900">
-          {loading ? '—' : (historicConversionRate != null ? `${historicConversionRate}%` : '—')}
-        </div>
-        <p className="text-xs text-gray-400 mt-1">Purchases / showed up (all time)</p>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-4 self-start">
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-3">Last 5</h2>
-        <div className="flex items-center justify-center gap-1.5 flex-wrap">
-          {loading ? (
-            <span className="text-gray-500 text-xs">Loading…</span>
-          ) : last5ShowUps.length === 0 ? (
-            <span className="text-gray-500 text-xs">No show-ups yet</span>
-          ) : (
-            [...last5ShowUps].reverse().map((call) => (
-              <div key={call.id} className="relative group">
-                <button
-                  type="button"
-                  onClick={() => call.lead_id && navigate(`/lead/${call.lead_id}`)}
-                  className={`w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-white text-[10px] font-bold ${outcomeColor(call.outcome)} ${call.lead_id ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-gray-400' : ''} transition-shadow`}
-                  aria-label={call.lead_id ? `View ${call.name}` : undefined}
-                >
-                  {outcomeSymbol(call.outcome)}
-                </button>
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 pointer-events-none z-10 min-w-[120px] max-w-[220px]">
-                  <div className="font-medium text-white truncate" title={call.name}>{call.name}</div>
-                  <div className="text-gray-300 truncate mt-0.5" title={call.email}>{call.email}</div>
-                  {call.call_date && (
-                    <div className="text-gray-400 mt-0.5 text-[11px]">
-                      {DateHelpers.formatTimeWithRelative(call.call_date)}
-                    </div>
-                  )}
-                </div>
+            <p className="text-xs text-gray-400">{currentMonthKey}</p>
+            <div className="mt-0.5 pt-0.5 border-t border-gray-100">
+              <p className="text-xs font-medium text-gray-500">Conversion rate</p>
+              <p className="text-lg font-semibold text-gray-900">
+                {loading ? '—' : (currentMonthConversionRate != null ? `${currentMonthConversionRate}%` : '—')}
+              </p>
+            </div>
+            <div className="mt-0.5 pt-0.5 border-t border-gray-100 flex gap-3">
+              <div>
+                <p className="text-xs font-medium text-gray-500">PIF</p>
+                <p className="text-base font-semibold text-gray-900">
+                  {loading ? '—' : (currentMonthPifRate != null ? `${currentMonthPifRate}%` : '—')}
+                </p>
               </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 self-start">
-        <div className="bg-white rounded-lg shadow p-4">
-          <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Yesterday&apos;s show up rate</h2>
-          <div className="text-2xl font-bold text-gray-900">
-            {loading ? '—' : yesterdayShowUpRate.rate != null ? `${yesterdayShowUpRate.rate}%` : '—'}
+              <div>
+                <p className="text-xs font-medium text-gray-500">Downsell</p>
+                <p className="text-base font-semibold text-gray-900">
+                  {loading ? '—' : (currentMonthDownsellRate != null ? `${currentMonthDownsellRate}%` : '—')}
+                </p>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-gray-400 mt-1">
-            {loading ? '—' : yesterdayShowUpRate.confirmed > 0 ? `${yesterdayShowUpRate.showedUp} / ${yesterdayShowUpRate.confirmed} confirmed` : 'No confirmed calls'}
-          </p>
-        </div>
-      <div className="bg-white rounded-lg shadow p-4 self-start">
-        <style>{`
-          .recent-noshows-scroll::-webkit-scrollbar { width: 5px; }
-          .recent-noshows-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
-          .recent-noshows-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-          .recent-noshows-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-          .recent-noshows-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
-        `}</style>
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Recent no-shows</h2>
-        <ul className="recent-noshows-scroll space-y-1 max-h-48 overflow-auto text-xs pr-0.5">
-          {loading ? (
-            <li className="text-gray-500 py-0.5">Loading…</li>
-          ) : noShowCalls.length === 0 ? (
-            <li className="text-gray-500 py-0.5">No recent no-shows</li>
-          ) : (
-            noShowCalls.map((call) => (
-              <li
-                key={call.id}
-                role={call.lead_id ? 'button' : undefined}
-                tabIndex={call.lead_id ? 0 : undefined}
-                onClick={call.lead_id ? () => navigate(`/lead/${call.lead_id}`) : undefined}
-                onKeyDown={call.lead_id ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lead/${call.lead_id}`); } } : undefined}
-                className={`flex justify-between items-center gap-2 py-1 border-b border-gray-100 last:border-0 ${call.lead_id ? 'cursor-pointer hover:opacity-80' : ''}`}
-              >
-                <span className="font-medium text-gray-900 truncate min-w-0">{call.name}</span>
-                <span className="text-gray-400 whitespace-nowrap shrink-0">
-                  {call.call_date ? DateHelpers.formatTimeAgo(call.call_date) : '—'}
-                </span>
-              </li>
-            ))
-          )}
-        </ul>
-      </div>
-      </div>
 
-      <div className="bg-white rounded-lg shadow p-4">
-        <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-          Kajabi multipay (last month)
-        </h2>
-        <p className="text-xs text-gray-400 mb-2">Gray / red (1 pay, &gt;1 mo) / green (2 pay)</p>
-        <ul className="space-y-1">
-          {loading ? (
-            <li className="text-gray-500 text-xs py-1">Loading…</li>
-          ) : multipayPurchases.length === 0 ? (
-            <li className="text-gray-500 text-xs py-1">No multipay in last month</li>
-          ) : (
-            multipayPurchases.map((row, i) => (
-              <li
-                key={i}
-                role={row.lead_id ? 'button' : undefined}
-                tabIndex={row.lead_id ? 0 : undefined}
-                onClick={row.lead_id ? () => navigate(`/lead/${row.lead_id}`) : undefined}
-                onKeyDown={row.lead_id ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lead/${row.lead_id}`); } } : undefined}
-                className={`flex items-center gap-2 text-xs py-1.5 px-2 rounded ${
-                  row.status === 'gray' ? 'bg-gray-100' : row.status === 'red' ? 'bg-red-50' : 'bg-green-50'
-                } ${row.lead_id ? 'cursor-pointer hover:opacity-80' : ''}`}
-              >
-                <span className="font-medium text-gray-900 truncate min-w-0 flex-1" title={row.name}>{row.name}</span>
-                <span className="text-gray-500 truncate max-w-[100px]" title={row.email}>{row.email}</span>
-                <span className="text-gray-400 whitespace-nowrap shrink-0">{row.date}</span>
-              </li>
-            ))
-          )}
-        </ul>
+          <div className="bg-white rounded-lg shadow-sm p-3 relative min-w-0">
+            <button
+              type="button"
+              onClick={() => navigate(`/closer-stats/${closer}`)}
+              className="closer-dashboard-stats-btn absolute top-2 right-2 p-1 rounded hover:bg-gray-100"
+              title="View closer stats"
+              aria-label="View closer stats"
+            >
+              <BarChart3 size={14} stroke="#6b7280" />
+            </button>
+            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5 pr-7">Historic conversion rate</h2>
+            <p className="text-lg font-bold text-gray-900">
+              {loading ? '—' : (historicConversionRate != null ? `${historicConversionRate}%` : '—')}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">Purchases / showed up (all time)</p>
+          </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-3 min-w-0">
+            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5 pr-2">Last 5</h2>
+            <div className="flex items-center justify-center gap-1.5 flex-nowrap">
+              {loading ? (
+                <span className="text-gray-500 text-xs">Loading…</span>
+              ) : last5ShowUps.length === 0 ? (
+                <span className="text-gray-500 text-xs">No show-ups yet</span>
+              ) : (
+                [...last5ShowUps].reverse().map((call) => (
+                  <div key={call.id} className="relative group shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => call.lead_id && navigate(`/lead/${call.lead_id}`)}
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${outcomeColor(call.outcome)} ${call.lead_id ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-gray-400' : ''} transition-shadow`}
+                      aria-label={call.lead_id ? `View ${call.name}` : undefined}
+                    >
+                      {outcomeSymbol(call.outcome)}
+                    </button>
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 pointer-events-none z-10 min-w-[120px] max-w-[220px]">
+                      <div className="font-medium text-white truncate" title={call.name}>{call.name}</div>
+                      <div className="text-gray-300 truncate mt-0.5" title={call.email}>{call.email}</div>
+                      {call.call_date && (
+                        <div className="text-gray-400 mt-0.5 text-[11px]">
+                          {DateHelpers.formatTimeWithRelative(call.call_date)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Recent no-shows (top) + Yesterday below - 4th column */}
+          <div className="flex flex-col gap-2 col-span-1 sm:col-span-2 lg:col-span-1 min-w-0">
+          <div className="bg-white rounded-lg shadow-sm p-4 min-w-0 flex-1" style={{ padding: '14px' }}>
+            <style>{`
+              .recent-noshows-scroll::-webkit-scrollbar { width: 5px; }
+              .recent-noshows-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+              .recent-noshows-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+              .recent-noshows-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+              .recent-noshows-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
+            `}</style>
+            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Recent no-shows</h2>
+            <ul className="recent-noshows-scroll space-y-1 max-h-40 overflow-auto text-xs">
+              {loading ? (
+                <li className="text-gray-500 py-0.5">Loading…</li>
+              ) : noShowCalls.length === 0 ? (
+                <li className="text-gray-500 py-0.5">No recent no-shows</li>
+              ) : (
+                noShowCalls.map((call) => (
+                  <li
+                    key={call.id}
+                    role={call.lead_id ? 'button' : undefined}
+                    tabIndex={call.lead_id ? 0 : undefined}
+                    onClick={call.lead_id ? () => navigate(`/lead/${call.lead_id}`) : undefined}
+                    onKeyDown={call.lead_id ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lead/${call.lead_id}`); } } : undefined}
+                    className={`flex justify-between items-center gap-0 py-1.5 border-b border-gray-100 last:border-0 min-w-0 ${call.lead_id ? 'cursor-pointer hover:opacity-80' : ''}`}
+                  >
+                    <span className="font-medium text-gray-900 truncate min-w-0">{call.name}</span>
+                    <span className="text-gray-400 whitespace-nowrap shrink-0">
+                      {call.call_date ? DateHelpers.formatTimeAgo(call.call_date) : '—'}
+                    </span>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+          <div className="bg-white rounded-lg shadow-sm p-3 min-w-0">
+            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-0.5">Yesterday&apos;s show up rate</h2>
+            <p className="text-lg font-bold text-gray-900">
+              {loading ? '—' : yesterdayShowUpRate.rate != null ? `${yesterdayShowUpRate.rate}%` : '—'}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {loading ? '—' : yesterdayShowUpRate.confirmed > 0 ? `${yesterdayShowUpRate.showedUp} / ${yesterdayShowUpRate.confirmed} confirmed` : 'No confirmed calls'}
+            </p>
+          </div>
+        </div>
+        </div>
+
+        {/* Right: Kajabi multipay sidebar */}
+        <div className="lg:w-72 lg:shrink-0 lg:self-start">
+          <div className="bg-white rounded-lg shadow-sm p-4">
+            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Kajabi multipay (last month)</h2>
+            <p className="text-xs text-gray-400 mb-2">Gray / red (1 pay, &gt;1 mo) / green (2 pay)</p>
+            <ul className="space-y-1">
+              {loading ? (
+                <li className="text-gray-500 text-xs py-1">Loading…</li>
+              ) : multipayPurchases.length === 0 ? (
+                <li className="text-gray-500 text-xs py-1">No multipay in last month</li>
+              ) : (
+                multipayPurchases.map((row, i) => (
+                  <li
+                    key={i}
+                    role={row.lead_id ? 'button' : undefined}
+                    tabIndex={row.lead_id ? 0 : undefined}
+                    onClick={row.lead_id ? () => navigate(`/lead/${row.lead_id}`) : undefined}
+                    onKeyDown={row.lead_id ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lead/${row.lead_id}`); } } : undefined}
+                    className={`flex flex-col gap-0.5 text-xs py-1.5 px-2 rounded min-w-0 ${
+                      row.status === 'gray' ? 'bg-gray-100' : row.status === 'red' ? 'bg-red-50' : 'bg-green-50'
+                    } ${row.lead_id ? 'cursor-pointer hover:opacity-80' : ''}`}
+                  >
+                    <div className="font-medium text-gray-900 truncate" title={row.name}>{row.name}</div>
+                    <div className="text-gray-500 truncate text-[11px]" title={row.email}>{row.email}</div>
+                    <div className="text-gray-400 text-[11px]">{row.date}</div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   );

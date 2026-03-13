@@ -88,7 +88,8 @@ import { supabase } from '../lib/supabaseClient';
         cancelled: false,
         noShow: false,
         transferred: false,
-        noManychatId: false
+        noManychatId: false,
+        noConversions: false
       },
       currentSetter: setter,
       onEndShift: handleEndShift,
@@ -157,7 +158,22 @@ import { supabase } from '../lib/supabaseClient';
             <div style={{ marginTop: '16px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
                 {dataState.leads.map((lead) => (
-                  <LeadItem key={lead.id} lead={lead} closerMap={dataState.closerMap} closerList={dataState.closerList ?? []} setterMap={dataState.setterMap} mode="setter" currentUserId={setter} calltimeLoading={dataState.calltimeLoading} />
+                  <LeadItem
+                    key={lead.id}
+                    lead={lead}
+                    closerMap={dataState.closerMap}
+                    closerList={dataState.closerList ?? []}
+                    setterMap={dataState.setterMap}
+                    mode="setter"
+                    currentUserId={setter}
+                    calltimeLoading={dataState.calltimeLoading}
+                    onLeadUpdated={(callId, updates) =>
+                      setDataState(prev => ({
+                        ...prev,
+                        leads: prev.leads.map(l => l.id === callId ? { ...l, ...updates } : l)
+                      }))
+                    }
+                  />
                 ))}
                 {(dataState.leads.length === 0) && (
                   <div style={{ fontSize: '18px', color: '#6b7280', textAlign: 'center', marginTop: '24px' }}>

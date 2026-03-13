@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import {Modal, NotesModal, ViewNotesModal} from './Modal';
 import { TransferSetterModal } from './TransferSetterModal';
 import RecoverLeadModal from './RecoverLeadModal';
+import NoShowStateModal from './NoShowStateModal';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Mail, Phone, User, Calendar, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -41,7 +42,7 @@ export async function deleteCallWithDependencies(callId) {
   if (error) throw error;
 }
 
-export function LeadItem({ lead, setterMap = {}, closerMap = {}, closerList = [], mode = 'full', calltimeLoading = false, onDeleteCall: onDeleteCallProp }) {
+export function LeadItem({ lead, setterMap = {}, closerMap = {}, closerList = [], mode = 'full', calltimeLoading = false, onDeleteCall: onDeleteCallProp, onLeadUpdated }) {
   const location = useLocation();
 const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith('/lead/');
   // Add CSS for loading spinner animation
@@ -84,6 +85,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   const [showPhoneChoiceModal, setShowPhoneChoiceModal] = useState(false);
   const [pendingPhoneNumber, setPendingPhoneNumber] = useState(null);
   const [showRecoverModal, setShowRecoverModal] = useState(false);
+  const [showNoShowStateModal, setShowNoShowStateModal] = useState(false);
   const { setter: currentSetter } = useParams();  
   const navigate = useNavigate();
 
@@ -144,7 +146,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     name,
   }));
 
-  const updateStatus = async (id, field, value, setterF, mcID, leadData) => {
+  const updateStatus = async (id, field, value, setterF, mcID, leadData, extraUpdates = {}) => {
     console.log('[LeadItem] updateStatus:', field, '→', value, 'call id:', id);
     setterF(value);
 
@@ -162,13 +164,28 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
         formattedValue = value ? value : null;
       }
 
-      const { error } = await supabase.from('calls').update({ [field]: formattedValue }).eq('id', id);
-      if (error) console.error('[LeadItem] Supabase update error:', error);
+      const updatePayload = { [field]: formattedValue, ...extraUpdates };
+      console.log('[LeadItem] updatePayload:', updatePayload);
+      const { data: updateData, error } = await supabase.from('calls').update(updatePayload).eq('id', id).select('id');
+      if (error) {
+        console.error('[LeadItem] Supabase update error:', error);
+        showToast(error.message || 'Failed to update', 'error');
+        setterF(formatStatusValue(leadData?.[field])); // revert optimistic update on error
+        return false;
+      }
+      if (!updateData || updateData.length === 0) {
+        console.warn('[LeadItem] Supabase update matched 0 rows (possible RLS or missing column). id:', id, 'payload:', updatePayload);
+        showToast('Update may not have been applied. Check permissions or DB schema.', 'error');
+        setterF(formatStatusValue(leadData?.[field])); // revert optimistic update
+        return false;
+      }
 
-      try {
-        await ManychatService.updateManychatField(mcID, field, formattedValue);
-      } catch (mcErr) {
-        console.error('[LeadItem] ManyChat field update error:', mcErr);
+      if (mcID) {
+        try {
+          await ManychatService.updateManychatField(mcID, field, formattedValue);
+        } catch (mcErr) {
+          console.error('[LeadItem] ManyChat field update error:', mcErr);
+        }
       }
 
       // When showed_up is set to no, set field "showed_up" to false in the closer's ManyChat
@@ -256,8 +273,10 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     } catch (err) {
       console.error('[LeadItem] updateStatus error:', err);
       showToast('Error updating status. See console.', 'error');
-      alert('Error updating status: ' + (err?.message || String(err)));
+      setterF(formatStatusValue(leadData?.[field])); // revert optimistic update
+      return false;
     }
+    return true;
   };
 
   return (
@@ -368,7 +387,18 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           />
           <StatusDropdown
             value={showUp}
-            onChange={(value) => updateStatus(lead.id, 'showed_up', value, setShowUp, lead.manychat_user_id || lead.leads?.mc_id, lead)}
+            onChange={(value) => {
+              if (value === 'false' || value === false) {
+                setShowNoShowStateModal(true);
+              } else {
+                updateStatus(lead.id, 'showed_up', value, setShowUp, lead.manychat_user_id || lead.leads?.mc_id, lead);
+              }
+            }}
+            onClick={
+              (showUp === 'false' || showUp === false)
+                ? () => setShowNoShowStateModal(true)
+                : undefined
+            }
             label="Show Up"
             disabled={mode === 'setter' || mode === 'view'}
             outcomeLog={lead.outcome_log}
@@ -856,6 +886,33 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           onSuccess={(msg) => showToast(msg || 'Calendar event created', 'success')}
         />
 
+        <NoShowStateModal
+          isOpen={showNoShowStateModal}
+          onClose={() => setShowNoShowStateModal(false)}
+          onConfirm={async (noShowState) => {
+            const extraUpdates = noShowState === 'showed_up_yes'
+              ? { no_show_state: null }
+              : { no_show_state: noShowState };
+            const showedUpValue = noShowState === 'showed_up_yes';
+            const ok = await updateStatus(
+              lead.id,
+              'showed_up',
+              showedUpValue,
+              setShowUp,
+              lead.manychat_user_id || lead.leads?.mc_id,
+              lead,
+              extraUpdates
+            );
+            if (ok) {
+              showToast('Show up updated', 'success');
+              onLeadUpdated?.(lead.id, { showed_up: showedUpValue, no_show_state: extraUpdates.no_show_state });
+            }
+            return ok;
+          }}
+          leadName={lead?.name || lead?.leads?.name}
+          currentNoShowState={lead.no_show_state}
+        />
+
         {/* Toast Notification */}
         {toast.show && (
           <div
@@ -1027,6 +1084,29 @@ const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSet
       minWidth: '150px',
       zIndex: 1000
     }}>
+      <button 
+        onClick={(e) => { 
+          e.stopPropagation();
+          if (lead?.id) {
+            navigator.clipboard.writeText(String(lead.id));
+            showToast?.('Call ID copied to clipboard', 'success');
+          }
+          setMenuOpen(false); 
+        }}
+        style={{
+          width: '100%',
+          padding: '8px 16px',
+          border: 'none',
+          background: 'none',
+          textAlign: 'left',
+          cursor: 'pointer',
+          color: '#6b7280',
+          fontWeight: '300',
+          fontSize: '14px',
+          outline: 'none'
+        }}>
+        Copy call id
+      </button>
       <button 
         onClick={(e) => { 
           e.stopPropagation();

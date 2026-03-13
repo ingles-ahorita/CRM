@@ -77,3 +77,19 @@ button:focus-visible {
   }
 }
 
+/* Closer dashboard stats button - always medium gray, never black */
+.closer-dashboard-cards .closer-dashboard-stats-btn {
+  background: transparent !important;
+  color: #6b7280 !important;
+}
+.closer-dashboard-cards .closer-dashboard-stats-btn:hover {
+  color: #4b5563 !important;
+  background: #f3f4f6 !important;
+}
+.closer-dashboard-cards .closer-dashboard-stats-btn svg {
+  stroke: #6b7280 !important;
+}
+.closer-dashboard-cards .closer-dashboard-stats-btn:hover svg {
+  stroke: #4b5563 !important;
+}
+

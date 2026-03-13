@@ -96,6 +96,7 @@ export default function ManagementPage() {
       rescheduled: searchParams.get('rescheduled') === 'true',
       transferred: searchParams.get('transferred') === 'true',
       purchased: searchParams.get('purchased') === 'true',
+      noConversions: searchParams.get('noConversions') === 'true',
       lockIn: searchParams.get('lockIn') === 'true',
       recovered: searchParams.get('recovered') === 'true'
     },

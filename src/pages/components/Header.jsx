@@ -127,6 +127,7 @@ function FilterPanel({ state, setState, mode = 'full' }) {
             <FilterButton label="Reschedule" active={filters.rescheduled} onClick={() => toggleFilter('rescheduled')} />
             <FilterButton label="Transfered" active={filters.transferred} onClick={() => toggleFilter('transferred')} />
             <FilterButton label="Purchased" active={filters.purchased} onClick={() => { toggleFilter('purchased'); update({ sortBy: sortBy === 'purchased_at' ? 'book_date' : 'purchased_at' }); }} />
+            <FilterButton label="No conversions" active={filters.noConversions} onClick={() => toggleFilter('noConversions')} />
             <FilterButton label="Lock In" active={filters.lockIn} onClick={() => toggleFilter('lockIn')} />
             <FilterButton label="Recovered" active={filters.recovered} onClick={() => toggleFilter('recovered')} />
             <FilterButton label="No ManyChat ID" active={filters.noManychatId} onClick={() => toggleFilter('noManychatId')} />
@@ -135,11 +136,13 @@ function FilterPanel({ state, setState, mode = 'full' }) {
         {(mode === 'setter') && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <FilterButton label="Transfered" active={filters.transferred} onClick={() => toggleFilter('transferred')} />
+            <FilterButton label="No conversions" active={filters.noConversions} onClick={() => toggleFilter('noConversions')} />
             <FilterButton label="No ManyChat ID" active={filters.noManychatId} onClick={() => toggleFilter('noManychatId')} />
           </div>
         )}
         {(mode === 'closer') && (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <FilterButton label="No conversions" active={filters.noConversions} onClick={() => toggleFilter('noConversions')} />
             <FilterButton label="No ManyChat ID" active={filters.noManychatId} onClick={() => toggleFilter('noManychatId')} />
             <FilterButton label="Lock In" active={filters.lockIn} onClick={() => toggleFilter('lockIn')} />
           </div>

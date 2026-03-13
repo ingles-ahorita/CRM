@@ -347,5 +347,9 @@ function applyStatusFilters(query, filters) {
     query = query.eq('purchased', true);
   }
 
+  if (filters.noConversions) {
+    query = query.eq('purchased', false);
+  }
+
   return query;
 }

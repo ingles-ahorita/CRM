@@ -51,7 +51,8 @@ import { useSimpleAuth } from '../useSimpleAuth';
         cancelled: false,
         noShow: false,
         transferred: false,
-        noManychatId: false
+        noManychatId: false,
+        noConversions: false
       },
       currentCloser: closer,
       onEndShift: handleEndShift,
@@ -167,6 +168,10 @@ import { useSimpleAuth } from '../useSimpleAuth';
                       mode='closer'
                       currentUserId={closer}
                       calltimeLoading={dataState.calltimeLoading}
+                      onLeadUpdated={(callId, updates) => setDataState(prev => ({
+                        ...prev,
+                        leads: prev.leads.map(l => l.id === callId ? { ...l, ...updates } : l)
+                      }))}
                     />
                   ))}
                   {(dataState.leads.length === 0) && (

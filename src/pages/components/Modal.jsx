@@ -58,6 +58,9 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     const [selectedKajabiPayoffId, setSelectedKajabiPayoffId] = useState(null);
     const [selectedPayoffDisplay, setSelectedPayoffDisplay] = useState(null);
     const [lockInKajabiId, setLockInKajabiId] = useState(null);
+    const [noOutcomeCategory, setNoOutcomeCategory] = useState('');
+    const [noOutcomeCategoryError, setNoOutcomeCategoryError] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const table = mode === 'closer' ? 'outcome_log' : 'setter_notes';
     const noteId = mode === 'closer' ? lead.closer_note_id : lead.setter_note_id;
@@ -144,6 +147,8 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
         setPifChecked(false);
         setSelectedKajabiPayoffId(null);
         setSelectedPayoffDisplay(null);
+        setNoOutcomeCategory('');
+        setNoOutcomeCategoryError(null);
         return;
       }
 
@@ -180,6 +185,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
       setPifChecked(!!(data?.PIF || data?.pif));
       setSelectedKajabiPayoffId(data?.kajabi_payoff_id ?? null);
       setSelectedPayoffDisplay(null);
+      setNoOutcomeCategory(data?.no_outcome_category ?? '');
     };
     fetchNote();
   }, [isOpen, noteId, mode]);
@@ -437,7 +443,10 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
 
     e.preventDefault();
     setKajabiPurchaseRequiredError(null);
+    setNoOutcomeCategoryError(null);
+    setIsSubmitting(true);
 
+    try {
     const formData = new FormData(e.target);
     const outcomeValue = formData.get('outcome') || '';
     const pifCheckedSubmit = formData.get('pif') === 'on';
@@ -456,6 +465,10 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
         setKajabiPurchaseRequiredError('Payoff purchase must be different from the lock-in Kajabi purchase.');
         return;
       }
+    }
+    if (mode === 'closer' && outcomeValue === 'no' && !noOutcomeCategory) {
+      setNoOutcomeCategoryError('Please select a category (PRICE, AUTHORITY, CERTAINTY, or FIT) to save.');
+      return;
     }
 
     console.log(noteId);
@@ -571,7 +584,8 @@ const closerPayload = {
   PIF: pifChecked,
   paid_second_installment: paidSecondInstallment,
   kajabi_purchase_id: selectedKajabiPurchaseId || null,
-  kajabi_payoff_id: selectedKajabiPayoffId || null
+  kajabi_payoff_id: selectedKajabiPayoffId || null,
+  no_outcome_category: outcomeValue === 'no' ? (noOutcomeCategory || null) : null
 };
 
 
@@ -734,6 +748,9 @@ if (idToUse) {
   }
   
   onClose();
+} finally {
+  setIsSubmitting(false);
+}
 };
 
   if (!isOpen) return null;
@@ -754,9 +771,23 @@ if (idToUse) {
     marginBottom: '6px'
   };
 
+  // Closer mode: disable Save when any mandatory field is missing
+  const isCloserSaveDisabled = mode === 'closer' && (
+    !outcome ||
+    (outcome === 'yes' && (!selectedKajabiPurchaseId || (pifChecked && !selectedKajabiPayoffId) || (pifChecked && selectedKajabiPayoffId === selectedKajabiPurchaseId))) ||
+    (outcome === 'yes' && !selectedOffer) ||
+    (outcome === 'lock_in' && !selectedKajabiPurchaseId) ||
+    (outcome === 'refund' && (!selectedKajabiPurchaseId || !selectedOffer)) ||
+    (outcome === 'no' && !noOutcomeCategory)
+  );
+
   return (
     <>
     <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
         input[type="checkbox"] {
           width: 18px;
           height: 18px;
@@ -782,7 +813,10 @@ if (idToUse) {
           left: 2px;
           top: -2px;
         }
-      
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
       `}</style>
 
 
@@ -1033,7 +1067,14 @@ if (idToUse) {
             <select
               name="outcome"
               value={outcome}
-              onChange={(e) => setOutcome(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setOutcome(v);
+                if (v !== 'no') {
+                  setNoOutcomeCategory('');
+                  setNoOutcomeCategoryError(null);
+                }
+              }}
               style={{...inputStyle, cursor: 'pointer', width: '100%'}}
               required
             >
@@ -1045,6 +1086,51 @@ if (idToUse) {
               <option value="follow_up">FOLLOW UP NEEDED</option>
               <option value="refund">REFUND</option>
             </select>
+          </div>
+        )}
+
+        {/* NO outcome: mandatory category (PRICE, AUTHORITY, CERTAINTY, FIT) */}
+        {mode === 'closer' && outcome === 'no' && (
+          <div style={{ gridColumn: '1 / -1', padding: '16px', backgroundColor: '#fef2f2', borderRadius: '8px', border: '1px solid #fecaca' }}>
+            <label style={{ ...labelStyle, display: 'block', marginBottom: '12px' }}>
+              Category: <span style={{ color: 'red' }}>*</span>
+            </label>
+            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>Select the reason for NO outcome:</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+              {['price', 'authority', 'certainty', 'fit'].map((cat) => (
+                <label
+                  key={cat}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: `2px solid ${noOutcomeCategory === cat ? '#dc2626' : '#e5e7eb'}`,
+                    backgroundColor: noOutcomeCategory === cat ? '#fee2e2' : '#fff',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: noOutcomeCategory === cat ? '600' : '400',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="no_outcome_category"
+                    value={cat}
+                    checked={noOutcomeCategory === cat}
+                    onChange={() => {
+                      setNoOutcomeCategory(cat);
+                      setNoOutcomeCategoryError(null);
+                    }}
+                    style={{ accentColor: '#dc2626' }}
+                  />
+                  {cat.toUpperCase()}
+                </label>
+              ))}
+            </div>
+            {noOutcomeCategoryError && (
+              <p style={{ fontSize: '13px', color: '#b91c1c', marginTop: '8px', marginBottom: 0 }}>{noOutcomeCategoryError}</p>
+            )}
           </div>
         )}
 
@@ -1382,20 +1468,35 @@ if (idToUse) {
             <button
               type="submit"
               form="closer-note-form"
-              disabled={outcome === 'yes' && !selectedKajabiPurchaseId}
+              disabled={isCloserSaveDisabled || isSubmitting}
               style={{ 
                 padding: '10px 20px', 
-                backgroundColor: (outcome === 'yes' && !selectedKajabiPurchaseId) ? '#9ca3af' : '#001749ff', 
+                backgroundColor: (isCloserSaveDisabled || isSubmitting) ? '#9ca3af' : '#001749ff', 
                 color: 'white', 
                 border: 'none', 
                 borderRadius: '6px', 
-                cursor: (outcome === 'yes' && !selectedKajabiPurchaseId) ? 'not-allowed' : 'pointer',
+                cursor: (isCloserSaveDisabled || isSubmitting) ? 'not-allowed' : 'pointer',
                 fontSize: '14px',
                 fontWeight: '500',
-                flex: 1
+                flex: 1,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
               }}
             >
-              {noteData ? 'Update Note' : 'Add Note'}
+              {isSubmitting && (
+                <span style={{
+                  display: 'inline-block',
+                  width: '14px',
+                  height: '14px',
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  borderTopColor: 'white',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                }} />
+              )}
+              {isSubmitting ? 'Saving...' : (noteData ? 'Update Note' : 'Add Note')}
             </button>
           </div>
         </div>
