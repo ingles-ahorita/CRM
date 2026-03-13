@@ -128,6 +128,7 @@ function FilterPanel({ state, setState, mode = 'full' }) {
             <FilterButton label="Transfered" active={filters.transferred} onClick={() => toggleFilter('transferred')} />
             <FilterButton label="Purchased" active={filters.purchased} onClick={() => { toggleFilter('purchased'); update({ sortBy: sortBy === 'purchased_at' ? 'book_date' : 'purchased_at' }); }} />
             <FilterButton label="Lock In" active={filters.lockIn} onClick={() => toggleFilter('lockIn')} />
+            <FilterButton label="Recovered" active={filters.recovered} onClick={() => toggleFilter('recovered')} />
             <FilterButton label="No ManyChat ID" active={filters.noManychatId} onClick={() => toggleFilter('noManychatId')} />
           </div>
         )}

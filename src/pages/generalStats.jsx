@@ -153,6 +153,7 @@ async function fetchStatsData(startDate, endDate) {
           book_date,
           source_type,
           is_reschedule,
+          recovered,
           phone,
           setters (id, name),
           leads (phone, medium)
@@ -170,6 +171,7 @@ async function fetchStatsData(startDate, endDate) {
   const stepInMemory = performance.now();
   const bookingsMadeinPeriod = bookingsData?.length || 0;
   const totalPickedUpFromBookings = bookingsData?.filter(b => b.picked_up === true).length || 0;
+  const totalRecovered = bookingsData?.filter(b => b.recovered === true || b.recovered === 'true').length || 0;
 
   
   // Calculate bookings by source (exclude rescheduled from organic/ads counts)
@@ -791,6 +793,7 @@ const totalPurchased = purchasedCalls.length;
     pifPercent,
     downsellPercent,
     totalRescheduled: filteredCalls.filter(c => c.is_reschedule).length,
+    totalRecovered,
     closers: Object.values(closerStats),
     setters: Object.values(setterStats),
     countries: sortedCountries,
@@ -2712,47 +2715,20 @@ export default function StatsDashboard() {
             <div className="text-3xl font-bold text-orange-600">
               {totalRescheduled}
             </div>
-            <div className="text-sm text-gray-500 mt-2">
-              {totalBooked > 0 
-                ? ((totalRescheduled / totalBooked) * 100).toFixed(1) 
-                : 0}% of total calls
+          </div>
+
+          {/* Recovered Leads */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Recovered Leads</h3>
+              <span className="text-xs text-gray-400">by book date</span>
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
-              <div className="mt-3 pt-3 border-t border-gray-100">
-                <div className="flex justify-between text-xs">
-                  <div className="text-blue-600">
-                    Ads: {stats.sourceStats.ads.totalBooked > 0 ? ((stats.sourceStats.ads.totalRescheduled) / stats.sourceStats.ads.totalBooked * 100).toFixed(1) : 0}%
-                  </div>
-                  <div className="text-green-600">
-                    Organic: {stats.sourceStats.organic.totalBooked > 0 ? ((stats.sourceStats.organic.totalRescheduled) / stats.sourceStats.organic.totalBooked * 100).toFixed(1) : 0}%
-                  </div>
-                </div>
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.sourceStats.ads.totalRescheduled}/{stats.sourceStats.ads.totalBooked}</div>
-                  <div>{stats.sourceStats.organic.totalRescheduled}/{stats.sourceStats.organic.totalBooked}</div>
-                </div>
-              </div>
-            )}
-            {sourceFilter === 'ads' && stats && stats.mediumStats && (
-              <div className="mt-3 pt-3 border-t border-gray-100">
-                <div className="flex justify-between text-xs">
-                  <div className="text-purple-600">
-                    TikTok: {stats.mediumStats.tiktok.totalBooked > 0 ? ((stats.mediumStats.tiktok.totalRescheduled) / stats.mediumStats.tiktok.totalBooked * 100).toFixed(1) : 0}%
-                  </div>
-                  <div className="text-pink-600">
-                    Instagram: {stats.mediumStats.instagram.totalBooked > 0 ? ((stats.mediumStats.instagram.totalRescheduled) / stats.mediumStats.instagram.totalBooked * 100).toFixed(1) : 0}%
-                  </div>
-                  <div className="text-gray-600">
-                    Other: {stats.mediumStats.other.totalBooked > 0 ? ((stats.mediumStats.other.totalRescheduled) / stats.mediumStats.other.totalBooked * 100).toFixed(1) : 0}%
-                  </div>
-                </div>
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.mediumStats.tiktok.totalRescheduled}/{stats.mediumStats.tiktok.totalBooked}</div>
-                  <div>{stats.mediumStats.instagram.totalRescheduled}/{stats.mediumStats.instagram.totalBooked}</div>
-                  <div>{stats.mediumStats.other.totalRescheduled}/{stats.mediumStats.other.totalBooked}</div>
-                </div>
-              </div>
-            )}
+            <div className="text-3xl font-bold text-emerald-600">
+              {stats?.totalRecovered ?? 0}
+            </div>
+            <div className="text-sm text-gray-500 mt-2">
+              in selected period
+            </div>
           </div>
 
           {/* Total Calls Summary */}

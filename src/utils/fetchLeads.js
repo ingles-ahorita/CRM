@@ -44,7 +44,7 @@ let query = supabase
     *,
     closers (id, name, mc_api_key),
     setters (id, name),
-    leads (phone, source, medium, mc_id, customer_id),
+    leads (phone, source, medium, mc_id, customer_id, email, name),
     ${outcomeLogSelect}
   `)
   .order(sortField, { ascending: order === 'asc', nullsFirst: false });
@@ -298,7 +298,7 @@ if (searchTerm) {
 
   const [settersRes, closersRes] = await Promise.all([
     supabase.from('setters').select('id, name'),
-    supabase.from('closers').select('id, name')
+    supabase.from('closers').select('id, name, email')
   ]);
 
   if (!settersRes.error && settersRes.data) {
@@ -309,8 +309,9 @@ if (searchTerm) {
 
   if (!closersRes.error && closersRes.data) {
     const map = {};
+    const list = closersRes.data.map(c => ({ id: c.id, name: c.name, email: c.email }));
     closersRes.data.forEach(c => { map[c.id] = c.name; });
-    updateDataState({ closerMap: map });
+    updateDataState({ closerMap: map, closerList: list });
   }
 
   updateDataState({ loading: false });
@@ -338,6 +339,9 @@ function applyStatusFilters(query, filters) {
 
   if (filters.rescheduled) {
     query = query.eq('is_reschedule', true); // Adjust column name to match your DB
+  }
+  if (filters.recovered) {
+    query = query.eq('recovered', true);
   }
   if (filters.purchased) {
     query = query.eq('purchased', true);

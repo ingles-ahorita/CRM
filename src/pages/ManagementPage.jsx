@@ -96,7 +96,8 @@ export default function ManagementPage() {
       rescheduled: searchParams.get('rescheduled') === 'true',
       transferred: searchParams.get('transferred') === 'true',
       purchased: searchParams.get('purchased') === 'true',
-      lockIn: searchParams.get('lockIn') === 'true'
+      lockIn: searchParams.get('lockIn') === 'true',
+      recovered: searchParams.get('recovered') === 'true'
     },
     onEndShift: () => setIsEndShiftModalOpen(true)
   });
@@ -871,6 +872,36 @@ export default function ManagementPage() {
                 );
               })()}
             </div>
+
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '16px 20px',
+                border: '1px solid #e5e7eb',
+              }}
+            >
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                Recovered leads
+              </div>
+              {(() => {
+                const now = new Date();
+                const { weekStart } = getWeekBoundsUTC(now);
+                const mondayStr = weekStart.toISOString().slice(0, 10);
+                const todayStr = now.toISOString().slice(0, 10);
+                const thisWeek = chartSeries.filter((d) => d.date && d.date >= mondayStr && d.date <= todayStr);
+                const recovered = thisWeek.reduce((a, d) => a + (d.recoveredCount ?? 0), 0);
+                return (
+                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
+                    {chartLoading ? '…' : recovered}
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px', fontWeight: 400 }}>
+                      by book date (this week)
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
         
@@ -936,6 +967,7 @@ export default function ManagementPage() {
                 lead={lead}
                 setterMap={dataState.setterMap}
                 closerMap={dataState.closerMap}
+                closerList={dataState.closerList ?? []}
                 calltimeLoading={dataState.calltimeLoading}
               />
             ))}

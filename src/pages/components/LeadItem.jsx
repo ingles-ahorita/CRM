@@ -2,6 +2,7 @@ import { supabase } from '../../lib/supabaseClient';
 import crypto from 'crypto';
 import {Modal, NotesModal, ViewNotesModal} from './Modal';
 import { TransferSetterModal } from './TransferSetterModal';
+import RecoverLeadModal from './RecoverLeadModal';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Mail, Phone, User, Calendar, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -9,7 +10,7 @@ import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
 import * as ManychatService from '../../utils/manychatService';
-import { buildCallDataFromLead, updateManychatCallFields, sendToCloserMC } from '../../utils/manychatService';
+import { buildCallDataFromLead, updateManychatCallFields, sendToCloserMC, setManychatFieldsByName } from '../../utils/manychatService';
 
 const formatStatusValue = (value) => {
   if (value === true) return 'true';
@@ -40,7 +41,7 @@ export async function deleteCallWithDependencies(callId) {
   if (error) throw error;
 }
 
-export function LeadItem({ lead, setterMap = {}, closerMap = {}, mode = 'full', calltimeLoading = false, onDeleteCall: onDeleteCallProp }) {
+export function LeadItem({ lead, setterMap = {}, closerMap = {}, closerList = [], mode = 'full', calltimeLoading = false, onDeleteCall: onDeleteCallProp }) {
   const location = useLocation();
 const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith('/lead/');
   // Add CSS for loading spinner animation
@@ -82,6 +83,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   const [pendingConfirmedValue, setPendingConfirmedValue] = useState(null);
   const [showPhoneChoiceModal, setShowPhoneChoiceModal] = useState(false);
   const [pendingPhoneNumber, setPendingPhoneNumber] = useState(null);
+  const [showRecoverModal, setShowRecoverModal] = useState(false);
   const { setter: currentSetter } = useParams();  
   const navigate = useNavigate();
 
@@ -169,10 +171,24 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
         console.error('[LeadItem] ManyChat field update error:', mcErr);
       }
 
+      // When showed_up is set to no, set field "showed_up" to false in the closer's ManyChat
+      if (field === 'showed_up' && formattedValue === false && leadData?.closer_mc_id && leadData?.closers?.mc_api_key) {
+        try {
+          await setManychatFieldsByName(
+            String(leadData.closer_mc_id),
+            [{ name: 'showed_up', value: false }],
+            leadData.closers.mc_api_key
+          );
+          console.log('[LeadItem] ManyChat showed_up set to false in closer bot');
+        } catch (mcErr) {
+          console.error('[LeadItem] ManyChat showed_up update (closer bot) error:', mcErr);
+        }
+      }
+
       if (field === 'confirmed' && formattedValue === true) {
         console.log('[LeadItem] Confirmed=yes: sending to closer, leadData:', leadData?.name ?? leadData?.id ?? 'no leadData');
         try {
-          await sendToCloserMC({
+          const mcResult = await sendToCloserMC({
             id: id,
             name: leadData?.name,
             phone: leadData?.phone,
@@ -201,6 +217,10 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               { name: 'call_date', value: leadData?.call_date }
             ]
           });
+          if (mcResult?.subscriberId) {
+            const { error: mcIdErr } = await supabase.from('calls').update({ closer_mc_id: String(mcResult.subscriberId) }).eq('id', id);
+            if (mcIdErr) console.error('[LeadItem] Failed to store closer_mc_id:', mcIdErr);
+          }
           console.log('✅ ManyChat user creation triggered for confirmed lead');
           showToast('Lead confirmed and sent to closer', 'success');
         } catch (error) {
@@ -258,8 +278,10 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                 {(callCampaign === 'dm-setter' || callCampaign === 'ai-setting') && (
                   <span style={{ fontSize: '16px', lineHeight: '1.5' }}>💬</span>
                 )}
-                {lead.is_reschedule && (
-                  <span style={{ fontSize: '16px', lineHeight: '1.5' }}>🔁</span>
+                {(lead.recovered || lead.is_reschedule) && (
+                  <span style={{ fontSize: '16px', lineHeight: '1.5' }} title={lead.recovered ? 'Recovered lead' : 'Reschedule'}>
+                    {lead.recovered ? '♻️' : '🔁'}
+                  </span>
                 )}
                 {lead.cancelled && (
                   <span style={{ fontSize: '16px', lineHeight: '1.5' }}>❌</span>
@@ -346,7 +368,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           />
           <StatusDropdown
             value={showUp}
-            onChange={(value) => updateStatus(lead.id, 'showed_up', value, setShowUp)}
+            onChange={(value) => updateStatus(lead.id, 'showed_up', value, setShowUp, lead.manychat_user_id || lead.leads?.mc_id, lead)}
             label="Show Up"
             disabled={mode === 'setter' || mode === 'view'}
             outcomeLog={lead.outcome_log}
@@ -820,8 +842,19 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             setMode={setModeState}
             lead={lead}
             showToast={showToast}
+            closerList={closerList}
+            onRecoverLead={() => setShowRecoverModal(true)}
           />
         </div>
+
+        <RecoverLeadModal
+          isOpen={showRecoverModal}
+          onClose={() => setShowRecoverModal(false)}
+          lead={lead}
+          closerList={closerList}
+          mode={mode}
+          onSuccess={(msg) => showToast(msg || 'Calendar event created', 'success')}
+        />
 
         {/* Toast Notification */}
         {toast.show && (
@@ -959,7 +992,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 
 
-const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSetter, lead, showToast}) => {
+const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSetter, lead, showToast, closerList = [], onRecoverLead }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -1015,6 +1048,30 @@ const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSet
         Transfer
       </button>
       
+      {(mode === 'closer' || mode === 'admin' || mode === 'full') && onRecoverLead && (
+        <button 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            onRecoverLead();
+            setMenuOpen(false); 
+          }}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: '#3b82f6',
+            fontWeight: '300',
+            fontSize: '14px',
+            outline: 'none'
+          }}
+        >
+          Recover lead
+        </button>
+      )}
+
       {(mode === 'closer' || mode === 'view' || mode === 'full') && (
         <button 
           onClick={(e) => { 
@@ -1248,10 +1305,11 @@ const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSet
 
 // compact version
 
-export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltimeLoading = false, onDeleteCall: onDeleteCallProp }) {
+export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, closerList = [], calltimeLoading = false, onDeleteCall: onDeleteCallProp, mode = 'full' }) {
   const navigate = useNavigate();
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showRecoverModal, setShowRecoverModal] = useState(false);
   const [setter, setSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
   const [transferNote, setTransferNote] = useState(null);
   const [loadingNote, setLoadingNote] = useState(false);
@@ -1335,8 +1393,10 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
               {(callCampaign === 'dm-setter' || callCampaign === 'ai-setting') && (
                 <span style={{ fontSize: '14px', lineHeight: '1.2' }}>💬</span>
               )}
-              {lead.is_reschedule && (
-                <span style={{ fontSize: '14px', lineHeight: '1.2' }}>🔄</span>
+              {(lead.recovered || lead.is_reschedule) && (
+                <span style={{ fontSize: '14px', lineHeight: '1.2' }} title={lead.recovered ? 'Recovered lead' : 'Reschedule'}>
+                  {lead.recovered ? '♻️' : '🔄'}
+                </span>
               )}
               {lead.cancelled && (
                 <span style={{ fontSize: '14px', lineHeight: '1.2' }}>❌</span>
@@ -1525,13 +1585,25 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, calltime
         showToast(err?.message || 'Failed to delete call', 'error');
       }
     })}
-    mode={'full'}
+    mode={mode}
+    setMode={() => {}}
+    modalSetter={() => {}}
     lead={lead}
     showToast={showToast}
+    closerList={closerList}
+    onRecoverLead={() => setShowRecoverModal(true)}
   />
 
   </div>
 
+        <RecoverLeadModal
+          isOpen={showRecoverModal}
+          onClose={() => setShowRecoverModal(false)}
+          lead={lead}
+          closerList={closerList}
+          mode={mode}
+          onSuccess={(msg) => showToast(msg || 'Calendar event created', 'success')}
+        />
 
           <ViewNotesModal 
   isOpen={viewModalOpen} 
