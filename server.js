@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -37,11 +37,11 @@ async function loadHandler(handlerPath, handlerName) {
     return module.default;
   } catch (error) {
     console.warn(`⚠️ Handler ${handlerName} failed to load:`, error.message);
-    // Return a dummy handler that returns an error
+    const loadError = error;
     return async (req, res) => {
-      res.status(503).json({ 
+      res.status(503).json({
         error: `${handlerName} handler not available`,
-        details: 'Missing environment variables or dependencies'
+        details: loadError?.message || 'Missing environment variables or dependencies',
       });
     };
   }
@@ -63,6 +63,7 @@ async function loadHandlers() {
   managementSeriesHandler = await loadHandler('./lib/api-handlers/management-series.js', 'management-series');
   zoomWebhookHandler = await loadHandler('./lib/api-handlers/zoom-webhook.js', 'zoom-webhook');
   closerAvailabilityHandler = await loadHandler('./lib/api-handlers/closer-availability.js', 'closer-availability');
+  createCalendarEventHandler = await loadHandler('./lib/api-handlers/create-calendar-event.js', 'create-calendar-event');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -165,6 +166,11 @@ app.post('/api/meta-conversion', async (req, res) => {
 app.get('/api/google-analytics', async (req, res) => {
   if (!googleAnalyticsHandler) await loadHandlers();
   return adaptVercelHandler(googleAnalyticsHandler)(req, res);
+});
+
+app.post('/api/create-calendar-event', async (req, res) => {
+  if (!createCalendarEventHandler) await loadHandlers();
+  return adaptVercelHandler(createCalendarEventHandler)(req, res);
 });
 
 app.get('/api/academic-stats', async (req, res) => {

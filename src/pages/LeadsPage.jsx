@@ -187,6 +187,7 @@ useEffect(() => {
               lead={lead}
               setterMap={dataState.setterMap}
               closerMap={dataState.closerMap}
+              closerList={dataState.closerList ?? []}
               mode='full'
               currentUserId={userId}
               calltimeLoading={dataState.calltimeLoading}
@@ -218,6 +219,7 @@ useEffect(() => {
       lead={lead}
       setterMap={dataState.setterMap}
       closerMap={dataState.closerMap}
+              closerList={dataState.closerList ?? []}
       calltimeLoading={dataState.calltimeLoading}
       onDeleteCall={async () => {
         try {
@@ -246,6 +248,7 @@ useEffect(() => {
           userId={null}
           setterMap={dataState.setterMap}
           closerMap={dataState.closerMap}
+              closerList={dataState.closerList ?? []}
           leads={dataState.leads}
         />
 

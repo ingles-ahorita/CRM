@@ -64,7 +64,8 @@ import { useSimpleAuth } from '../useSimpleAuth';
   loading: true,
   calltimeLoading: false,
   setterMap: {},
-  closerMap: {}
+  closerMap: {},
+  closerList: []
 });
 
   // Check for active shift on component mount
@@ -162,6 +163,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
                       lead={lead}
                       setterMap={dataState.setterMap}
                       closerMap={dataState.closerMap}
+                      closerList={dataState.closerList ?? []}
                       mode='closer'
                       currentUserId={closer}
                       calltimeLoading={dataState.calltimeLoading}
@@ -183,7 +185,9 @@ import { useSimpleAuth } from '../useSimpleAuth';
                       lead={lead}
                       setterMap={dataState.setterMap}
                       closerMap={dataState.closerMap}
+                      closerList={dataState.closerList ?? []}
                       calltimeLoading={dataState.calltimeLoading}
+                      mode="closer"
                     />
                   ))}
                 </div>
@@ -210,6 +214,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
           userId={closer}
           setterMap={dataState.setterMap}
           closerMap={dataState.closerMap}
+          closerList={dataState.closerList ?? []}
           currentShiftId={currentShift?.id}
           onShiftEnded={handleShiftEnded}
           leads={dataState.leads}

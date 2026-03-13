@@ -168,6 +168,7 @@
             lead={call}
             setterMap={dataState.setterMap}
             closerMap={dataState.closerMap}
+            closerList={dataState.closerList ?? []}
             mode={localStorage.getItem('userRole')}
             calltimeLoading={dataState.calltimeLoading}
             onDeleteCall={async () => {
