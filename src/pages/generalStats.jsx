@@ -3009,6 +3009,9 @@ export default function StatsDashboard() {
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Conversion Rate
                     </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Success Rate
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -3060,6 +3063,23 @@ export default function StatsDashboard() {
                           }`}>
                             {country.conversionRate.toFixed(1)}%
                           </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="inline-flex items-center">
+                          {(() => {
+                            const successRate = country.totalBooked > 0 ? (country.totalPurchased / country.totalBooked) * 100 : null;
+                            return (
+                              <span className={`text-lg font-bold ${
+                                successRate == null ? '' :
+                                successRate >= 70 ? 'text-green-600' :
+                                successRate >= 50 ? 'text-yellow-600' :
+                                'text-red-600'
+                              }`}>
+                                {successRate != null ? `${successRate.toFixed(1)}%` : '—'}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </td>
                     </tr>

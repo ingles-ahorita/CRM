@@ -23,10 +23,22 @@ function computeStats(purchases, installments) {
   for (let inst = 2; inst <= installments; inst++) {
     const daysUntilDue = (inst - 1) * DAYS_BETWEEN;
     const cutoff = now - daysUntilDue * MS_PER_DAY;
+    const dueDateMs = daysUntilDue * MS_PER_DAY;
     const shouldHavePaid = purchases.filter((p) => {
       const created = p.attributes?.created_at;
       if (!created) return false;
       return new Date(created).getTime() <= cutoff;
+    });
+    // Still active before this installment's due date: deactivated_at is null or (deactivated_at + 2d) > due date
+    // Kajabi allows a grace period before considering them deactivated
+    const GRACE_DAYS_MS = 2 * MS_PER_DAY;
+    const stillActiveBeforePayment = shouldHavePaid.filter((p) => {
+      const created = p.attributes?.created_at;
+      const deactivatedAt = p.attributes?.deactivated_at;
+      if (!created) return false;
+      const dueDate = new Date(created).getTime() + dueDateMs;
+      if (!deactivatedAt) return true; // never deactivated = still active
+      return new Date(deactivatedAt).getTime() + GRACE_DAYS_MS > dueDate; // grace period
     });
     const didPay = shouldHavePaid.filter((p) => {
       const n = p.attributes?.multipay_payments_made;
@@ -35,9 +47,16 @@ function computeStats(purchases, installments) {
     rows.push({
       installment: inst,
       shouldHavePaid: shouldHavePaid.length,
+      stillActiveBeforePayment: stillActiveBeforePayment.length,
       didPay: didPay.length,
       pct: shouldHavePaid.length > 0
         ? Math.round((didPay.length / shouldHavePaid.length) * 1000) / 10
+        : null,
+      pctActive: stillActiveBeforePayment.length > 0
+        ? Math.round((didPay.length / stillActiveBeforePayment.length) * 1000) / 10
+        : null,
+      survivalRate: stillActiveBeforePayment.length > 0
+        ? Math.round((didPay.length / stillActiveBeforePayment.length) * 1000) / 10
         : null,
     });
   }
@@ -128,8 +147,10 @@ export default function MultipayCompletionPage() {
                 <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
                   <th style={{ textAlign: 'left', padding: '8px 12px' }}>Installment</th>
                   <th style={{ textAlign: 'right', padding: '8px 12px' }}>Should've paid</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px' }}>Still active</th>
                   <th style={{ textAlign: 'right', padding: '8px 12px' }}>Did pay</th>
                   <th style={{ textAlign: 'right', padding: '8px 12px' }}>Completion %</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px' }}>Survival %</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,9 +158,13 @@ export default function MultipayCompletionPage() {
                   <tr key={row.installment} style={{ borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '8px 12px' }}>#{row.installment}</td>
                     <td style={{ textAlign: 'right', padding: '8px 12px' }}>{row.shouldHavePaid}</td>
+                    <td style={{ textAlign: 'right', padding: '8px 12px' }}>{row.stillActiveBeforePayment}</td>
                     <td style={{ textAlign: 'right', padding: '8px 12px' }}>{row.didPay}</td>
                     <td style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>
                       {row.pct != null ? `${row.pct}%` : '—'}
+                    </td>
+                    <td style={{ textAlign: 'right', padding: '8px 12px' }}>
+                      {row.survivalRate != null ? `${row.survivalRate}%` : '—'}
                     </td>
                   </tr>
                 ))}
