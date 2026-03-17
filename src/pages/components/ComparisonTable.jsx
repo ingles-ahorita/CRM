@@ -79,8 +79,8 @@ const ComparisonTable = ({
       <div className="px-6 py-4 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
-            <p className="text-sm text-gray-500 mt-1">{description}</p>
+        <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+        <p className="text-sm text-gray-500 mt-1">{description}</p>
           </div>
           <button
             onClick={() => setShowOrganicSplit(!showOrganicSplit)}
@@ -177,15 +177,15 @@ const ComparisonTable = ({
                   <>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-teal-50">
                       Conv. Organic
-                    </th>
+                      </th>
                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-teal-50">
                       Conv. Ads
-                    </th>
-                  </>
-                ) : (
+                      </th>
+                        </>
+                      ) : (
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Conversion
-                  </th>
+                        </th>
                 )
               )}
               <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -213,17 +213,17 @@ const ComparisonTable = ({
               const confirmationRate = item.confirmationRate ?? (item.totalBooked > 0 ? (item.totalConfirmed || 0) / item.totalBooked * 100 : null);
               const showUpRate = item.showUpRateConfirmed ?? (item.totalConfirmed > 0 ? (item.totalShowedUp || 0) / item.totalConfirmed * 100 : null);
               const successRate = item.conversionRateBooked ?? (item.totalBooked > 0 ? (item.totalPurchased || 0) / item.totalBooked * 100 : null);
-
+              
               return (
                 <tr key={index} className={index === 0 ? 'bg-blue-50 font-semibold' : 'hover:bg-gray-50'}>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
                       {(periodLabel === 'Month') && <span className="text-xs text-gray-500">{item.periodLabel}</span>}
-                      {(periodLabel === 'Week') && (
-                        <span className="text-xs text-gray-500">
+                        {(periodLabel === 'Week') && (
+                          <span className="text-xs text-gray-500">
                           {item.periodLabel} {index === 0 ? '🟢 Current' : `-${index}`}
-                        </span>
-                      )}
+                          </span>
+                        )}
                       {(periodLabel === 'Day') && <span className="text-xs text-gray-500">{item.periodLabel}</span>}
                     </div>
                   </td>
@@ -237,7 +237,7 @@ const ComparisonTable = ({
                     </td>
                   )}
                   <td className={`px-4 py-3 whitespace-nowrap text-center text-sm text-gray-900 ${showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-emerald-50' : ''}`}>
-                    {item.bookingsMadeinPeriod}
+                      {item.bookingsMadeinPeriod}
                   </td>
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
@@ -360,8 +360,8 @@ const ComparisonTable = ({
                           bgClass="bg-teal-50"
                           tooltip={`PIF: ${(item.pifPercent ?? 0).toFixed(1)}% • Downsell: ${(item.downsellPercent ?? 0).toFixed(1)}%`}
                         />
-                      </>
-                    ) : (
+                        </>
+                      ) : (
                       <RateCell
                         rate={item.conversionRateShowedUp}
                         subtext={`${item.totalPurchased || 0} / ${item.totalShowedUp || 0} showed up`}
@@ -381,10 +381,10 @@ const ComparisonTable = ({
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
                       <td className="px-4 py-3 whitespace-nowrap text-center text-sm font-semibold text-green-600 bg-indigo-50">
-                        {item.sourceStats?.organic?.totalPurchased || 0}
+                          {item.sourceStats?.organic?.totalPurchased || 0}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-center text-sm font-semibold text-blue-600 bg-indigo-50">
-                        {item.sourceStats?.ads?.totalPurchased || 0}
+                          {item.sourceStats?.ads?.totalPurchased || 0}
                       </td>
                     </>
                   )}

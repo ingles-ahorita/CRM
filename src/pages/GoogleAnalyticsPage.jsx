@@ -87,10 +87,10 @@ export default function GoogleAnalyticsPage() {
           console.error(`[GA] ${label} JSON parse failed:`, parseErr.message);
           throw new Error(`Invalid response (${label}): ${parseErr.message}`);
         }
-        if (!res.ok) {
-          const parts = [json.error || json.details || res.statusText];
-          if (json.code) parts.push(`(code: ${json.code})`);
-          if (json.hint) parts.push(`— ${json.hint}`);
+      if (!res.ok) {
+        const parts = [json.error || json.details || res.statusText];
+        if (json.code) parts.push(`(code: ${json.code})`);
+        if (json.hint) parts.push(`— ${json.hint}`);
           throw new Error(parts.join(' '));
         }
         return json;
@@ -289,8 +289,8 @@ export default function GoogleAnalyticsPage() {
         </div>
       ) : null}
 
-      <div
-        style={{
+        <div
+          style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
           gap: 16,
