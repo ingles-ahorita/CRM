@@ -351,9 +351,21 @@ function HeaderOrderAndFilters({ state, setState, mode = 'full', filterPanelOpen
 /** Tabs + order + Filter button + FilterPanel for rendering below the cards on Closer/Setter. */
 export function HeaderTabsAndToolbar({ state, setState, mode = 'full' }) {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const safeState = state ?? defaultHeaderState;
+  const { activeTab, filters } = safeState;
   return (
     <div style={{ marginTop: '24px' }}>
       <HeaderTabs state={state} setState={setState} mode={mode} />
+      {/* No show state filter buttons - visible when on no shows tab (Closer/Setter) */}
+      {activeTab === 'no shows' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginRight: '4px' }}>Filter:</span>
+          <FilterButton label="No show" active={filters?.noShowState === 'no_show'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'no_show' ? '' : 'no_show' } }))} />
+          <FilterButton label="Contacted" active={filters?.noShowState === 'contacted'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'contacted' ? '' : 'contacted' } }))} />
+          <FilterButton label="Rebooked" active={filters?.noShowState === 'rebooked'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'rebooked' ? '' : 'rebooked' } }))} />
+          <FilterButton label="Dead" active={filters?.noShowState === 'dead'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'dead' ? '' : 'dead' } }))} />
+        </div>
+      )}
       <HeaderOrderAndFilters
         state={state}
         setState={setState}
@@ -447,6 +459,17 @@ const updateHeaderState = (updates) => {
           {hasState && (
           <>
           {!hideTabs && <HeaderTabs state={state} setState={setState} mode={mode} />}
+
+          {/* No show state filter buttons - visible when on no shows tab */}
+          {!hideTabs && mode === 'full' && activeTab === 'no shows' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151', marginRight: '4px' }}>Filter:</span>
+              <FilterButton label="No show" active={filters?.noShowState === 'no_show'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'no_show' ? '' : 'no_show' } }))} />
+              <FilterButton label="Contacted" active={filters?.noShowState === 'contacted'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'contacted' ? '' : 'contacted' } }))} />
+              <FilterButton label="Rebooked" active={filters?.noShowState === 'rebooked'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'rebooked' ? '' : 'rebooked' } }))} />
+              <FilterButton label="Dead" active={filters?.noShowState === 'dead'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'dead' ? '' : 'dead' } }))} />
+            </div>
+          )}
 
           {/* Toolbar: left = order + Filters + Search, right = Metrics + End Shift (+ Shifts, Reaction Time) */}
           {!hideTabs && (

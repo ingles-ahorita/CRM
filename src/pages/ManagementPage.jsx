@@ -98,7 +98,8 @@ export default function ManagementPage() {
       purchased: searchParams.get('purchased') === 'true',
       noConversions: searchParams.get('noConversions') === 'true',
       lockIn: searchParams.get('lockIn') === 'true',
-      recovered: searchParams.get('recovered') === 'true'
+      recovered: searchParams.get('recovered') === 'true',
+      noShowState: searchParams.get('noShowState') || ''
     },
     onEndShift: () => setIsEndShiftModalOpen(true)
   });
@@ -356,7 +357,11 @@ export default function ManagementPage() {
     if (headerState.purchased) params.set('purchased', headerState.purchased);
     // Add filters
     Object.entries(headerState.filters).forEach(([key, value]) => {
-      if (value) params.set(key, 'true');
+      if (key === 'noShowState') {
+        if (value) params.set('noShowState', value);
+      } else if (value) {
+        params.set(key, 'true');
+      }
     });
     
     setSearchParams(params);

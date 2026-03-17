@@ -50,6 +50,7 @@ import { useSimpleAuth } from '../useSimpleAuth';
         confirmed: false,
         cancelled: false,
         noShow: false,
+        noShowState: '',
         transferred: false,
         noManychatId: false,
         noConversions: false

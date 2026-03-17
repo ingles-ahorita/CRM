@@ -54,6 +54,9 @@ let query = supabase
   // Filter by date based on active tab
   if (activeTab === 'no shows') {
     query = query.eq('confirmed', true).eq('showed_up', false);
+    if (filters?.noShowState) {
+      query = query.eq('no_show_state', filters.noShowState);
+    }
     // Apply date range when provided; otherwise no date filter (like 'all') so it always shows results
     if (startDate) {
       const start = new Date(startDate);

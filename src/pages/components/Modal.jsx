@@ -1408,34 +1408,17 @@ if (idToUse) {
             </p>
           </div>
         )}
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }} >
-          <label style={labelStyle}>🟢 Prepared score:</label>
-            <input name="prepared_score" type="number" min="1" max="10" 
-           defaultValue={noteData?.prepared_score || ''} style={{...inputStyle, width: '60px', minWidth: '60px', textAlign: 'center'}} />
-        </div>
 
-        <div>
-          <label style={labelStyle}>💲 Budget (max):</label>
-          <input name="budget_max" type="text" 
-                 defaultValue={noteData?.budget_max || ''} 
-                 placeholder="e.g., $1000"
-                 style={{...inputStyle, width: '100%'}} />
-        </div>
-
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={labelStyle}>Reason for score:</label>
-          <textarea name="prepared_reason" rows="2" placeholder='Reason for score'
-                    defaultValue={noteData?.prepared_reason || ''} 
-                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
-        </div>
-
-        <div style={{ gridColumn: '1 / -1' }}>
-          <label style={labelStyle}>⚡ Objection:</label>
-          <textarea name="objection" rows="2" 
-                    defaultValue={noteData?.objection || ''} 
-                    style={{...inputStyle, resize: 'vertical', fontFamily: 'inherit', width: '100%'}} />
-        </div>
+        {/* Budget - Only show when outcome is no and reason is PRICE */}
+        {mode === 'closer' && outcome === 'no' && noOutcomeCategory === 'price' && (
+          <div>
+            <label style={labelStyle}>💲 Budget (max):</label>
+            <input name="budget_max" type="text"
+                   defaultValue={noteData?.budget_max || ''}
+                   placeholder="e.g., $1000"
+                   style={{...inputStyle, width: '100%'}} />
+          </div>
+        )}
 
         <div style={{ gridColumn: '1 / -1' }}>
           <label style={labelStyle}>📝 Note:</label>
@@ -2329,39 +2312,10 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
                   </div>
                 )}
 
-                <div>
-                  <div style={labelStyle}>🟢 Prepared Score</div>
-                  <div style={valueStyle}>
-                    <span style={{ 
-                      backgroundColor: '#10b981', 
-                      color: 'white', 
-                      padding: '4px 12px', 
-                      borderRadius: '20px',
-                      fontWeight: '600'
-                    }}>
-                      {closerNote.prepared_score || 'N/A'}/10
-                    </span>
-                  </div>
-                </div>
-
-                {closerNote.prepared_reason && (
-                  <div>
-                    <div style={labelStyle}>Reason for Score</div>
-                    <div style={valueStyle}>{closerNote.prepared_reason}</div>
-                  </div>
-                )}
-
-                {closerNote.budget_max && (
+                {closerNote.budget_max && closerNote.outcome === 'no' && (closerNote.no_outcome_category || '').toLowerCase() === 'price' && (
                   <div>
                     <div style={labelStyle}>💲 Budget (Max)</div>
                     <div style={valueStyle}>{closerNote.budget_max}</div>
-                  </div>
-                )}
-
-                {closerNote.objection && (
-                  <div>
-                    <div style={labelStyle}>⚡ Objection</div>
-                    <div style={valueStyle}>{closerNote.objection}</div>
                   </div>
                 )}
 

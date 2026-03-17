@@ -45,6 +45,7 @@ const [headerState, setHeaderState] = useState({
     confirmed: searchParams.get('confirmed') === 'true',          // Read from URL
     cancelled: searchParams.get('cancelled') === 'true',          // Read from URL
     noShow: searchParams.get('noShow') === 'true',                // Read from URL
+    noShowState: searchParams.get('noShowState') || '',           // no_show, contacted, rebooked, dead
     noPickUp: searchParams.get('noPickUp') === 'true',            // Read from URL
     rescheduled: searchParams.get('rescheduled') === 'true',      // Read from URL
     transferred: searchParams.get('transferred') === 'true',      // Read from URL
@@ -76,7 +77,8 @@ useEffect(() => {
   if (headerState.purchased) params.set('purchased', headerState.purchased);
   // Add filters
   Object.entries(headerState.filters).forEach(([key, value]) => {
-    if (value) params.set(key, 'true');
+    if (value && key !== 'noShowState') params.set(key, 'true');
+    if (key === 'noShowState' && value) params.set('noShowState', value);
   });
   
   setSearchParams(params);
