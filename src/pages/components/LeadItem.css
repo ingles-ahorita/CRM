@@ -141,6 +141,11 @@
   background-color: #7053d0ff;
 }
 
+.lead-notes-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .lead-timeline-info {
   display: flex;
   flex: 1 1;

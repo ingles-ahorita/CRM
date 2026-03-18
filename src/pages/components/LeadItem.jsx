@@ -413,7 +413,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               }
             }}
             label="Purchased"
-            disabled={mode === 'setter' || mode === 'view'}
+            disabled={mode === 'setter' || mode === 'view' || (lead.showed_up === false && (mode === 'closer' || mode === 'admin'))}
           />
         </div>
 
@@ -483,6 +483,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           
           <button
             onClick={() => (mode=== 'admin' || mode === "view") ? setViewModalOpen(true) : setShowNoteModal(true)}
+            disabled={mode === 'closer' && lead.showed_up === false}
             className={`lead-notes-button ${(lead.setter_note_id && mode !== 'closer') || (lead.closer_note_id && mode === 'closer') ? 'has-note' : ''}`}
           > 
             {(mode === "full" || mode === "view") ? "📝 Notes" : (noteButtonText) }
@@ -1180,21 +1181,24 @@ const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSet
       {(mode === 'setter' || mode === 'view' || mode === 'full') && (
         <button 
           onClick={(e) => { 
-            e.stopPropagation(); 
+            e.stopPropagation();
+            if (lead?.showed_up === false) return;
             modalSetter(true);
             setMode('closer');
             setMenuOpen(false); 
           }}
+          disabled={lead?.showed_up === false}
           style={{
             width: '100%',
             padding: '8px 16px',
             border: 'none',
             background: 'none',
             textAlign: 'left',
-            cursor: 'pointer',
-            color: '#6b7280',
+            cursor: lead?.showed_up === false ? 'not-allowed' : 'pointer',
+            color: lead?.showed_up === false ? '#9ca3af' : '#6b7280',
             fontWeight: '300',
             fontSize: '14px',
+            opacity: lead?.showed_up === false ? 0.6 : 1,
           outline: 'none'
           }}
         >

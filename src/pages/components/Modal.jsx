@@ -450,6 +450,11 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     const formData = new FormData(e.target);
     const outcomeValue = formData.get('outcome') || '';
     const pifCheckedSubmit = formData.get('pif') === 'on';
+    if (mode === 'closer' && outcomeValue === 'yes' && lead?.showed_up === false) {
+      setKajabiPurchaseRequiredError('Cannot mark as purchased when lead did not show up.');
+      setIsSubmitting(false);
+      return;
+    }
     if (mode === 'closer' && (outcomeValue === 'yes' || outcomeValue === 'lock_in') && !selectedKajabiPurchaseId) {
       setKajabiPurchaseRequiredError(outcomeValue === 'lock_in'
         ? 'Please select the lock-in purchase (must be the Lock-in offer from the offers table).'
@@ -1079,7 +1084,7 @@ if (idToUse) {
               required
             >
               <option value="">Select outcome...</option>
-              <option value="yes">YES</option>
+              <option value="yes" disabled={mode === 'closer' && lead?.showed_up === false}>YES</option>
               <option value="no">NO</option>
               <option value="dont_qualify">DON'T QUALIFY</option>
               <option value="lock_in">LOCK IN</option>
@@ -2347,11 +2352,15 @@ export const PurchaseLogModal = ({ isOpen, onClose, lead, callId, onPurchaseComp
   const [followUp, setFollowUp] = useState(false);
   const [purchaseValue, setPurchaseValue] = useState('true'); // 'true' or 'false'
 
+  const cannotPurchased = lead?.showed_up === false;
+
   // Reset form when modal opens/closes
   useEffect(() => {
     if (isOpen) {
-      // Set purchase value based on what was selected in dropdown
-      if (initialPurchaseValue !== null && initialPurchaseValue !== undefined) {
+      // When lead did not show up, cannot set purchased to true - force 'false'
+      if (cannotPurchased) {
+        setPurchaseValue('false');
+      } else if (initialPurchaseValue !== null && initialPurchaseValue !== undefined) {
         const value = initialPurchaseValue === 'true' || initialPurchaseValue === true ? 'true' : 'false';
         setPurchaseValue(value);
       } else {
@@ -2364,7 +2373,7 @@ export const PurchaseLogModal = ({ isOpen, onClose, lead, callId, onPurchaseComp
       setFollowUp(false);
       setPurchaseValue('true');
     }
-  }, [isOpen, initialPurchaseValue]);
+  }, [isOpen, initialPurchaseValue, cannotPurchased]);
 
   // List of offers - you can customize this or fetch from a table
   const offers = [
@@ -2381,6 +2390,11 @@ export const PurchaseLogModal = ({ isOpen, onClose, lead, callId, onPurchaseComp
 
     if (!offer) {
       alert('Please select an offer');
+      return;
+    }
+
+    if (purchaseValue === 'true' && lead?.showed_up === false) {
+      alert('Cannot mark as purchased when lead did not show up.');
       return;
     }
 
@@ -2538,7 +2552,7 @@ export const PurchaseLogModal = ({ isOpen, onClose, lead, callId, onPurchaseComp
                   style={selectStyle}
                   required
                 >
-                  <option value="true">Yes - Purchased</option>
+                  <option value="true" disabled={cannotPurchased}>Yes - Purchased</option>
                   <option value="false">No - Not Purchased</option>
                 </select>
               </div>
