@@ -468,8 +468,8 @@ const updateHeaderState = (updates) => {
               <FilterButton label="Contacted" active={filters?.noShowState === 'contacted'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'contacted' ? '' : 'contacted' } }))} />
               <FilterButton label="Rebooked" active={filters?.noShowState === 'rebooked'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'rebooked' ? '' : 'rebooked' } }))} />
               <FilterButton label="Dead" active={filters?.noShowState === 'dead'} onClick={() => setState && setState(prev => ({ ...prev, filters: { ...prev.filters, noShowState: prev.filters?.noShowState === 'dead' ? '' : 'dead' } }))} />
-            </div>
-          )}
+    </div>
+  )}
 
           {/* Toolbar: left = order + Filters + Search, right = Metrics + End Shift (+ Shifts, Reaction Time) */}
           {!hideTabs && (
@@ -483,21 +483,21 @@ const updateHeaderState = (updates) => {
                           style={{ width: '50px', height: '28px', borderRadius: '20px', backgroundColor: '#d1d5db', position: 'relative', cursor: 'pointer', transition: 'background-color 0.2s' }}
                         >
                           <div style={{ position: 'absolute', top: '3px', left: on ? '26px' : '3px', width: '22px', height: '22px', borderRadius: '50%', backgroundColor: '#fff', transition: 'left 0.2s' }} />
-                        </div>
-                      )}
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#111827' }}>
-                        <Calendar size={16} />
+    </div>
+  )}
+  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500', color: '#111827' }}>
+    <Calendar size={16} />
                         {sortBy === 'book_date' ? 'Book Date' : sortBy === 'purchased_at' ? 'Purchase Date' : 'Call Date'}
                       </span>
                     </>)}
-                    <button
+  <button
                       onClick={() => updateHeaderState({ sortOrder: sortOrder === 'desc' ? 'asc' : 'desc' })}
                       style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f3f4f6', color: '#111827', border: '1px solid #d1d5db', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontWeight: '500', fontSize: '13px', transition: 'all 0.2s', outline: 'none' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
-                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f3f4f6')}
-                    >
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f3f4f6')}
+  >
                       {sortOrder === 'desc' ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
-                    </button>
+  </button>
                     <h3 style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>{sortOrder === 'asc' ? ((sortBy === 'call_date') ? 'Earliest first' : 'Oldest first') : (sortBy === 'call_date') ? 'Latest first' : 'Newest first'}</h3>
                     <button
                       onClick={() => setShowFilterPanel(s => !s)}
@@ -514,92 +514,92 @@ const updateHeaderState = (updates) => {
                       <Filter size={16} />
                       Filters
                     </button>
-                    <input
-                      ref={searchInputRef}
-                      type="text"
-                      placeholder="Search lead..."
-                      defaultValue={searchTerm}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+          <input
+          ref={searchInputRef}
+        type="text"
+        placeholder="Search lead..."
+        defaultValue={searchTerm}
+        onKeyDown={(e) => {
+    if (e.key === 'Enter') {
                           updateHeaderState({ searchTerm: e.target.value, activeTab: 'all' });
-                        }
-                      }}
-                      style={{
-                        width: showSearch ? '200px' : '0',
-                        opacity: showSearch ? 1 : 0,
-                        height: '20px',
-                        padding: '6px 10px',
-                        borderRadius: '6px',
-                        border: '1px solid #d1d5db',
-                        color: '#111827',
-                        fontSize: '14px',
-                        outline: 'none',
-                        backgroundColor: 'white',
-                        transition: 'width 0.3s',
-                        overflow: 'hidden',
-                        pointerEvents: showSearch ? 'auto' : 'none'
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        updateHeaderState({ showSearch: !showSearch });
+    }
+  }}
+        style={{
+          width: showSearch ? '200px' : '0',
+          opacity: showSearch ? 1 : 0,
+          height: '20px',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          border: '1px solid #d1d5db',
+          color: '#111827',
+          fontSize: '14px',
+          outline: 'none',
+          backgroundColor: 'white',
+          transition: 'width 0.3s',
+          overflow: 'hidden',
+          pointerEvents: showSearch ? 'auto' : 'none'
+        }}
+      />
+    <button
+      onClick={() => {
+        updateHeaderState({ showSearch: !showSearch });
                         setTimeout(() => { if (!showSearch) searchInputRef.current?.focus(); }, 0);
                       }}
-                      style={{
-                        backgroundColor: '#474747ff',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '8px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        outline: 'none'
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-                    >
-                      <Search size={18} />
-                    </button>
-                </div>
+      style={{
+        backgroundColor: '#474747ff',
+        color: 'white',
+        border: 'none',
+        borderRadius: '6px',
+        padding: '8px',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        outline: 'none'
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+      onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+    >
+      <Search size={18} />
+    </button>
+  </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto' }}>
-                  <button
+  <button
                     style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#e5e7eb', color: '#111827', border: '1px solid #d1d5db', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#d1d5db')}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
-                    onClick={() => navigate(mode === 'full' ? '/metrics' : mode === 'setter' ? `/stats/${state.currentSetter}` : `/closer-stats/${state.currentCloser}`)}
-                  >
-                    <ChartSpline size={18} />
-                  </button>
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#d1d5db')}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e5e7eb')}
+    onClick={() => navigate(mode === 'full' ? '/metrics' : mode === 'setter' ? `/stats/${state.currentSetter}` : `/closer-stats/${state.currentCloser}`)}
+  >
+    <ChartSpline size={18} />
+  </button>
                   {mode === 'full' && (
                     <>
-                      <button
+  <button
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#e0e7ff', color: '#3730a3', border: '1px solid #c7d2fe', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#c7d2fe')}
-                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e0e7ff')}
-                        onClick={() => navigate('/shifts')}
-                      >
-                        <Users size={18} />
-                        Shifts
-                      </button>
-                      <button
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#c7d2fe')}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#e0e7ff')}
+    onClick={() => navigate('/shifts')}
+  >
+    <Users size={18} />
+    Shifts
+  </button>
+  <button
                         style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f9ffa6', color: '#111827', border: '1px solid #d1d5db', borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f3f39f')}
-                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f9ffa6')}
-                        onClick={() => window.open('https://www.inglesahorita.com/call-reaction-time', '_blank')}
-                      >
-                        <AlarmClock size={18} />
-                      </button>
+    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#f3f39f')}
+    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f9ffa6')}
+    onClick={() => window.open('https://www.inglesahorita.com/call-reaction-time', '_blank')}
+  >
+   <AlarmClock size={18} />
+  </button>
                     </>
                   )}
                   {(mode === 'setter' || mode === 'closer') && (
-                    <button
-                      style={{
+  <button
+    style={{
                         display: 'flex', alignItems: 'center', gap: '6px',
-                        backgroundColor: state.isShiftActive ? '#fef3c7' : '#dcfce7',
-                        color: state.isShiftActive ? '#92400e' : '#166534',
-                        border: state.isShiftActive ? '1px solid #f59e0b' : '1px solid #22c55e',
+      backgroundColor: state.isShiftActive ? '#fef3c7' : '#dcfce7',
+      color: state.isShiftActive ? '#92400e' : '#166534',
+      border: state.isShiftActive ? '1px solid #f59e0b' : '1px solid #22c55e',
                         borderRadius: '6px', padding: '8px 14px', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s', fontSize: '13px'
                       }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = state.isShiftActive ? '#fde68a' : '#bbf7d0'; }}
@@ -652,16 +652,16 @@ const updateHeaderState = (updates) => {
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = state.isShiftActive ? '#fde68a' : '#bbf7d0'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = state.isShiftActive ? '#fef3c7' : '#dcfce7'; }}
-                    onClick={() => {
+    onClick={() => {
                       if (state.isShiftActive && state.onEndShift) state.onEndShift();
                       else if (!state.isShiftActive && state.onStartShift) state.onStartShift();
-                    }}
-                  >
-                    {state.isShiftActive ? <Clock size={18} /> : <Play size={18} />}
-                    {state.isShiftActive ? 'End Shift' : 'Start Shift'}
+    }}
+  >
+    {state.isShiftActive ? <Clock size={18} /> : <Play size={18} />}
+    {state.isShiftActive ? 'End Shift' : 'Start Shift'}
                   </button>
                 )}
-            </div>
+</div>
           )}
         </>
           )}
