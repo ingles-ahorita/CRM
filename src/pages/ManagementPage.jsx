@@ -822,8 +822,8 @@ export default function ManagementPage() {
                 );
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
-                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
-                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
+                    <Metric first label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
+                    <Metric label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
                     <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
                   </div>
@@ -870,8 +870,8 @@ export default function ManagementPage() {
                 );
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
-                    <Metric first label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
-                    <Metric label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
+                    <Metric first label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
+                    <Metric label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
                     <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
                   </div>
