@@ -11,6 +11,7 @@ import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
 import * as ManychatService from '../../utils/manychatService';
+import { getCountryFlagFromPhone, getCountryFromPhone } from '../../utils/phoneNumberParser';
 import { buildCallDataFromLead, updateManychatCallFields, sendToCloserMC, setManychatFieldsByName } from '../../utils/manychatService';
 
 const formatStatusValue = (value) => {
@@ -360,6 +361,9 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
                   </a>
                 )}
               </span>
+              {lead.phone && getCountryFlagFromPhone(lead.phone) && (
+                <span style={{ marginLeft: '4px' }} title={getCountryFromPhone(lead.phone)}>{getCountryFlagFromPhone(lead.phone)}</span>
+              )}
             </div>
         </div>
 
@@ -958,10 +962,10 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
     // Get background color based on value
     const getBackgroundColor = () => {
-      // Black for Show Up and Purchased when outcome is dont_qualify
-      if (label === 'Show Up' || label === 'Purchased') {
-        const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
-        if (isDontQualify) return '#000000'; // black
+      const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
+      if (isDontQualify) {
+        if (label === 'Show Up') return '#166534'; // darker green - they showed up but DQ'd
+        if (label === 'Purchased') return '#000000'; // black - no purchase
       }
       // Special case: if this is the Purchased dropdown, check for lock_in or follow_up
       if (label === 'Purchased') {
@@ -1527,17 +1531,23 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, closerLi
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          marginTop: '2px'
+          marginTop: '2px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
         }}>
-          <Phone size={12} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '4px' }} />
+          <Phone size={12} style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }} />
           <a
             href={`https://app.manychat.com/fb1237190/chat/${lead.manychat_user_id || lead.leads?.mc_id || ''}`}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: (lead.manychat_user_id || lead.leads?.mc_id) ? '#6b7280' : 'red', textDecoration: 'none' }}
+            style={{ color: (lead.manychat_user_id || lead.leads?.mc_id) ? '#6b7280' : 'red', textDecoration: 'none', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
           >
             {lead.phone || 'No phone'}
           </a>
+          {lead.phone && getCountryFlagFromPhone(lead.phone) && (
+            <span style={{ flexShrink: 0 }} title={getCountryFromPhone(lead.phone)}>{getCountryFlagFromPhone(lead.phone)}</span>
+          )}
         </div>
       </div>
 
@@ -1793,10 +1803,10 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, closerLi
 // Helper component for status badges (exported for use in KajabiPurchasesPage Find call list)
 export function StatusBadge({ value, label, title, outcomeLog }) {
   const getColor = () => {
-    // Black for Show up (S) and Purchase ($) when outcome is dont_qualify
-    if (label === 'S' || label === '$') {
-      const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
-      if (isDontQualify) return '#000000'; // black
+    const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
+    if (isDontQualify) {
+      if (label === 'S') return '#166534'; // darker green - showed up but DQ'd
+      if (label === '$') return '#000000'; // black - no purchase
     }
     // Purple for label === '$' (Purchased) when outcome is lock_in or follow_up
     if (label === '$') {

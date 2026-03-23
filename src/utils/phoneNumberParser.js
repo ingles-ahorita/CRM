@@ -223,6 +223,15 @@ export function getCountryFromPhone(phone) {
   return countryData.country;
 }
 
+/** Returns flag emoji (e.g. 🇪🇸) for a phone number, or null if unknown. */
+export function getCountryFlagFromPhone(phone) {
+  const country = getCountryFromPhone(phone);
+  if (!country || country === 'Unknown') return null;
+  const cc = country.includes('/') ? country.split('/')[0] : country;
+  if (!cc || cc.length !== 2) return null;
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => 0x1f1e6 - 65 + c.charCodeAt(0)));
+}
+
 // Get country code from phone number
 export function getCountryCodeFromPhone(phone) {
   if (!phone) return null;
