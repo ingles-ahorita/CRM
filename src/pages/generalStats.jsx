@@ -110,6 +110,14 @@ async function fetchAllPages(buildQuery) {
   return all;
 }
 
+function chunkArray(arr, size) {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 // Dates are normalized to DEFAULT_TIMEZONE for consistent filtering
 async function fetchStatsData(startDate, endDate) {
   const totalStart = performance.now();
@@ -154,6 +162,7 @@ async function fetchStatsData(startDate, endDate) {
       supabase
         .from('calls')
         .select(`
+          id,
           picked_up,
           showed_up,
           confirmed,
@@ -364,7 +373,8 @@ const totalPurchased = purchasedCalls.length;
           confirmed: 0,
           purchased: 0,
           pif: 0,
-          payoffs: 0
+          payoffs: 0,
+          dontQualify: 0,
         };
       }
       if (call.showed_up) closerStats[closerId].showedUp++;
@@ -399,7 +409,8 @@ const totalPurchased = purchasedCalls.length;
             confirmed: 0,
             purchased: 0,
             pif: 0,
-            payoffs: 0
+            payoffs: 0,
+            dontQualify: 0,
           };
         }
         // Count purchases - purchase_date is already in UTC and filtered by UTC-normalized range
@@ -621,6 +632,87 @@ const totalPurchased = purchasedCalls.length;
     }
   });
 
+  // Closer DQ: latest outcome_log per call (by id); count dont_qualify when call showed up (call_date cohort)
+  const stepCloserDq = performance.now();
+  let totalCloserDontQualify = 0;
+  const callIdKey = (id) => (id == null ? '' : String(id));
+  const callIdsForCloserDq = callsThatHappened.map((c) => c.id).filter((id) => id != null);
+  const callByIdForDq = new Map(callsThatHappened.map((c) => [callIdKey(c.id), c]));
+  const isShowedUp = (call) =>
+    call.showed_up === true || call.showed_up === 'true';
+  const isDontQualifyOutcome = (o) =>
+    String(o || '')
+      .trim()
+      .toLowerCase() === 'dont_qualify';
+
+  if (callIdsForCloserDq.length > 0) {
+    const allOutcomeRows = [];
+    for (const chunk of chunkArray(callIdsForCloserDq, 200)) {
+      const { data, error } = await supabase
+        .from('outcome_log')
+        .select('id, outcome, call_id')
+        .in('call_id', chunk);
+      if (error) {
+        console.error('[generalStats] outcome_log batch for closer DQ:', error);
+        break;
+      }
+      allOutcomeRows.push(...(data || []));
+    }
+    const latestOutcomeByCallId = new Map();
+    allOutcomeRows.forEach((row) => {
+      const k = callIdKey(row.call_id);
+      if (!k) return;
+      const ex = latestOutcomeByCallId.get(k);
+      if (!ex || row.id > ex.id) latestOutcomeByCallId.set(k, row);
+    });
+    latestOutcomeByCallId.forEach((log) => {
+      if (!isDontQualifyOutcome(log.outcome)) return;
+      const call = callByIdForDq.get(callIdKey(log.call_id));
+      if (!call || !isShowedUp(call) || !call.closers) return;
+      totalCloserDontQualify++;
+      const closerId = call.closers.id;
+      if (!closerStats[closerId]) {
+        closerStats[closerId] = {
+          id: closerId,
+          name: call.closers.name,
+          showedUp: 0,
+          confirmed: 0,
+          purchased: 0,
+          pif: 0,
+          payoffs: 0,
+          dontQualify: 0,
+        };
+      }
+      closerStats[closerId].dontQualify = (closerStats[closerId].dontQualify || 0) + 1;
+      const ctry = getCountryFromPhone(call.phone);
+      if (!countryStats[ctry]) {
+        countryStats[ctry] = {
+          country: ctry,
+          totalBooked: 0,
+          totalPickedUp: 0,
+          bookingsMadeInPeriod: 0,
+          pickedUpFromBookings: 0,
+          totalShowedUp: 0,
+          totalConfirmed: 0,
+          totalPurchased: 0,
+          pickUpRate: 0,
+          showUpRate: 0,
+          conversionRate: 0,
+          bookingsForConfirmation: 0,
+          confirmedFromBookings: 0,
+          closerDontQualify: 0,
+        };
+      }
+      countryStats[ctry].closerDontQualify = (countryStats[ctry].closerDontQualify || 0) + 1;
+    });
+  }
+  log('5. Closer DQ (outcome_log)', stepCloserDq);
+
+  Object.values(closerStats).forEach((c) => {
+    c.dontQualify = c.dontQualify ?? 0;
+    c.closerDqRate = c.showedUp > 0 ? (c.dontQualify / c.showedUp) * 100 : 0;
+  });
+
   // Calculate rates for each country
   Object.values(countryStats).forEach(country => {
     country.pickUpRate = country.bookingsMadeInPeriod > 0 
@@ -631,6 +723,8 @@ const totalPurchased = purchasedCalls.length;
       ? ((country.confirmedFromBookings ?? 0) / country.bookingsForConfirmation) * 100
       : 0;
     country.conversionRate = country.totalShowedUp > 0 ? (country.totalPurchased / country.totalShowedUp) * 100 : 0;
+    country.closerDontQualify = country.closerDontQualify ?? 0;
+    country.closerDqRate = country.totalShowedUp > 0 ? (country.closerDontQualify / country.totalShowedUp) * 100 : 0;
   });
 
   // Sort countries by total purchased (sales)
@@ -952,6 +1046,9 @@ const totalPurchased = purchasedCalls.length;
     dqRate,
     totalBookingsForConfirmation,
     totalConfirmedBookDate,
+    totalCloserDontQualify,
+    closerDqRateShowUp:
+      totalShowedUp > 0 ? (totalCloserDontQualify / totalShowedUp) * 100 : 0,
     totalPurchased,
     totalPif,
     totalDownsell,
@@ -959,7 +1056,9 @@ const totalPurchased = purchasedCalls.length;
     downsellPercent,
     totalRescheduled: filteredCalls.filter(c => c.is_reschedule).length,
     totalRecovered,
-    closers: Object.values(closerStats),
+    closers: Object.values(closerStats).sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '')
+    ),
     setters: Object.values(setterStats),
     countries: sortedCountries,
     countrySourceStats,
@@ -2808,6 +2907,23 @@ export default function StatsDashboard() {
             )}
           </div>
 
+          {/* Closer DQ: outcome_log dont_qualify / showed up (call_date cohort) */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Closer DQ</h3>
+              <span className="text-xs text-gray-400">Don&apos;t qualify / showed up</span>
+            </div>
+            <div className="text-3xl font-bold text-rose-600">
+              {(stats?.closerDqRateShowUp ?? 0).toFixed(1)}%
+            </div>
+            <div className="text-sm text-gray-500 mt-2">
+              {stats?.totalCloserDontQualify ?? 0} / {stats?.totalShowedUp ?? 0} showed up
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              Latest outcome_log per call; counts when outcome is DON&apos;T QUALIFY and the call showed up (UTC call_date range).
+            </p>
+          </div>
+
           {/* Show Up Rate / Confirmed */}
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
@@ -3116,6 +3232,9 @@ export default function StatsDashboard() {
                     Showed up
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Closer DQ
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Show Up Rate
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -3143,6 +3262,7 @@ export default function StatsDashboard() {
                   const showUpRate = (closer.confirmed ?? 0) > 0 
                     ? ((closer.showedUp ?? 0) / (closer.confirmed ?? 0)) * 100 
                     : null;
+                  const closerDq = closer.closerDqRate ?? (closer.showedUp > 0 ? ((closer.dontQualify ?? 0) / closer.showedUp) * 100 : 0);
                   
                   return (
                     <tr key={closer.id} className="hover:bg-gray-50">
@@ -3151,6 +3271,14 @@ export default function StatsDashboard() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm text-gray-900">{closer.showedUp}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-medium text-rose-700">
+                          {closerDq.toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {closer.dontQualify ?? 0} / {closer.showedUp ?? 0}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm font-medium text-gray-900">
@@ -3326,6 +3454,9 @@ export default function StatsDashboard() {
                       Conversion Rate
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Closer DQ
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Success Rate
                     </th>
                   </tr>
@@ -3379,6 +3510,14 @@ export default function StatsDashboard() {
                           }`}>
                             {country.conversionRate.toFixed(1)}%
                           </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-medium text-rose-700">
+                          {(country.closerDqRate ?? 0).toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {country.closerDontQualify ?? 0} / {country.totalShowedUp ?? 0}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
