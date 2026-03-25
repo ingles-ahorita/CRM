@@ -963,10 +963,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     // Get background color based on value
     const getBackgroundColor = () => {
       const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
-      if (isDontQualify) {
-        if (label === 'Show Up') return '#166534'; // darker green - they showed up but DQ'd
-        if (label === 'Purchased') return '#000000'; // black - no purchase
-      }
+      if (isDontQualify && label === 'Purchased') return '#000000'; // black - no purchase
       // Special case: if this is the Purchased dropdown, check for lock_in or follow_up
       if (label === 'Purchased') {
         const isLockIn = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'lock_in') : outcomeLog?.outcome === 'lock_in';
@@ -1010,7 +1007,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   style={{
     appearance: 'none',
     backgroundColor: getBackgroundColor(),
-    color: isDontQualify ? '#ffffff' : '#000000',
+    color: (isDontQualify && label === 'Purchased') ? '#ffffff' : '#000000',
     borderColor: '#d1d5db',
     border: '1px solid rgba(0,0,0,0.1)',
     padding: '6px 12px',
@@ -1804,10 +1801,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, closerLi
 export function StatusBadge({ value, label, title, outcomeLog }) {
   const getColor = () => {
     const isDontQualify = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'dont_qualify') : outcomeLog?.outcome === 'dont_qualify';
-    if (isDontQualify) {
-      if (label === 'S') return '#166534'; // darker green - showed up but DQ'd
-      if (label === '$') return '#000000'; // black - no purchase
-    }
+    if (isDontQualify && label === '$') return '#000000'; // black - no purchase
     // Purple for label === '$' (Purchased) when outcome is lock_in or follow_up
     if (label === '$') {
       const isLockIn = Array.isArray(outcomeLog) ? outcomeLog.some(ol => ol?.outcome === 'lock_in') : outcomeLog?.outcome === 'lock_in';

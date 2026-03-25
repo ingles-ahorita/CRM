@@ -31,6 +31,59 @@ import { fetchPurchases as fetchKajabiPurchases, fetchOffer, fetchCustomer as fe
 import LinkKajabiCustomerModal from './components/LinkKajabiCustomerModal';
 import { getSpecialOfferKajabiIds } from '../lib/specialOffers';
 
+/** Ads vs organic from source_type (same rules as rest of this file). */
+function getAdsOrganicKey(sourceType) {
+  const s = (sourceType || 'organic').toLowerCase();
+  return s.includes('ad') || s.includes('ads') ? 'ads' : 'organic';
+}
+
+function emptySourceStatsBlock() {
+  return {
+    totalBooked: 0,
+    totalBookedThatHappened: 0,
+    totalPickedUp: 0,
+    totalPickedUpByBookDate: 0,
+    totalDQ: 0,
+    bookingsMadeInPeriod: 0,
+    pickedUpFromBookings: 0,
+    bookingsForConfirmation: 0,
+    confirmedFromBookings: 0,
+    totalShowedUp: 0,
+    totalConfirmed: 0,
+    totalPurchased: 0,
+    totalRescheduled: 0,
+  };
+}
+
+function finalizeSourceRates(s) {
+  s.pickUpRate = s.bookingsMadeInPeriod > 0
+    ? (s.pickedUpFromBookings / s.bookingsMadeInPeriod) * 100
+    : 0;
+  s.showUpRate = (s.totalBookedThatHappened ?? 0) > 0 ? (s.totalShowedUp / s.totalBookedThatHappened) * 100 : 0;
+  s.showUpRateConfirmed = (s.totalConfirmed ?? 0) > 0 ? (s.totalShowedUp / s.totalConfirmed) * 100 : 0;
+  s.confirmationRate = (s.bookingsForConfirmation ?? 0) > 0 ? (s.confirmedFromBookings / s.bookingsForConfirmation) * 100 : 0;
+  s.conversionRate = s.totalShowedUp > 0 ? (s.totalPurchased / s.totalShowedUp) * 100 : 0;
+  s.dqRate = s.totalPickedUpByBookDate > 0 ? (s.totalDQ / s.totalPickedUpByBookDate) * 100 : 0;
+}
+
+function mergeAdsOrganicBlocks(a, o) {
+  return {
+    totalBooked: a.totalBooked + o.totalBooked,
+    totalBookedThatHappened: a.totalBookedThatHappened + o.totalBookedThatHappened,
+    totalPickedUp: a.totalPickedUp + o.totalPickedUp,
+    totalPickedUpByBookDate: a.totalPickedUpByBookDate + o.totalPickedUpByBookDate,
+    totalDQ: a.totalDQ + o.totalDQ,
+    bookingsMadeInPeriod: a.bookingsMadeInPeriod + o.bookingsMadeInPeriod,
+    pickedUpFromBookings: a.pickedUpFromBookings + o.pickedUpFromBookings,
+    totalShowedUp: a.totalShowedUp + o.totalShowedUp,
+    totalConfirmed: a.totalConfirmed + o.totalConfirmed,
+    bookingsForConfirmation: a.bookingsForConfirmation + o.bookingsForConfirmation,
+    confirmedFromBookings: a.confirmedFromBookings + o.confirmedFromBookings,
+    totalPurchased: a.totalPurchased + o.totalPurchased,
+    totalRescheduled: a.totalRescheduled + o.totalRescheduled,
+  };
+}
+
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
 function parseDateAsUTC(dateString) {
   // If no timezone indicator, append 'Z' to force UTC parsing
@@ -168,25 +221,31 @@ async function fetchStatsData(startDate, endDate) {
   }
   log('3. Supabase bookings (book_date)', stepBookings);
 
+  // Same lead-dedup / reschedule window as confirmation & DQ (book_date rows)
+  const rescheduledLeadIdsFromBookings = new Set(
+    (bookingsData || []).filter(b => b.is_reschedule === true || b.is_reschedule === 'true').map(b => b.lead_id)
+  );
+  const filteredBookings = (bookingsData || []).filter(b => {
+    const keep = b.is_reschedule === true || b.is_reschedule === 'true' || !rescheduledLeadIdsFromBookings.has(b.lead_id);
+    return keep;
+  });
+
   const stepInMemory = performance.now();
-  const bookingsMadeinPeriod = bookingsData?.length || 0;
-  const totalPickedUpFromBookings = bookingsData?.filter(b => b.picked_up === true).length || 0;
+  const bookingsMadeinPeriod = filteredBookings.length;
+  const totalPickedUpFromBookings = filteredBookings.filter(b => b.picked_up === true).length;
   const totalRecovered = bookingsData?.filter(b => b.recovered === true || b.recovered === 'true').length || 0;
 
-  
-  // Calculate bookings by source (exclude rescheduled from organic/ads counts)
+  // Pick-up by source uses the same rows as confirmation (filteredBookings), so totals add up
   const bookingsBySource = {
     organic: { total: 0, pickedUp: 0 },
     ads: { total: 0, pickedUp: 0 }
   };
-  
-  bookingsData?.forEach(booking => {
-    const isReschedule = booking.is_reschedule === true || booking.is_reschedule === 'true';
-    if (isReschedule) return;
+
+  filteredBookings.forEach((booking) => {
     const source = booking.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     const sourceKey = isAds ? 'ads' : 'organic';
-    
+
     bookingsBySource[sourceKey].total++;
     if (booking.picked_up === true) {
       bookingsBySource[sourceKey].pickedUp++;
@@ -251,17 +310,15 @@ async function fetchStatsData(startDate, endDate) {
     return cd && cd <= now;
   });
 
-  // DQ rate based on book_date (bookings in period)
-  const rescheduledLeadIdsFromBookings = new Set(
-    (bookingsData || []).filter(b => b.is_reschedule === true || b.is_reschedule === 'true').map(b => b.lead_id)
-  );
-  const filteredBookings = (bookingsData || []).filter(b => {
-    const keep = b.is_reschedule === true || b.is_reschedule === 'true' || !rescheduledLeadIdsFromBookings.has(b.lead_id);
-    return keep;
-  });
+  // DQ rate based on book_date (bookings in period) — filteredBookings defined above
   const totalPickedUpByBookDate = filteredBookings.filter(b => b.picked_up === true).length;
   const totalDQ = filteredBookings.filter(b => b.picked_up === true && b.confirmed !== true).length;
   const dqRate = totalPickedUpByBookDate > 0 ? (totalDQ / totalPickedUpByBookDate) * 100 : 0;
+
+  const totalBookingsForConfirmation = filteredBookings.length;
+  const totalConfirmedBookDate = filteredBookings.filter(
+    (b) => b.confirmed === true || b.confirmed === 'true'
+  ).length;
 
 // Calculate totals (call_date-based for main metrics)
 const totalBooked = filteredCalls.length;
@@ -365,8 +422,8 @@ const totalPurchased = purchasedCalls.length;
   // Group by setter - calculate pick up rate and show up rate
   const setterStats = {};
   
-  // First, track bookings made in period by setter
-  bookingsData?.forEach(booking => {
+  // First, track bookings made in period by setter (same rows as confirmation / pick-up headline)
+  filteredBookings.forEach(booking => {
     if (booking.setters) {
       const setterId = booking.setters.id;
       if (!setterStats[setterId]) {
@@ -454,8 +511,8 @@ const totalPurchased = purchasedCalls.length;
   // console.log('Booked calls for country analysis:', filteredCalls.length);
   // console.log('Purchased calls for country analysis:', purchasedCalls.length);
   
-  // First, track bookings made in period by country
-  bookingsData?.forEach(booking => {
+  // First, track bookings made in period by country (same filtered rows as confirmation)
+  filteredBookings.forEach(booking => {
     const phoneNumber = booking.phone;
     const country = getCountryFromPhone(phoneNumber);
     
@@ -539,13 +596,40 @@ const totalPurchased = purchasedCalls.length;
     countryStats[country].totalPurchased++;
   });
 
+  filteredBookings.forEach((b) => {
+    const country = getCountryFromPhone(b.phone);
+    if (!countryStats[country]) {
+      countryStats[country] = {
+        country,
+        totalBooked: 0,
+        totalPickedUp: 0,
+        bookingsMadeInPeriod: 0,
+        pickedUpFromBookings: 0,
+        totalShowedUp: 0,
+        totalConfirmed: 0,
+        totalPurchased: 0,
+        pickUpRate: 0,
+        showUpRate: 0,
+        conversionRate: 0,
+        bookingsForConfirmation: 0,
+        confirmedFromBookings: 0,
+      };
+    }
+    countryStats[country].bookingsForConfirmation = (countryStats[country].bookingsForConfirmation || 0) + 1;
+    if (b.confirmed === true || b.confirmed === 'true') {
+      countryStats[country].confirmedFromBookings = (countryStats[country].confirmedFromBookings || 0) + 1;
+    }
+  });
+
   // Calculate rates for each country
   Object.values(countryStats).forEach(country => {
     country.pickUpRate = country.bookingsMadeInPeriod > 0 
       ? (country.pickedUpFromBookings / country.bookingsMadeInPeriod) * 100 
       : 0;
     country.showUpRate = country.totalBooked > 0 ? (country.totalShowedUp / country.totalBooked) * 100 : 0;
-    country.confirmationRate = country.totalBooked > 0 ? (country.totalConfirmed / country.totalBooked) * 100 : 0;
+    country.confirmationRate = (country.bookingsForConfirmation ?? 0) > 0
+      ? ((country.confirmedFromBookings ?? 0) / country.bookingsForConfirmation) * 100
+      : 0;
     country.conversionRate = country.totalShowedUp > 0 ? (country.totalPurchased / country.totalShowedUp) * 100 : 0;
   });
 
@@ -564,6 +648,8 @@ const totalPurchased = purchasedCalls.length;
       totalDQ: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
+      bookingsForConfirmation: 0,
+      confirmedFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -577,6 +663,8 @@ const totalPurchased = purchasedCalls.length;
       totalDQ: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
+      bookingsForConfirmation: 0,
+      confirmedFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -590,11 +678,15 @@ const totalPurchased = purchasedCalls.length;
   sourceStats.organic.bookingsMadeInPeriod = bookingsBySource.organic.total;
   sourceStats.organic.pickedUpFromBookings = bookingsBySource.organic.pickedUp;
 
-  // DQ (book_date-based) per source
-  filteredBookings.forEach(b => {
+  // DQ + confirmation (book_date-based) per source
+  filteredBookings.forEach((b) => {
     const source = b.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
     const sourceKey = isAds ? 'ads' : 'organic';
+    sourceStats[sourceKey].bookingsForConfirmation++;
+    if (b.confirmed === true || b.confirmed === 'true') {
+      sourceStats[sourceKey].confirmedFromBookings++;
+    }
     if (b.picked_up === true) {
       sourceStats[sourceKey].totalPickedUpByBookDate++;
       if (b.confirmed !== true) sourceStats[sourceKey].totalDQ++;
@@ -637,9 +729,74 @@ const totalPurchased = purchasedCalls.length;
       : 0;
     source.showUpRate = (source.totalBookedThatHappened ?? 0) > 0 ? (source.totalShowedUp / source.totalBookedThatHappened) * 100 : 0;
     source.showUpRateConfirmed = (source.totalConfirmed ?? 0) > 0 ? (source.totalShowedUp / source.totalConfirmed) * 100 : 0;
-    source.confirmationRate = (source.totalBookedThatHappened ?? 0) > 0 ? (source.totalConfirmed / source.totalBookedThatHappened) * 100 : 0;
+    source.confirmationRate = (source.bookingsForConfirmation ?? 0) > 0 ? (source.confirmedFromBookings / source.bookingsForConfirmation) * 100 : 0;
     source.conversionRate = source.totalShowedUp > 0 ? (source.totalPurchased / source.totalShowedUp) * 100 : 0;
     source.dqRate = source.totalPickedUpByBookDate > 0 ? (source.totalDQ / source.totalPickedUpByBookDate) * 100 : 0;
+  });
+
+  // Per (country × ads/organic) — same logic as sourceStats, for dashboard filters
+  const countrySourceStats = {};
+  const ensureCountrySource = (country) => {
+    if (!countrySourceStats[country]) {
+      countrySourceStats[country] = {
+        ads: emptySourceStatsBlock(),
+        organic: emptySourceStatsBlock(),
+      };
+    }
+  };
+
+  filteredBookings.forEach((booking) => {
+    const country = getCountryFromPhone(booking.phone);
+    const sk = getAdsOrganicKey(booking.source_type);
+    ensureCountrySource(country);
+    countrySourceStats[country][sk].bookingsMadeInPeriod++;
+    if (booking.picked_up === true) {
+      countrySourceStats[country][sk].pickedUpFromBookings++;
+    }
+  });
+
+  filteredBookings.forEach((b) => {
+    const country = getCountryFromPhone(b.phone);
+    const sk = getAdsOrganicKey(b.source_type);
+    ensureCountrySource(country);
+    countrySourceStats[country][sk].bookingsForConfirmation++;
+    if (b.confirmed === true || b.confirmed === 'true') {
+      countrySourceStats[country][sk].confirmedFromBookings++;
+    }
+    if (b.picked_up === true) {
+      countrySourceStats[country][sk].totalPickedUpByBookDate++;
+      if (b.confirmed !== true) countrySourceStats[country][sk].totalDQ++;
+    }
+  });
+
+  filteredCalls.forEach((call) => {
+    const country = getCountryFromPhone(call.phone);
+    const sk = getAdsOrganicKey(call.source_type);
+    ensureCountrySource(country);
+    countrySourceStats[country][sk].totalBooked++;
+    if (call.picked_up) countrySourceStats[country][sk].totalPickedUp++;
+    if (call.is_reschedule) countrySourceStats[country][sk].totalRescheduled++;
+  });
+
+  callsThatHappened.forEach((call) => {
+    const country = getCountryFromPhone(call.phone);
+    const sk = getAdsOrganicKey(call.source_type);
+    ensureCountrySource(country);
+    countrySourceStats[country][sk].totalBookedThatHappened++;
+    if (call.showed_up) countrySourceStats[country][sk].totalShowedUp++;
+    if (call.confirmed) countrySourceStats[country][sk].totalConfirmed++;
+  });
+
+  purchasedCalls.forEach((call) => {
+    const country = getCountryFromPhone(call.phone);
+    const sk = getAdsOrganicKey(call.source_type);
+    ensureCountrySource(country);
+    countrySourceStats[country][sk].totalPurchased++;
+  });
+
+  Object.values(countrySourceStats).forEach((pair) => {
+    finalizeSourceRates(pair.ads);
+    finalizeSourceRates(pair.organic);
   });
 
   // Group by medium (TikTok, Instagram, other) for ads only
@@ -650,6 +807,8 @@ const totalPurchased = purchasedCalls.length;
       totalPickedUp: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
+      bookingsForConfirmation: 0,
+      confirmedFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -661,6 +820,8 @@ const totalPurchased = purchasedCalls.length;
       totalPickedUp: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
+      bookingsForConfirmation: 0,
+      confirmedFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -672,6 +833,8 @@ const totalPurchased = purchasedCalls.length;
       totalPickedUp: 0,
       bookingsMadeInPeriod: 0,
       pickedUpFromBookings: 0,
+      bookingsForConfirmation: 0,
+      confirmedFromBookings: 0,
       totalShowedUp: 0,
       totalConfirmed: 0,
       totalPurchased: 0,
@@ -679,25 +842,25 @@ const totalPurchased = purchasedCalls.length;
     }
   };
 
-  // First, track bookings made in period for ads by medium
-  bookingsData?.forEach(booking => {
+  // Ads by medium: pick-up + confirmation from same filteredBookings rows
+  filteredBookings.forEach((booking) => {
     const source = booking.source_type || 'organic';
     const isAds = source.toLowerCase().includes('ad') || source.toLowerCase().includes('ads');
-    
-    if (isAds) {
-      const medium = booking.leads?.medium?.toLowerCase();
-      let mediumKey = 'other';
-      
-      if (medium === 'tiktok') {
-        mediumKey = 'tiktok';
-      } else if (medium === 'instagram') {
-        mediumKey = 'instagram';
-      }
-      
-      mediumStats[mediumKey].bookingsMadeInPeriod++;
-      if (booking.picked_up === true) {
-        mediumStats[mediumKey].pickedUpFromBookings++;
-      }
+    if (!isAds) return;
+    const medium = booking.leads?.medium?.toLowerCase();
+    let mediumKey = 'other';
+    if (medium === 'tiktok') {
+      mediumKey = 'tiktok';
+    } else if (medium === 'instagram') {
+      mediumKey = 'instagram';
+    }
+    mediumStats[mediumKey].bookingsMadeInPeriod++;
+    if (booking.picked_up === true) {
+      mediumStats[mediumKey].pickedUpFromBookings++;
+    }
+    mediumStats[mediumKey].bookingsForConfirmation++;
+    if (booking.confirmed === true || booking.confirmed === 'true') {
+      mediumStats[mediumKey].confirmedFromBookings++;
     }
   });
 
@@ -767,7 +930,7 @@ const totalPurchased = purchasedCalls.length;
       : 0;
     medium.showUpRate = (medium.totalBookedThatHappened ?? 0) > 0 ? (medium.totalShowedUp / medium.totalBookedThatHappened) * 100 : 0;
     medium.showUpRateConfirmed = (medium.totalConfirmed ?? 0) > 0 ? (medium.totalShowedUp / medium.totalConfirmed) * 100 : 0;
-    medium.confirmationRate = (medium.totalBookedThatHappened ?? 0) > 0 ? (medium.totalConfirmed / medium.totalBookedThatHappened) * 100 : 0;
+    medium.confirmationRate = (medium.bookingsForConfirmation ?? 0) > 0 ? (medium.confirmedFromBookings / medium.bookingsForConfirmation) * 100 : 0;
     medium.conversionRate = medium.totalShowedUp > 0 ? (medium.totalPurchased / medium.totalShowedUp) * 100 : 0;
   });
 
@@ -787,6 +950,8 @@ const totalPurchased = purchasedCalls.length;
     totalConfirmed,
     totalDQ,
     dqRate,
+    totalBookingsForConfirmation,
+    totalConfirmedBookDate,
     totalPurchased,
     totalPif,
     totalDownsell,
@@ -797,6 +962,7 @@ const totalPurchased = purchasedCalls.length;
     closers: Object.values(closerStats),
     setters: Object.values(setterStats),
     countries: sortedCountries,
+    countrySourceStats,
     sourceStats,
     mediumStats
   };
@@ -842,7 +1008,9 @@ async function fetchWeeklyStats() {
       const showUpRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalShowedUp / weekStats.totalBooked) * 100 : 0;
       const conversionRateShowedUp = weekStats.totalShowedUp > 0 ? (weekStats.totalPurchased / weekStats.totalShowedUp) * 100 : 0;
       const conversionRateBooked = weekStats.totalBooked > 0 ? (weekStats.totalPurchased / weekStats.totalBooked) * 100 : 0;
-      const confirmationRate = weekStats.totalBooked > 0 ? (weekStats.totalConfirmed / weekStats.totalBooked) * 100 : 0;
+      const confirmationRate = (weekStats.totalBookingsForConfirmation ?? 0) > 0
+        ? (weekStats.totalConfirmedBookDate / weekStats.totalBookingsForConfirmation) * 100
+        : 0;
       
       // Extract conversion rates for organic and ads
       const organicConversionRate = weekStats.sourceStats?.organic?.conversionRate || 0;
@@ -920,8 +1088,8 @@ async function fetchMonthlyStats() {
     const conversionRateBooked = monthStats.totalBooked > 0 
       ? (monthStats.totalPurchased / monthStats.totalBooked) * 100 
       : 0;
-    const confirmationRate = monthStats.totalBooked > 0 
-      ? (monthStats.totalConfirmed / monthStats.totalBooked) * 100 
+    const confirmationRate = (monthStats.totalBookingsForConfirmation ?? 0) > 0
+      ? (monthStats.totalConfirmedBookDate / monthStats.totalBookingsForConfirmation) * 100
       : 0;
     
     const organicConversionRate = monthStats.sourceStats?.organic?.conversionRate || 0;
@@ -976,7 +1144,9 @@ async function fetchDailyStats(numDays = 30) {
       const showUpRateBooked = dayStats.totalBooked > 0 ? (dayStats.totalShowedUp / dayStats.totalBooked) * 100 : 0;
       const conversionRateShowedUp = dayStats.totalShowedUp > 0 ? (dayStats.totalPurchased / dayStats.totalShowedUp) * 100 : 0;
       const conversionRateBooked = dayStats.totalBooked > 0 ? (dayStats.totalPurchased / dayStats.totalBooked) * 100 : 0;
-      const confirmationRate = dayStats.totalBooked > 0 ? (dayStats.totalConfirmed / dayStats.totalBooked) * 100 : 0;
+      const confirmationRate = (dayStats.totalBookingsForConfirmation ?? 0) > 0
+        ? (dayStats.totalConfirmedBookDate / dayStats.totalBookingsForConfirmation) * 100
+        : 0;
       
       daysData.unshift({
         dayStart: startDateStr,
@@ -1609,6 +1779,7 @@ export default function StatsDashboard() {
   const [loadingMonthly, setLoadingMonthly] = useState(false);
   const [loadingDaily, setLoadingDaily] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'ads', 'organic'
+  const [countryFilter, setCountryFilter] = useState('all'); // 'all' or country code e.g. 'ES', 'Unknown'
   const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
   const [purchases, setPurchases] = useState([]);
   const [specialOfferIds, setSpecialOfferIds] = useState({ lockInKajabiId: null, payoffKajabiId: null });
@@ -1727,6 +1898,12 @@ export default function StatsDashboard() {
     setStats(data);
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (!stats?.countries?.length || countryFilter === 'all') return;
+    const ok = stats.countries.some((c) => c.country === countryFilter);
+    if (!ok) setCountryFilter('all');
+  }, [stats, countryFilter]);
 
   const loadWeeklyStats = async () => {
     setLoadingWeekly(true);
@@ -1848,14 +2025,31 @@ export default function StatsDashboard() {
   // Calculate metrics only if we have stats and not in comparison view
   let pickUpRate = 0, showUpRateConfirmed = 0, showUpRateBooked = 0, confirmationRate = 0, conversionRateShowedUp = 0, conversionRateBooked = 0, dqRate = 0;
   let totalBooked, totalBookedThatHappened, totalPickedUp, totalPickedUpFromBookings, totalPickedUpByBookDate, totalShowedUp, totalConfirmed, totalDQ, totalPurchased, totalRescheduled, totalBookedInPeriod;
+  let totalBookingsForConfirmationCount = 0, totalConfirmedBookDateCount = 0;
   
   if (stats && comparisonView === 'none') {
-    // Filter by source if not 'all'
-    if (sourceFilter !== 'all' && stats.sourceStats && stats.sourceStats[sourceFilter]) {
-      const filtered = stats.sourceStats[sourceFilter];
+    let filtered = null;
+    const cs = stats.countrySourceStats;
+    if (countryFilter === 'all' && sourceFilter === 'all') {
+      filtered = null;
+    } else if (countryFilter === 'all' && sourceFilter !== 'all' && stats.sourceStats?.[sourceFilter]) {
+      filtered = stats.sourceStats[sourceFilter];
+    } else if (countryFilter !== 'all' && cs?.[countryFilter]) {
+      const pair = cs[countryFilter];
+      if (sourceFilter === 'all') {
+        filtered = mergeAdsOrganicBlocks(pair.ads, pair.organic);
+        finalizeSourceRates(filtered);
+      } else if (pair[sourceFilter]) {
+        filtered = pair[sourceFilter];
+      }
+    }
+
+    if (filtered) {
       pickUpRate = filtered.pickUpRate || 0;
       showUpRateConfirmed = filtered.showUpRateConfirmed ?? filtered.showUpRate ?? 0;
       confirmationRate = filtered.confirmationRate ?? 0;
+      totalBookingsForConfirmationCount = filtered.bookingsForConfirmation ?? 0;
+      totalConfirmedBookDateCount = filtered.confirmedFromBookings ?? 0;
       showUpRateBooked = (filtered.totalBookedThatHappened ?? 0) > 0 ? ((filtered.totalShowedUp ?? 0) / filtered.totalBookedThatHappened) * 100 : 0;
       conversionRateShowedUp = filtered.conversionRate || 0;
       conversionRateBooked = filtered.totalBooked > 0 ? (filtered.totalPurchased / filtered.totalBooked) * 100 : 0;
@@ -1870,11 +2064,15 @@ export default function StatsDashboard() {
       totalDQ = filtered.totalDQ ?? 0;
       dqRate = filtered.dqRate ?? 0;
       totalPurchased = filtered.totalPurchased;
-      totalRescheduled = 0; // Not tracked by source
+      totalRescheduled = filtered.totalRescheduled ?? 0;
     } else {
       pickUpRate = stats.bookingsMadeinPeriod > 0 ? (stats.totalPickedUpFromBookings / stats.bookingsMadeinPeriod) * 100 : 0;
       showUpRateConfirmed = stats.totalConfirmed > 0 ? (stats.totalShowedUp / stats.totalConfirmed) * 100 : 0;
-      confirmationRate = (stats.totalBookedThatHappened ?? 0) > 0 ? (stats.totalConfirmed / stats.totalBookedThatHappened) * 100 : 0;
+      totalBookingsForConfirmationCount = stats.totalBookingsForConfirmation ?? 0;
+      totalConfirmedBookDateCount = stats.totalConfirmedBookDate ?? 0;
+      confirmationRate = totalBookingsForConfirmationCount > 0
+        ? (totalConfirmedBookDateCount / totalBookingsForConfirmationCount) * 100
+        : 0;
       showUpRateBooked = (stats.totalBookedThatHappened ?? 0) > 0 ? (stats.totalShowedUp / stats.totalBookedThatHappened) * 100 : 0;
       conversionRateShowedUp = stats.totalShowedUp > 0 ? (stats.totalPurchased / stats.totalShowedUp) * 100 : 0;
       conversionRateBooked = stats.totalBooked > 0 ? (stats.totalPurchased / stats.totalBooked) * 100 : 0;
@@ -1951,39 +2149,45 @@ export default function StatsDashboard() {
             </div>
            )}
 
-           {/* Source Filter - Only show if not in comparison view and in stats mode */}
+           {/* Source + country filters — same phone-country logic as Sales by Country */}
            {comparisonView === 'none' && viewMode === 'stats' && stats && stats.sourceStats && (
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setSourceFilter('all')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  sourceFilter === 'all'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                All Sources
-              </button>
-              <button
-                onClick={() => setSourceFilter('ads')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  sourceFilter === 'ads'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                Ads ({stats.sourceStats.ads.totalBooked})
-              </button>
-              <button
-                onClick={() => setSourceFilter('organic')}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  sourceFilter === 'organic'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
-              >
-                Organic ({stats.sourceStats.organic.totalBooked})
-              </button>
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 mb-4 flex flex-wrap gap-6 items-end">
+              <div className="min-w-[200px]">
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Source</label>
+                <select
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">All sources ({stats.totalBooked} booked)</option>
+                  <option value="ads">Ads ({stats.sourceStats.ads.totalBooked})</option>
+                  <option value="organic">Organic ({stats.sourceStats.organic.totalBooked})</option>
+                </select>
+              </div>
+              <div className="min-w-[220px]">
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Country (from phone)</label>
+                <select
+                  value={countryFilter}
+                  onChange={(e) => setCountryFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">All countries</option>
+                  {(stats.countries || []).map((c) => (
+                    <option key={c.country} value={c.country}>
+                      {c.country} ({c.totalBooked} booked)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {(sourceFilter !== 'all' || countryFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => { setSourceFilter('all'); setCountryFilter('all'); }}
+                  className="px-3 py-2 text-sm text-blue-700 hover:text-blue-900 font-medium"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
            )}
            
@@ -2426,7 +2630,7 @@ export default function StatsDashboard() {
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500">Pick Up Rate</h3>
-              <span className="text-xs text-gray-400">Picked Up / Booked in Period</span>
+              <span className="text-xs text-gray-400">Picked up / booked (book date)</span>
             </div>
             <div className="text-3xl font-bold text-blue-600">
               {pickUpRate.toFixed(1)}%
@@ -2434,7 +2638,7 @@ export default function StatsDashboard() {
             <div className="text-sm text-gray-500 mt-2">
               {totalPickedUpFromBookings || 0} / {totalBookedInPeriod || 0} bookings
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
+            {sourceFilter === 'all' && countryFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
@@ -2450,7 +2654,23 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
-            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+            {sourceFilter === 'all' && countryFilter !== 'all' && stats?.countrySourceStats?.[countryFilter] && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.countrySourceStats[countryFilter].ads.pickUpRate.toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.countrySourceStats[countryFilter].organic.pickUpRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.countrySourceStats[countryFilter].ads.pickedUpFromBookings}/{stats.countrySourceStats[countryFilter].ads.bookingsMadeInPeriod}</div>
+                  <div>{stats.countrySourceStats[countryFilter].organic.pickedUpFromBookings}/{stats.countrySourceStats[countryFilter].organic.bookingsMadeInPeriod}</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && countryFilter === 'all' && stats && stats.mediumStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-purple-600">
@@ -2476,15 +2696,15 @@ export default function StatsDashboard() {
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-500">Confirmation Rate</h3>
-              <span className="text-xs text-gray-400">Confirmed / Booked</span>
+              <span className="text-xs text-gray-400">Confirmed / booked (book date)</span>
             </div>
             <div className="text-3xl font-bold text-cyan-600">
               {(confirmationRate ?? 0).toFixed(1)}%
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              {totalConfirmed ?? 0} / {totalBookedThatHappened ?? totalBooked ?? 0} bookings
+              {totalConfirmedBookDateCount ?? 0} / {totalBookingsForConfirmationCount ?? 0} bookings
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
+            {sourceFilter === 'all' && countryFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
@@ -2495,12 +2715,28 @@ export default function StatsDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.sourceStats.ads.totalConfirmed}/{stats.sourceStats.ads.totalBookedThatHappened ?? stats.sourceStats.ads.totalBooked}</div>
-                  <div>{stats.sourceStats.organic.totalConfirmed}/{stats.sourceStats.organic.totalBookedThatHappened ?? stats.sourceStats.organic.totalBooked}</div>
+                  <div>{stats.sourceStats.ads.confirmedFromBookings}/{stats.sourceStats.ads.bookingsForConfirmation}</div>
+                  <div>{stats.sourceStats.organic.confirmedFromBookings}/{stats.sourceStats.organic.bookingsForConfirmation}</div>
                 </div>
               </div>
             )}
-            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+            {sourceFilter === 'all' && countryFilter !== 'all' && stats?.countrySourceStats?.[countryFilter] && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {(stats.countrySourceStats[countryFilter].ads.confirmationRate ?? 0).toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {(stats.countrySourceStats[countryFilter].organic.confirmationRate ?? 0).toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.countrySourceStats[countryFilter].ads.confirmedFromBookings}/{stats.countrySourceStats[countryFilter].ads.bookingsForConfirmation}</div>
+                  <div>{stats.countrySourceStats[countryFilter].organic.confirmedFromBookings}/{stats.countrySourceStats[countryFilter].organic.bookingsForConfirmation}</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && countryFilter === 'all' && stats && stats.mediumStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-purple-600">
@@ -2514,9 +2750,9 @@ export default function StatsDashboard() {
                   </div>
                 </div>
                 <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <div>{stats.mediumStats.tiktok.totalConfirmed}/{stats.mediumStats.tiktok.totalBookedThatHappened ?? stats.mediumStats.tiktok.totalBooked}</div>
-                  <div>{stats.mediumStats.instagram.totalConfirmed}/{stats.mediumStats.instagram.totalBookedThatHappened ?? stats.mediumStats.instagram.totalBooked}</div>
-                  <div>{stats.mediumStats.other.totalConfirmed}/{stats.mediumStats.other.totalBookedThatHappened ?? stats.mediumStats.other.totalBooked}</div>
+                  <div>{stats.mediumStats.tiktok.confirmedFromBookings}/{stats.mediumStats.tiktok.bookingsForConfirmation}</div>
+                  <div>{stats.mediumStats.instagram.confirmedFromBookings}/{stats.mediumStats.instagram.bookingsForConfirmation}</div>
+                  <div>{stats.mediumStats.other.confirmedFromBookings}/{stats.mediumStats.other.bookingsForConfirmation}</div>
                 </div>
               </div>
             )}
@@ -2534,7 +2770,7 @@ export default function StatsDashboard() {
             <div className="text-sm text-gray-500 mt-2">
               {totalDQ ?? 0} / {totalPickedUpByBookDate ?? totalPickedUp ?? 0} picked up
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
+            {sourceFilter === 'all' && countryFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
@@ -2554,6 +2790,22 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
+            {sourceFilter === 'all' && countryFilter !== 'all' && stats?.countrySourceStats?.[countryFilter] && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {(stats.countrySourceStats[countryFilter].ads.dqRate ?? 0).toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {(stats.countrySourceStats[countryFilter].organic.dqRate ?? 0).toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.countrySourceStats[countryFilter].ads.totalDQ ?? 0}/{stats.countrySourceStats[countryFilter].ads.totalPickedUpByBookDate ?? 0}</div>
+                  <div>{stats.countrySourceStats[countryFilter].organic.totalDQ ?? 0}/{stats.countrySourceStats[countryFilter].organic.totalPickedUpByBookDate ?? 0}</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Show Up Rate / Confirmed */}
@@ -2568,7 +2820,7 @@ export default function StatsDashboard() {
             <div className="text-sm text-gray-500 mt-2">
               {totalShowedUp} / {totalConfirmed} confirmed
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
+            {sourceFilter === 'all' && countryFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
@@ -2584,7 +2836,23 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
-            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+            {sourceFilter === 'all' && countryFilter !== 'all' && stats?.countrySourceStats?.[countryFilter] && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {(stats.countrySourceStats[countryFilter].ads.showUpRateConfirmed ?? 0).toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {(stats.countrySourceStats[countryFilter].organic.showUpRateConfirmed ?? 0).toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.countrySourceStats[countryFilter].ads.totalShowedUp}/{stats.countrySourceStats[countryFilter].ads.totalConfirmed}</div>
+                  <div>{stats.countrySourceStats[countryFilter].organic.totalShowedUp}/{stats.countrySourceStats[countryFilter].organic.totalConfirmed}</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && countryFilter === 'all' && stats && stats.mediumStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-purple-600">
@@ -2618,7 +2886,7 @@ export default function StatsDashboard() {
             <div className="text-sm text-gray-500 mt-2">
               {totalPurchased} / {totalShowedUp} Showed Up
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
+            {sourceFilter === 'all' && countryFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
@@ -2634,7 +2902,23 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
-            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+            {sourceFilter === 'all' && countryFilter !== 'all' && stats?.countrySourceStats?.[countryFilter] && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.countrySourceStats[countryFilter].ads.conversionRate.toFixed(1)}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.countrySourceStats[countryFilter].organic.conversionRate.toFixed(1)}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.countrySourceStats[countryFilter].ads.totalPurchased}/{stats.countrySourceStats[countryFilter].ads.totalShowedUp}</div>
+                  <div>{stats.countrySourceStats[countryFilter].organic.totalPurchased}/{stats.countrySourceStats[countryFilter].organic.totalShowedUp}</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && countryFilter === 'all' && stats && stats.mediumStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-purple-600">
@@ -2668,7 +2952,7 @@ export default function StatsDashboard() {
             <div className="text-sm text-gray-500 mt-2">
               {totalPurchased} / {totalBooked} calls
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
+            {sourceFilter === 'all' && countryFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-blue-600">
@@ -2684,7 +2968,23 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
-            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+            {sourceFilter === 'all' && countryFilter !== 'all' && stats?.countrySourceStats?.[countryFilter] && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="flex justify-between text-xs">
+                  <div className="text-blue-600">
+                    Ads: {stats.countrySourceStats[countryFilter].ads.totalBooked > 0 ? ((stats.countrySourceStats[countryFilter].ads.totalPurchased / stats.countrySourceStats[countryFilter].ads.totalBooked) * 100).toFixed(1) : 0}%
+                  </div>
+                  <div className="text-green-600">
+                    Organic: {stats.countrySourceStats[countryFilter].organic.totalBooked > 0 ? ((stats.countrySourceStats[countryFilter].organic.totalPurchased / stats.countrySourceStats[countryFilter].organic.totalBooked) * 100).toFixed(1) : 0}%
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <div>{stats.countrySourceStats[countryFilter].ads.totalPurchased}/{stats.countrySourceStats[countryFilter].ads.totalBooked}</div>
+                  <div>{stats.countrySourceStats[countryFilter].organic.totalPurchased}/{stats.countrySourceStats[countryFilter].organic.totalBooked}</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && countryFilter === 'all' && stats && stats.mediumStats && (
               <div className="mt-3 pt-3 border-t border-gray-100">
                 <div className="flex justify-between text-xs">
                   <div className="text-purple-600">
@@ -2738,7 +3038,7 @@ export default function StatsDashboard() {
             <div className="text-sm mt-2 opacity-90">
               {totalPurchased} closed deals
             </div>
-            {sourceFilter === 'all' && stats && stats.sourceStats && (
+            {sourceFilter === 'all' && countryFilter === 'all' && stats && stats.sourceStats && (
               <div className="mt-3 pt-3 border-t border-white/20">
                 <div className="flex justify-between text-xs opacity-90">
                   <div>
@@ -2754,7 +3054,23 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
-            {sourceFilter === 'ads' && stats && stats.mediumStats && (
+            {sourceFilter === 'all' && countryFilter !== 'all' && stats?.countrySourceStats?.[countryFilter] && (
+              <div className="mt-3 pt-3 border-t border-white/20">
+                <div className="flex justify-between text-xs opacity-90">
+                  <div>
+                    Ads: {stats.countrySourceStats[countryFilter].ads.totalShowedUp}
+                  </div>
+                  <div>
+                    Organic: {stats.countrySourceStats[countryFilter].organic.totalShowedUp}
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs opacity-70 mt-1">
+                  <div>{stats.countrySourceStats[countryFilter].ads.totalPurchased} deals</div>
+                  <div>{stats.countrySourceStats[countryFilter].organic.totalPurchased} deals</div>
+                </div>
+              </div>
+            )}
+            {sourceFilter === 'ads' && countryFilter === 'all' && stats && stats.mediumStats && (
               <div className="mt-3 pt-3 border-t border-white/20">
                 <div className="flex justify-between text-xs opacity-90">
                   <div>

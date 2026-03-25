@@ -210,7 +210,9 @@ const ComparisonTable = ({
             {data.map((item, index) => {
               const pickUpRate = item.pickUpRate ?? (item.bookingsMadeinPeriod > 0 ? (item.totalPickedUpFromBookings || 0) / item.bookingsMadeinPeriod * 100 : null);
               const dqRate = item.dqRate ?? (item.totalPickedUpByBookDate > 0 ? (item.totalDQ || 0) / item.totalPickedUpByBookDate * 100 : null);
-              const confirmationRate = item.confirmationRate ?? (item.totalBooked > 0 ? (item.totalConfirmed || 0) / item.totalBooked * 100 : null);
+              const confirmationRate = item.confirmationRate ?? ((item.totalBookingsForConfirmation ?? 0) > 0
+                ? (item.totalConfirmedBookDate / item.totalBookingsForConfirmation) * 100
+                : item.totalBooked > 0 ? (item.totalConfirmed || 0) / item.totalBooked * 100 : null);
               const showUpRate = item.showUpRateConfirmed ?? (item.totalConfirmed > 0 ? (item.totalShowedUp || 0) / item.totalConfirmed * 100 : null);
               const successRate = item.conversionRateBooked ?? (item.totalBooked > 0 ? (item.totalPurchased || 0) / item.totalBooked * 100 : null);
               
@@ -301,21 +303,21 @@ const ComparisonTable = ({
                   )}
                   <RateCell
                     rate={confirmationRate}
-                    subtext={`${item.totalConfirmed || 0} / ${item.totalBooked || 0} bookings`}
+                    subtext={`${item.totalConfirmedBookDate ?? item.totalConfirmed ?? 0} / ${item.totalBookingsForConfirmation ?? item.totalBooked ?? 0} bookings`}
                     target={75}
                     bgClass={showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month') ? 'bg-violet-50' : ''}
                   />
                   {(showOrganicSplit && (periodLabel === 'Day' || periodLabel === 'Week' || periodLabel === 'Month')) && (
                     <>
                       <RateCell
-                        rate={item.sourceStats?.organic?.totalBooked > 0 ? (item.sourceStats?.organic?.totalConfirmed || 0) / item.sourceStats?.organic?.totalBooked * 100 : null}
-                        subtext={`${item.sourceStats?.organic?.totalConfirmed ?? 0} / ${item.sourceStats?.organic?.totalBooked ?? 0}`}
+                        rate={item.sourceStats?.organic?.confirmationRate}
+                        subtext={`${item.sourceStats?.organic?.confirmedFromBookings ?? 0} / ${item.sourceStats?.organic?.bookingsForConfirmation ?? 0}`}
                         target={75}
                         bgClass="bg-violet-50"
                       />
                       <RateCell
-                        rate={item.sourceStats?.ads?.totalBooked > 0 ? (item.sourceStats?.ads?.totalConfirmed || 0) / item.sourceStats?.ads?.totalBooked * 100 : null}
-                        subtext={`${item.sourceStats?.ads?.totalConfirmed ?? 0} / ${item.sourceStats?.ads?.totalBooked ?? 0}`}
+                        rate={item.sourceStats?.ads?.confirmationRate}
+                        subtext={`${item.sourceStats?.ads?.confirmedFromBookings ?? 0} / ${item.sourceStats?.ads?.bookingsForConfirmation ?? 0}`}
                         target={75}
                         bgClass="bg-violet-50"
                       />
