@@ -2907,23 +2907,6 @@ export default function StatsDashboard() {
             )}
           </div>
 
-          {/* Closer DQ: outcome_log dont_qualify / showed up (call_date cohort) */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-500">Closer DQ</h3>
-              <span className="text-xs text-gray-400">Don&apos;t qualify / showed up</span>
-            </div>
-            <div className="text-3xl font-bold text-rose-600">
-              {(stats?.closerDqRateShowUp ?? 0).toFixed(1)}%
-            </div>
-            <div className="text-sm text-gray-500 mt-2">
-              {stats?.totalCloserDontQualify ?? 0} / {stats?.totalShowedUp ?? 0} showed up
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              Latest outcome_log per call; counts when outcome is DON&apos;T QUALIFY and the call showed up (UTC call_date range).
-            </p>
-          </div>
-
           {/* Show Up Rate / Confirmed */}
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center justify-between mb-2">
@@ -2988,6 +2971,23 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Closer DQ: outcome_log dont_qualify / showed up (call_date cohort) */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-500">Closer DQ</h3>
+              <span className="text-xs text-gray-400">Don&apos;t qualify / showed up</span>
+            </div>
+            <div className="text-3xl font-bold text-rose-600">
+              {(stats?.closerDqRateShowUp ?? 0).toFixed(1)}%
+            </div>
+            <div className="text-sm text-gray-500 mt-2">
+              {stats?.totalCloserDontQualify ?? 0} / {stats?.totalShowedUp ?? 0} showed up
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              Latest outcome_log per call; counts when outcome is DON&apos;T QUALIFY and the call showed up (UTC call_date range).
+            </p>
           </div>
 
           {/* Conversion Rate / Show up */}
@@ -3232,10 +3232,10 @@ export default function StatsDashboard() {
                     Showed up
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Closer DQ
+                    Show Up Rate
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Show Up Rate
+                    Closer DQ
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Purchased
@@ -3273,19 +3273,19 @@ export default function StatsDashboard() {
                         <div className="text-sm text-gray-900">{closer.showedUp}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="text-sm font-medium text-rose-700">
-                          {closerDq.toFixed(1)}%
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {closer.dontQualify ?? 0} / {closer.showedUp ?? 0}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
                         <div className="text-sm font-medium text-gray-900">
                           {showUpRate != null ? `${showUpRate.toFixed(1)}%` : '—'}
                         </div>
                         <div className="text-xs text-gray-500">
                           {closer.showedUp ?? 0} / {closer.confirmed ?? 0} confirmed
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center">
+                        <div className="text-sm font-medium text-rose-700">
+                          {closerDq.toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {closer.dontQualify ?? 0} / {closer.showedUp ?? 0}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
