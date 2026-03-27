@@ -27,6 +27,7 @@ export default function OffersPage() {
     kajabi_id: '',
     checkout_url: '',
     weekly_classes: '',
+    is_subscription: false,
     active: true
   });
 
@@ -64,6 +65,8 @@ export default function OffersPage() {
         kajabi_id: offer.kajabi_id || '',
         checkout_url: offer.checkout_url || '',
         weekly_classes: offer.weekly_classes || '',
+        is_subscription:
+          offer.is_subscription === true || offer.is_subscription === 'true',
         active: offer.active !== undefined ? offer.active : true
       });
       setKajabiOfferSearch(offer.kajabi_id || '');
@@ -78,6 +81,7 @@ export default function OffersPage() {
         kajabi_id: '',
         checkout_url: '',
         weekly_classes: '',
+        is_subscription: false,
         active: true
       });
       setKajabiOfferSearch('');
@@ -100,6 +104,7 @@ export default function OffersPage() {
       kajabi_id: '',
       checkout_url: '',
       weekly_classes: '',
+      is_subscription: false,
       active: true
     });
   };
@@ -161,6 +166,7 @@ export default function OffersPage() {
         kajabi_id: formData.kajabi_id ? formData.kajabi_id.trim() : null,
         checkout_url: checkoutUrlForPayload,
         weekly_classes: formData.weekly_classes ? parseInt(formData.weekly_classes) : null,
+        is_subscription: !!formData.is_subscription,
         active: formData.active
       };
 
@@ -337,6 +343,13 @@ export default function OffersPage() {
                   fontSize: '14px',
                   fontWeight: '600',
                   color: '#374151'
+                }}>Subscription</th>
+                <th style={{ 
+                  padding: '12px 16px', 
+                  textAlign: 'center', 
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#374151'
                 }}>Status</th>
                 <th style={{ 
                   padding: '12px 16px', 
@@ -432,6 +445,9 @@ export default function OffersPage() {
                     {offer.weekly_classes === null 
                       ? 'unlimited'
                       : offer.weekly_classes}
+                  </td>
+                  <td style={{ padding: '12px 16px', textAlign: 'center', fontSize: '14px', color: '#111827' }}>
+                    {offer.is_subscription === true || offer.is_subscription === 'true' ? 'Yes' : '—'}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                     <button
@@ -972,6 +988,35 @@ export default function OffersPage() {
                       e.currentTarget.style.borderColor = '#d1d5db';
                     }}
                   />
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: '#374151',
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.is_subscription}
+                      onChange={(e) =>
+                        setFormData({ ...formData, is_subscription: e.target.checked })
+                      }
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        cursor: 'pointer'
+                      }}
+                    />
+                    Subscription offer
+                  </label>
+                  <p style={{ margin: '6px 0 0 28px', fontSize: '12px', color: '#6b7280' }}>
+                    Used when syncing purchases (e.g. Kajabi webhook → create-student).
+                  </p>
                 </div>
 
                 <div style={{ marginBottom: '24px' }}>
