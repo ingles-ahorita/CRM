@@ -6,8 +6,12 @@ import { NotesModal } from './components/Modal';
 import { parseISO } from 'date-fns';
 import * as DateHelpers from '../utils/dateHelpers';
 import { fetchPurchases as fetchKajabiPurchases, fetchTransactions as fetchKajabiTransactions } from '../lib/kajabiApi';
-import { getCloserCommissionBreakdown } from '../lib/closerCommission';
-import { LOCK_IN_OFFER_DB_ID, PAYOFF_OFFER_DB_ID } from '../lib/specialOffers';
+import {
+  getCloserCommissionBreakdown,
+  adjustedBaseCommissionFromOffer,
+  payoffIncrementFromOffer,
+} from '../lib/closerCommission';
+import { LOCK_IN_OFFER_DB_ID } from '../lib/specialOffers';
 
 // Helper function to parse date string as UTC (matches SQL date_trunc behavior)
 function parseDateAsUTC(dateString) {
@@ -17,14 +21,27 @@ function parseDateAsUTC(dateString) {
   return parseISO(isoString);
 }
 
+/** YYYY-MM from ?month= when opening /closer-stats/:id?month=... (e.g. commission overview). */
+function readMonthFromLocationOrDefault() {
+  try {
+    if (typeof window !== 'undefined') {
+      const m = new URLSearchParams(window.location.search).get('month');
+      if (m && /^\d{4}-\d{2}$/.test(m)) return m;
+    }
+  } catch {
+    /* ignore */
+  }
+  const yearMonth = DateHelpers.getYearMonthInTimezone(new Date(), DateHelpers.DEFAULT_TIMEZONE);
+  return yearMonth
+    ? yearMonth.monthKey
+    : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function CloserStatsDashboard() {
   const { closer } = useParams(); 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const yearMonth = DateHelpers.getYearMonthInTimezone(new Date(), DateHelpers.DEFAULT_TIMEZONE);
-    return yearMonth ? yearMonth.monthKey : `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-  });
+  const [selectedMonth, setSelectedMonth] = useState(readMonthFromLocationOrDefault);
   const [viewMode, setViewMode] = useState('stats'); // 'stats' or 'purchases'
   const [purchases, setPurchases] = useState([]);
   const [purchasesLoading, setPurchasesLoading] = useState(false);
@@ -428,12 +445,30 @@ export default function CloserStatsDashboard() {
                   ${commissionBreakdownLoading ? '...' : (commissionBreakdown?.total ?? 0).toFixed(2)}
                 </div>
                 <div className="text-xs text-gray-500 mt-1 space-y-1">
-                  <div>Base: ${commissionBreakdownLoading ? '...' : (commissionBreakdown?.base ?? 0).toFixed(2)}</div>
+                  <div>
+                    Base (sale month): $
+                    {commissionBreakdownLoading ? '...' : (commissionBreakdown?.base ?? 0).toFixed(2)}
+                  </div>
                   {!commissionBreakdownLoading && (commissionBreakdown?.secondInstallments ?? 0) > 0 && (
                     <div className="text-green-600">+ ${(commissionBreakdown.secondInstallments ?? 0).toFixed(2)} from second installments</div>
                   )}
-                  {!commissionBreakdownLoading && (commissionBreakdown?.sameMonthRefunds ?? 0) > 0 && (
-                    <div className="text-green-600">+ ${(commissionBreakdown.sameMonthRefunds ?? 0).toFixed(2)} from same-month refunds (clawback)</div>
+                  {!commissionBreakdownLoading && (commissionBreakdown?.payoffIncrements ?? 0) > 0 && (
+                    <div className="text-green-600">
+                      + ${(commissionBreakdown.payoffIncrements ?? 0).toFixed(2)} from payoffs (payoff month)
+                    </div>
+                  )}
+                  {!commissionBreakdownLoading && (
+                    <div
+                      className={
+                        (commissionBreakdown?.sameMonthRefunds ?? 0) < 0
+                          ? 'text-red-600'
+                          : (commissionBreakdown?.sameMonthRefunds ?? 0) > 0
+                            ? 'text-green-600'
+                            : 'text-gray-500'
+                      }
+                    >
+                      {(commissionBreakdown?.sameMonthRefunds ?? 0) > 0 ? '+' : ''}${(commissionBreakdown?.sameMonthRefunds ?? 0).toFixed(2)} from same-month refunds
+                    </div>
                   )}
                   {!commissionBreakdownLoading && (
                     <div className={(commissionBreakdown?.refunds ?? 0) < 0 ? 'text-red-600' : 'text-gray-500'}>
@@ -560,9 +595,22 @@ export default function CloserStatsDashboard() {
                   </div>
                   <p className="text-sm text-gray-500">
                     {(() => {
-                      const main = purchases.filter((p) => { const oid = p.offer_id != null ? String(p.offer_id) : null; return !oid || (oid !== LOCK_IN_OFFER_DB_ID && oid !== PAYOFF_OFFER_DB_ID); }).length;
-                      const lockins = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === LOCK_IN_OFFER_DB_ID).length;
-                      const payoffs = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === PAYOFF_OFFER_DB_ID).length;
+                      const main = purchases.filter((p) => {
+                        const oid = p.offer_id != null ? String(p.offer_id) : null;
+                        if (oid === LOCK_IN_OFFER_DB_ID) return false;
+                        return p.purchase_in_selected_month;
+                      }).length;
+                      const lockins = purchases.filter(
+                        (p) =>
+                          p.offer_id != null &&
+                          String(p.offer_id) === LOCK_IN_OFFER_DB_ID &&
+                          p.purchase_in_selected_month
+                      ).length;
+                      const payoffs = purchases.filter((p) => {
+                        if (p.kajabi_payoff_id == null) return false;
+                        if (p.payoff_date) return p.payoff_in_selected_month;
+                        return p.purchase_in_selected_month;
+                      }).length;
                       const n = purchaseLogTab === 'purchases' ? main : purchaseLogTab === 'lockins' ? lockins : payoffs;
                       const label = purchaseLogTab === 'lockins' ? 'lock-in' : purchaseLogTab === 'payoffs' ? 'payoff' : 'purchase';
                       return `${n} ${label}${n !== 1 ? 's' : ''} in this tab`;
@@ -573,11 +621,27 @@ export default function CloserStatsDashboard() {
               {purchasesLoading ? (
                 <div className="p-8 text-center text-gray-500">Loading purchases...</div>
               ) : (() => {
-                const lockInPurchases = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === LOCK_IN_OFFER_DB_ID);
-                const payoffPurchases = purchases.filter((p) => p.offer_id != null && String(p.offer_id) === PAYOFF_OFFER_DB_ID);
+                const lockInPurchases = purchases.filter(
+                  (p) =>
+                    p.offer_id != null &&
+                    String(p.offer_id) === LOCK_IN_OFFER_DB_ID &&
+                    p.purchase_in_selected_month
+                );
+                const payoffPurchases = purchases
+                  .filter((p) => {
+                    if (p.kajabi_payoff_id == null) return false;
+                    if (p.payoff_date) return p.payoff_in_selected_month;
+                    return p.purchase_in_selected_month;
+                  })
+                  .sort((a, b) => {
+                    const da = new Date(a.payoff_date || a.purchase_date);
+                    const db = new Date(b.payoff_date || b.purchase_date);
+                    return db - da;
+                  });
                 const mainPurchases = purchases.filter((p) => {
                   const oid = p.offer_id != null ? String(p.offer_id) : null;
-                  return !oid || (oid !== LOCK_IN_OFFER_DB_ID && oid !== PAYOFF_OFFER_DB_ID);
+                  if (oid === LOCK_IN_OFFER_DB_ID) return false;
+                  return p.purchase_in_selected_month;
                 });
                 const tabPurchases = purchaseLogTab === 'lockins' ? lockInPurchases : purchaseLogTab === 'payoffs' ? payoffPurchases : mainPurchases;
                 return tabPurchases.length === 0 ? (
@@ -605,7 +669,7 @@ export default function CloserStatsDashboard() {
                     >
                       <div>Name</div>
                       <div>Email</div>
-                      <div>Purchase Date</div>
+                      <div>{purchaseLogTab === 'payoffs' ? 'Payoff date' : 'Purchase Date'}</div>
                       <div>Offer</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       Paid
@@ -622,6 +686,7 @@ export default function CloserStatsDashboard() {
                         lead={lead}
                         setterMap={setterMap}
                         amountMap={purchaseAmountMap}
+                        isPayoffsTab={purchaseLogTab === 'payoffs'}
                       />
                     ))}
                   </div>
@@ -904,13 +969,20 @@ async function fetchMonthlyCloserStats(closer = null) {
     .from('outcome_log')
     .select(`
       purchase_date,
+      payoff_date,
       outcome,
       commission,
+      discount,
+      kajabi_payoff_id,
       clawback,
       call_id,
       calls!inner!call_id (
         closer_id,
         closers (id, name)
+      ),
+      offers!offer_id (
+        base_commission,
+        payoff_commission
       )
     `)
     .in('outcome', ['yes', 'refund'])
@@ -972,20 +1044,31 @@ function calculateMonthlyCloserData(calls, outcomeLogs) {
     }
   });
   
-  // Count purchases and calculate revenue from outcome_log
+  // Count purchases and split revenue: base → sale month (purchase_date); payoff increment → payoff_date month
   outcomeLogs.forEach(outcomeLog => {
     if (!outcomeLog.purchase_date) return;
     const monthP = getMonth(outcomeLog.purchase_date);
-    
-    // Count 'yes' outcomes as purchases
-    if (monthP && outcomeLog.outcome === 'yes') {
-      monthP.purchases++;
-      // Add commission to revenue if available
-      if (outcomeLog.commission) {
+
+    if (outcomeLog.outcome === 'yes') {
+      if (monthP) monthP.purchases++;
+      const offer = outcomeLog.offers;
+      if (outcomeLog.kajabi_payoff_id && offer) {
+        const base = adjustedBaseCommissionFromOffer(offer, outcomeLog.discount);
+        const inc = payoffIncrementFromOffer(offer, outcomeLog.discount);
+        if (base != null && monthP) monthP.revenue += base;
+        if (inc != null) {
+          if (outcomeLog.payoff_date) {
+            const monthPayoff = getMonth(outcomeLog.payoff_date);
+            if (monthPayoff) monthPayoff.revenue += inc;
+          } else if (monthP) {
+            monthP.revenue += inc;
+          }
+        }
+      } else if (outcomeLog.commission && monthP) {
         monthP.revenue += outcomeLog.commission;
       }
     }
-    
+
     // Count refunds with clawback < 100% as purchases (partial refunds)
     if (monthP && outcomeLog.outcome === 'refund') {
       const clawbackPercentage = outcomeLog.clawback ?? 100;
@@ -1140,10 +1223,8 @@ async function fetchPurchases(closer = null, month = null) {
   const startDateISO = startDate.toISOString();
   const endDateISO = endDate.toISOString();
   
-  // Purchase log list is based on outcome_log with outcome = 'yes' only (not Kajabi)
-  let query = supabase
-    .from('outcome_log')
-    .select(`
+  // Purchase log: outcome=yes rows where purchase_date OR payoff_date falls in the selected month (merge + dedupe)
+  const outcomeLogSelect = `
       *,
       calls!inner!call_id (
         *,
@@ -1153,23 +1234,54 @@ async function fetchPurchases(closer = null, month = null) {
       ),
       offers!offer_id (
         id,
-        name
+        name,
+        base_commission,
+        payoff_commission
       )
-    `)
+    `;
+
+  let queryByPurchaseDate = supabase
+    .from('outcome_log')
+    .select(outcomeLogSelect)
     .eq('outcome', 'yes')
     .gte('purchase_date', startDateISO)
     .lte('purchase_date', endDateISO)
     .order('purchase_date', { ascending: false });
 
-  // Filter by closer_id directly in the join if closer is specified
+  let queryByPayoffDate = supabase
+    .from('outcome_log')
+    .select(outcomeLogSelect)
+    .eq('outcome', 'yes')
+    .not('payoff_date', 'is', null)
+    .gte('payoff_date', startDateISO)
+    .lte('payoff_date', endDateISO)
+    .order('payoff_date', { ascending: false });
+
   if (closer) {
-    query = query.eq('calls.closer_id', closer);
+    queryByPurchaseDate = queryByPurchaseDate.eq('calls.closer_id', closer);
+    queryByPayoffDate = queryByPayoffDate.eq('calls.closer_id', closer);
   }
 
-  const { data: outcomeLogs, error } = await query;
+  const [{ data: outcomeLogsByPurchase, error: errPurchase }, { data: outcomeLogsByPayoff, error: errPayoff }] =
+    await Promise.all([queryByPurchaseDate, queryByPayoffDate]);
 
-  if (error) {
-    console.error('Error fetching purchases:', error);
+  if (errPurchase) {
+    console.error('Error fetching purchases (by purchase_date):', errPurchase);
+  }
+  if (errPayoff) {
+    console.error('Error fetching purchases (by payoff_date):', errPayoff);
+  }
+
+  const mergedById = new Map();
+  (outcomeLogsByPurchase || []).forEach((ol) => {
+    if (ol?.id) mergedById.set(ol.id, ol);
+  });
+  (outcomeLogsByPayoff || []).forEach((ol) => {
+    if (ol?.id) mergedById.set(ol.id, ol);
+  });
+  const outcomeLogs = Array.from(mergedById.values());
+
+  if (!outcomeLogs.length && (errPurchase || errPayoff)) {
     return [];
   }
 
@@ -1180,6 +1292,15 @@ async function fetchPurchases(closer = null, month = null) {
       linkedPurchaseIds.add(String(ol.kajabi_purchase_id));
     }
   });
+
+  const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+  const dateInSelectedMonth = (d) => {
+    if (!d) return false;
+    const t = new Date(d);
+    const only = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    return only >= startDateOnly && only <= endDateOnly;
+  };
 
   // outcome_log with outcome=yes: one row per entry (no dedup by call needed for yes-only list)
   let purchases = (outcomeLogs || [])
@@ -1192,30 +1313,27 @@ async function fetchPurchases(closer = null, month = null) {
       ...outcomeLog.calls,
       outcome_log_id: outcomeLog.id,
       purchase_date: outcomeLog.purchase_date,
+      payoff_date: outcomeLog.payoff_date ?? null,
       refund_date: outcomeLog.refund_date,
       outcome: outcomeLog.outcome,
       commission: outcomeLog.commission,
       offer_id: outcomeLog.offer_id,
       offer_name: outcomeLog.offers?.name || null,
+      offer_base_commission: outcomeLog.offers?.base_commission ?? null,
+      offer_payoff_commission: outcomeLog.offers?.payoff_commission ?? null,
       discount: outcomeLog.discount,
       purchased_at: outcomeLog.purchase_date,
       purchased: true,
       kajabi_purchase_id: outcomeLog.kajabi_purchase_id ?? null,
+      kajabi_payoff_id: outcomeLog.kajabi_payoff_id ?? null,
       // Orange when no Kajabi purchase linked (kajabi_purchase_id set and in a yes outcome)
       isLinkedToYesOutcome: outcomeLog.kajabi_purchase_id != null && linkedPurchaseIds.has(String(outcomeLog.kajabi_purchase_id)),
+      // Linked payoff in Kajabi but payoff_date not stored yet (legacy): show purchase_date as fallback, flagged in UI
+      payoff_date_unlinked: outcomeLog.kajabi_payoff_id != null && !outcomeLog.payoff_date,
+      purchase_in_selected_month: dateInSelectedMonth(outcomeLog.purchase_date),
+      payoff_in_selected_month: dateInSelectedMonth(outcomeLog.payoff_date),
     }));
 
-  // Filter by date range and closer
-  purchases = purchases.filter(purchase => {
-    if (!purchase.purchase_date) return false;
-    if (closer && purchase.closer_id !== closer) return false;
-    const purchaseDate = new Date(purchase.purchase_date);
-    const purchaseDateOnly = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth(), purchaseDate.getDate());
-    const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-    const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-    return purchaseDateOnly >= startDateOnly && purchaseDateOnly <= endDateOnly;
-  });
-  
   // Sort by purchase_date descending
   purchases.sort((a, b) => {
     const dateA = new Date(a.purchase_date);
@@ -1712,7 +1830,8 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
       ),
       offers!offer_id (
         id,
-        name
+        name,
+        base_commission
       )
     `)
     .eq('outcome', 'yes')
@@ -1743,7 +1862,9 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
       commission: outcomeLog.commission,
       offer_id: outcomeLog.offer_id,
       offer_name: outcomeLog.offers?.name || null,
+      offer_base_commission: outcomeLog.offers?.base_commission ?? null,
       discount: outcomeLog.discount,
+      kajabi_payoff_id: outcomeLog.kajabi_payoff_id ?? null,
       purchased_at: outcomeLog.purchase_date,
       purchased: true,
       paid_second_installment: outcomeLog.paid_second_installment
@@ -1774,8 +1895,25 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
   return secondInstallments;
 }
 
+function computeAdjustedBaseCommission(lead) {
+  return adjustedBaseCommissionFromOffer(
+    { base_commission: lead.offer_base_commission },
+    lead.discount
+  );
+}
+
+function computePayoffIncrementDisplay(lead) {
+  return payoffIncrementFromOffer(
+    {
+      base_commission: lead.offer_base_commission,
+      payoff_commission: lead.offer_payoff_commission,
+    },
+    lead.discount
+  );
+}
+
 // Purchase Item Component - Matches general stats purchase log layout (Name, Email, Purchase Date, Offer, Amount, Closer, Setter) + Commission + Notes
-function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = false }) {
+function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = false, isPayoffsTab = false }) {
   const navigate = useNavigate();
   const [editModalOpen, setEditModalOpen] = useState(false);
   // Orange row when purchase id is not found in any outcome_log with outcome=yes
@@ -1811,6 +1949,9 @@ function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = f
     : [];
   const kajabiData = tryKeys.length ? (amountMap[tryKeys[0]] ?? amountMap[tryKeys[1]] ?? amountMap[tryKeys[2]]) : undefined;
   const displayPurchaseDate = kajabiData?.purchase_date ?? lead.purchase_date;
+  const displayDateForLogColumn = isPayoffsTab
+    ? (lead.payoff_date ?? lead.purchase_date)
+    : displayPurchaseDate;
 
   return (
     <div
@@ -1864,12 +2005,28 @@ function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = f
         </div>
       )}
       {/* Purchase Date / Refund Date - purchase date from Kajabi when available; refund date from CRM */}
-      <div style={{ fontSize: '13px', color: '#6b7280' }}>
+      <div style={{ fontSize: '13px', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         {isRefundsTable
           ? (lead.refund_date ? DateHelpers.formatTimeWithRelative(lead.refund_date) : '—')
           : (lead.outcome === 'refund' && lead.refund_date
               ? DateHelpers.formatTimeWithRelative(lead.refund_date)
-              : displayPurchaseDate ? DateHelpers.formatTimeWithRelative(displayPurchaseDate) : '—')}
+              : displayDateForLogColumn ? DateHelpers.formatTimeWithRelative(displayDateForLogColumn) : '—')}
+        {isPayoffsTab && lead.payoff_date_unlinked && (
+          <span
+            title="Payoff date not linked from Kajabi; showing lock-in purchase date as fallback"
+            style={{
+              backgroundColor: '#fef3c7',
+              color: '#92400e',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontWeight: '600',
+              textTransform: 'uppercase',
+            }}
+          >
+            Not linked
+          </span>
+        )}
       </div>
       {/* Offer */}
       <div style={{ fontSize: '13px', color: '#111827', fontWeight: '500', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1912,9 +2069,28 @@ function PurchaseItem({ lead, setterMap = {}, amountMap = {}, isRefundsTable = f
           setterName
         )}
       </div>
-      {/* Commission */}
+      {/* Commission: refunds = stored; payoffs tab = payoff extra only; other rows with Kajabi payoff = adjusted base; else stored */}
       <div style={{ fontSize: '13px', color: lead.outcome === 'refund' ? '#ef4444' : '#10b981', fontWeight: '600', textAlign: 'center' }}>
-        {lead.commission != null ? `$${Number(lead.commission).toFixed(2)}` : '—'}
+        {isRefundsTable
+          ? lead.commission != null
+            ? `$${Number(lead.commission).toFixed(2)}`
+            : '—'
+          : isPayoffsTab
+            ? (() => {
+                const v = computePayoffIncrementDisplay(lead);
+                if (v == null) return '—';
+                const abs = Math.abs(v).toFixed(2);
+                const sign = v >= 0 ? '+' : '-';
+                return `${sign}$${abs}`;
+              })()
+            : lead.kajabi_payoff_id != null
+              ? (() => {
+                  const v = computeAdjustedBaseCommission(lead);
+                  return v != null ? `$${v.toFixed(2)}` : '—';
+                })()
+              : lead.commission != null
+                ? `$${Number(lead.commission).toFixed(2)}`
+                : '—'}
       </div>
       {/* Notes (Edit) */}
       <div style={{ display: 'flex', justifyContent: 'center' }}>

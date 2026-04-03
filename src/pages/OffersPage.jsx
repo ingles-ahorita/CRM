@@ -23,7 +23,7 @@ export default function OffersPage() {
     price: '',
     installments: '',
     base_commission: '',
-    PIF_commission: '',
+    payoff_commission: '',
     kajabi_id: '',
     checkout_url: '',
     weekly_classes: '',
@@ -61,7 +61,7 @@ export default function OffersPage() {
         price: offer.price || '',
         installments: offer.installments !== null && offer.installments !== undefined ? String(offer.installments) : '',
         base_commission: offer.base_commission || '',
-        PIF_commission: offer.PIF_commission || '',
+        payoff_commission: offer.payoff_commission || '',
         kajabi_id: offer.kajabi_id || '',
         checkout_url: offer.checkout_url || '',
         weekly_classes: offer.weekly_classes || '',
@@ -77,7 +77,7 @@ export default function OffersPage() {
         price: '',
         installments: '',
         base_commission: '',
-        PIF_commission: '',
+        payoff_commission: '',
         kajabi_id: '',
         checkout_url: '',
         weekly_classes: '',
@@ -100,7 +100,7 @@ export default function OffersPage() {
       price: '',
       installments: '',
       base_commission: '',
-      PIF_commission: '',
+      payoff_commission: '',
       kajabi_id: '',
       checkout_url: '',
       weekly_classes: '',
@@ -162,7 +162,7 @@ export default function OffersPage() {
         price: formData.price ? parseFloat(formData.price) : null,
         installments: formData.installments ? parseInt(formData.installments) : null,
         base_commission: formData.base_commission ? parseFloat(formData.base_commission) : null,
-        PIF_commission: formData.PIF_commission ? parseFloat(formData.PIF_commission) : null,
+        payoff_commission: formData.payoff_commission ? parseFloat(formData.payoff_commission) : null,
         kajabi_id: formData.kajabi_id ? formData.kajabi_id.trim() : null,
         checkout_url: checkoutUrlForPayload,
         weekly_classes: formData.weekly_classes ? parseInt(formData.weekly_classes) : null,
@@ -315,7 +315,7 @@ export default function OffersPage() {
                   fontSize: '14px',
                   fontWeight: '600',
                   color: '#374151'
-                }}>PIF Commission</th>
+                }}>Payoff commission</th>
                 <th style={{ 
                   padding: '12px 16px', 
                   textAlign: 'left', 
@@ -394,8 +394,8 @@ export default function OffersPage() {
                       : '-'}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
-                    {offer.PIF_commission !== null && offer.PIF_commission !== undefined 
-                      ? `$${offer.PIF_commission.toFixed(2)}` 
+                    {offer.payoff_commission !== null && offer.payoff_commission !== undefined 
+                      ? `$${offer.payoff_commission.toFixed(2)}` 
                       : '-'}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: '14px', color: '#111827' }}>
@@ -832,13 +832,13 @@ export default function OffersPage() {
                     fontWeight: '600',
                     color: '#374151'
                   }}>
-                    PIF Commission ($)
+                    Payoff commission ($)
                   </label>
                   <input
                     type="number"
                     step="0.01"
-                    value={formData.PIF_commission}
-                    onChange={(e) => setFormData({ ...formData, PIF_commission: e.target.value })}
+                    value={formData.payoff_commission}
+                    onChange={(e) => setFormData({ ...formData, payoff_commission: e.target.value })}
                     style={{
                       width: '100%',
                       padding: '10px 12px',

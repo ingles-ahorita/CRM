@@ -11,13 +11,14 @@
     "dev:all:watch": "concurrently \"npm run dev:api:watch\" \"npm run dev\"",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "db:schema": "supabase db dump --linked -f supabase/schema.sql -s public"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.18",
     "@deepgram/sdk": "^3.7.0",
     "@google-analytics/data": "^5.2.1",
-    "@supabase/supabase-js": "^2.58.0",
+    "@supabase/supabase-js": "^2.101.1",
     "ai": "^6.0.48",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",

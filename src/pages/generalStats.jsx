@@ -3365,9 +3365,14 @@ export default function StatsDashboard() {
                     return (
                       <tr key={setter.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900" onClick={() => navigate(`/setter/${setter.id}`)} onMouseEnter={(e) => e.currentTarget.style.cursor = 'pointer'}>
+                          <a
+                            href={`/stats/${setter.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-medium text-gray-900 cursor-pointer no-underline hover:no-underline hover:text-gray-900"
+                          >
                             {setter.name}
-                          </div>
+                          </a>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <div className="text-sm text-gray-900">{setter.totalBooked}</div>

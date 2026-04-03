@@ -84,7 +84,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     const fetchOffers = async () => {
       const { data, error } = await supabase
         .from('offers')
-        .select('id, name, base_commission, PIF_commission')
+        .select('id, name, base_commission, payoff_commission')
         .eq('active', true)
         .order('name');
       
@@ -450,6 +450,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     const formData = new FormData(e.target);
     const outcomeValue = formData.get('outcome') || '';
     const pifCheckedSubmit = formData.get('pif') === 'on';
+    const paidSecondInstallment = formData.get('paid_second_installment') === 'on';
     if (mode === 'closer' && outcomeValue === 'yes' && lead?.showed_up === false) {
       setKajabiPurchaseRequiredError('Cannot mark as purchased when lead did not show up.');
       setIsSubmitting(false);
@@ -475,6 +476,29 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
       setNoOutcomeCategoryError('Please select a category (PRICE, AUTHORITY, CERTAINTY, or FIT) to save.');
       return;
     }
+    // Mirror closer dashboard multipay logic: "second installment paid" is valid only for
+    // linked multipay purchases with at least 2 payments made in Kajabi.
+    if (mode === 'closer' && outcomeValue === 'yes' && paidSecondInstallment) {
+      if (!selectedKajabiPurchaseId) {
+        setKajabiPurchaseRequiredError('Please link a Kajabi purchase before marking "Paid Second Installment".');
+        return;
+      }
+      const linkedPurchase = await fetchPurchase(selectedKajabiPurchaseId);
+      const attrs = linkedPurchase?.attributes || {};
+      const paymentType = String(attrs.payment_type || '').toLowerCase();
+      const rawPaymentsMade = attrs.multipay_payments_made;
+      const paymentsMade = rawPaymentsMade != null ? Number(rawPaymentsMade) : NaN;
+      const hasMultipayData = paymentType === 'multipay' || rawPaymentsMade != null;
+
+      if (!hasMultipayData) {
+        setKajabiPurchaseRequiredError('This linked Kajabi purchase has no multi-payment data, so "Paid Second Installment" cannot be checked.');
+        return;
+      }
+      if (!Number.isFinite(paymentsMade) || paymentsMade < 2) {
+        setKajabiPurchaseRequiredError(`Kajabi shows ${Number.isFinite(paymentsMade) ? paymentsMade : 0} payment(s) made. "Paid Second Installment" requires at least 2.`);
+        return;
+      }
+    }
 
     console.log(noteId);
     
@@ -491,7 +515,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
 
 
 // Calculate commission: base_commission - (percentage of discount)
-// Or PIF_commission if PIF checkbox is checked
+// Or payoff_commission if PIF checkbox is checked
 // Calculate when outcome is 'yes' or 'refund' and an offer is selected
 // For refunds, commission is the same as purchase but negative
 const discountValue = formData.get('discount') || '';
@@ -504,9 +528,9 @@ if ((outcomeValue === 'yes' || outcomeValue === 'refund') && offerId) {
   if (selectedOfferObj) {
     let calculatedCommission = null;
     
-    // If PIF checkbox is checked, use PIF_commission
-    if (pifChecked && selectedOfferObj.PIF_commission) {
-      calculatedCommission = selectedOfferObj.PIF_commission;
+    // If PIF checkbox is checked, use payoff_commission
+    if (pifChecked && selectedOfferObj.payoff_commission) {
+      calculatedCommission = selectedOfferObj.payoff_commission;
     } else if (selectedOfferObj.base_commission) {
       // Otherwise use base_commission with discount
       if (discountValue) {
@@ -568,7 +592,19 @@ if (outcomeValue === 'refund' && commission !== null && clawbackPercentage < 100
   }
 }
 
-const paidSecondInstallment = formData.get('paid_second_installment') === 'on';
+  // Payoff date from Kajabi payoff purchase (create-student / closer payoffs tab); cleared when no payoff linked
+  let payoffDateIso = null;
+  if (mode === 'closer' && selectedKajabiPayoffId) {
+    try {
+      const payoffPurchase = await fetchPurchase(selectedKajabiPayoffId);
+      const createdAt = payoffPurchase?.attributes?.created_at;
+      if (createdAt) {
+        payoffDateIso = new Date(createdAt).toISOString();
+      }
+    } catch (err) {
+      console.warn('[Modal] Could not fetch Kajabi payoff purchase for payoff_date:', err);
+    }
+  }
 
 const closerPayload = {
   outcome: formData.get('outcome') || null,
@@ -590,6 +626,7 @@ const closerPayload = {
   paid_second_installment: paidSecondInstallment,
   kajabi_purchase_id: selectedKajabiPurchaseId || null,
   kajabi_payoff_id: selectedKajabiPayoffId || null,
+  payoff_date: payoffDateIso,
   no_outcome_category: outcomeValue === 'no' ? (noOutcomeCategory || null) : null
 };
 

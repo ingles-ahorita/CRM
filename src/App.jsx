@@ -26,6 +26,7 @@ import CreateCallPage from './pages/CreateCallPage';
 import GoogleAnalyticsPage from './pages/GoogleAnalyticsPage';
 import MultipayCompletionPage from './pages/MultipayCompletionPage';
 import CloserAvailabilityPage from './pages/CloserAvailabilityPage';
+import CommissionOverviewPage from './pages/CommissionOverviewPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -104,6 +105,11 @@ function AppRoutes() {
       <Route path="/closer-availability" element={
         <ProtectedRoute>
           <CloserAvailabilityPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/commission-overview" element={
+        <ProtectedRoute>
+          <CommissionOverviewPage />
         </ProtectedRoute>
       } />
 
