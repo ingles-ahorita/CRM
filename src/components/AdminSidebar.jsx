@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Menu, LayoutDashboard, BarChart3, Calendar, TrendingUp, Gift, Users, Bot, List, Phone, LineChart, Clock } from 'lucide-react';
+import { Menu, LayoutDashboard, BarChart3, Calendar, TrendingUp, Gift, Users, Bot, List, Phone, LineChart, Clock, DollarSign } from 'lucide-react';
 import { useSimpleAuth } from '../useSimpleAuth';
 
 const menuItems = [
@@ -8,6 +8,7 @@ const menuItems = [
   { path: '/leads-list', label: 'All Leads', icon: List },
   { path: '/create-call', label: 'Create call', icon: Phone },
   { path: '/metrics', label: 'Metrics', icon: BarChart3 },
+  { path: '/commission-overview', label: 'Commission overview', icon: DollarSign },
   { path: '/utm-stats', label: 'Organic Stats', icon: TrendingUp },
   { path: '/schedules', label: 'Setters schedules', icon: Calendar },
   { path: '/offers', label: 'Offers', icon: Gift },
