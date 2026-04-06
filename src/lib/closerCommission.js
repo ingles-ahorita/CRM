@@ -3,6 +3,8 @@
  * Ensures both display identical commission values for a given month.
  *
  * Sale month (purchase_date): counts adjusted **base** commission only.
+ * Includes **gross** sale commission for outcome = refund (same row as sale, one outcome_log per call)
+ * so base + same-month refunds reconciles to net; refund rows store negative clawback in `commission`.
  * Payoff month (payoff_date): counts **payoff_commission − adjusted base** when a Kajabi payoff is linked.
  * If payoff_date is missing, the increment is attributed to the sale month (legacy).
  */
@@ -38,6 +40,43 @@ export function payoffIncrementFromOffer(offer, discount) {
   const payoff = Number(offer.payoff_commission);
   if (!Number.isFinite(payoff)) return null;
   return payoff - adj;
+}
+
+/**
+ * Base (sale month) contribution for outcome = yes — matches historical behavior.
+ */
+function baseContributionFromYesRow(row) {
+  const offer = row.offers;
+  if (row.kajabi_payoff_id && offer) {
+    const base = adjustedBaseCommissionFromOffer(offer, row.discount);
+    const inc = payoffIncrementFromOffer(offer, row.discount);
+    let sum = 0;
+    if (base != null) sum += base;
+    if (inc != null && !row.payoff_date) sum += inc;
+    return sum;
+  }
+  return Number(row.commission) || 0;
+}
+
+/**
+ * Gross sale commission for outcome = refund (stored `commission` is negative clawback).
+ * Uses same offer/payoff math as yes when possible; otherwise |commission| as fallback.
+ */
+function grossSaleAmountForRefundBaseRow(row) {
+  const offer = row.offers;
+  if (row.kajabi_payoff_id && offer) {
+    const base = adjustedBaseCommissionFromOffer(offer, row.discount);
+    const inc = payoffIncrementFromOffer(offer, row.discount);
+    let sum = 0;
+    if (base != null) sum += base;
+    if (inc != null && !row.payoff_date) sum += inc;
+    return sum;
+  }
+  if (offer && offer.base_commission != null) {
+    const adj = adjustedBaseCommissionFromOffer(offer, row.discount);
+    return adj != null ? adj : Math.abs(Number(row.commission) || 0);
+  }
+  return Math.abs(Number(row.commission) || 0);
 }
 
 /**
@@ -77,7 +116,9 @@ export async function getCloserCommissionBreakdown(closerId, monthKey) {
   return { total, base, payoffIncrements, secondInstallments, refunds, sameMonthRefunds };
 }
 
-/** Sum adjusted base in sale month; if payoff linked but no payoff_date, add increment here too. */
+/** Sum adjusted base in sale month; if payoff linked but no payoff_date, add increment here too.
+ * Includes gross sale amount for outcome = refund (purchase in month) so base + same-month refunds nets correctly.
+ */
 async function fetchBaseCommission(closerId, monthKey) {
   const [year, monthNum] = monthKey.split('-');
   const monthDate = new Date(Date.UTC(parseInt(year, 10), parseInt(monthNum, 10) - 1, 15));
@@ -87,9 +128,7 @@ async function fetchBaseCommission(closerId, monthKey) {
   const startDateISO = monthRange.startDate.toISOString();
   const endDateISO = monthRange.endDate.toISOString();
 
-  const { data, error } = await supabase
-    .from('outcome_log')
-    .select(`
+  const selectBase = `
       commission,
       discount,
       kajabi_payoff_id,
@@ -99,28 +138,42 @@ async function fetchBaseCommission(closerId, monthKey) {
         payoff_commission
       ),
       calls!inner!call_id(closer_id)
-    `)
-    .eq('outcome', 'yes')
-    .gte('purchase_date', startDateISO)
-    .lte('purchase_date', endDateISO);
+    `;
 
-  if (error) {
-    console.error('Error fetching base commission:', error);
+  const [{ data: yesData, error: yesError }, { data: refundData, error: refundError }] = await Promise.all([
+    supabase
+      .from('outcome_log')
+      .select(selectBase)
+      .eq('outcome', 'yes')
+      .gte('purchase_date', startDateISO)
+      .lte('purchase_date', endDateISO),
+    supabase
+      .from('outcome_log')
+      .select(selectBase)
+      .eq('outcome', 'refund')
+      .not('purchase_date', 'is', null)
+      .gte('purchase_date', startDateISO)
+      .lte('purchase_date', endDateISO),
+  ]);
+
+  if (yesError) {
+    console.error('Error fetching base commission (yes):', yesError);
+    return 0;
+  }
+  if (refundError) {
+    console.error('Error fetching base commission (refund gross):', refundError);
     return 0;
   }
 
-  const filtered = (data || []).filter((x) => x.calls?.closer_id === closerId);
+  const yesFiltered = (yesData || []).filter((x) => x.calls?.closer_id === closerId);
+  const refundFiltered = (refundData || []).filter((x) => x.calls?.closer_id === closerId);
+
   let sum = 0;
-  for (const row of filtered) {
-    const offer = row.offers;
-    if (row.kajabi_payoff_id && offer) {
-      const base = adjustedBaseCommissionFromOffer(offer, row.discount);
-      const inc = payoffIncrementFromOffer(offer, row.discount);
-      if (base != null) sum += base;
-      if (inc != null && !row.payoff_date) sum += inc;
-    } else {
-      sum += Number(row.commission) || 0;
-    }
+  for (const row of yesFiltered) {
+    sum += baseContributionFromYesRow(row);
+  }
+  for (const row of refundFiltered) {
+    sum += grossSaleAmountForRefundBaseRow(row);
   }
   return sum;
 }
