@@ -27,6 +27,7 @@ import GoogleAnalyticsPage from './pages/GoogleAnalyticsPage';
 import MultipayCompletionPage from './pages/MultipayCompletionPage';
 import CloserAvailabilityPage from './pages/CloserAvailabilityPage';
 import CommissionOverviewPage from './pages/CommissionOverviewPage';
+import RevenueOverviewPage from './pages/RevenueOverviewPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -110,6 +111,11 @@ function AppRoutes() {
       <Route path="/commission-overview" element={
         <ProtectedRoute>
           <CommissionOverviewPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/revenue" element={
+        <ProtectedRoute>
+          <RevenueOverviewPage />
         </ProtectedRoute>
       } />
 

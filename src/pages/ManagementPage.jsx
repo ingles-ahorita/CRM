@@ -17,9 +17,10 @@ import {getDailySlotsTotal} from '../utils/ocuppancy';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
 import {useSearchParams} from 'react-router-dom';
-import { getWeekBoundsUTC } from '../utils/dateHelpers';
+import { getWeekBoundsUTC, getMonthRangeInTimezone } from '../utils/dateHelpers';
 import { EndShiftModal } from './components/EndShiftModal';
 import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
+import { supabase } from '../lib/supabaseClient';
 
 export default function ManagementPage() {
   const { userId } = useSimpleAuth();
@@ -75,6 +76,59 @@ export default function ManagementPage() {
   });
 
   const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
+
+  const [revenueRange, setRevenueRange] = useState('lastWeek');
+  const [revenueCents, setRevenueCents] = useState(null);
+  const [revenueLoading, setRevenueLoading] = useState(true);
+
+  const getRevenueDateRange = (range) => {
+    const now = new Date();
+    if (range === 'currentWeek') {
+      const { weekStart, weekEnd } = getWeekBoundsUTC(now);
+      return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
+    }
+    if (range === 'lastWeek') {
+      const prevWeek = new Date(now);
+      prevWeek.setUTCDate(prevWeek.getUTCDate() - 7);
+      const { weekStart, weekEnd } = getWeekBoundsUTC(prevWeek);
+      return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
+    }
+    if (range === 'currentMonth') {
+      const monthRange = getMonthRangeInTimezone(now, 'UTC');
+      return { start: monthRange.startDate.toISOString(), end: monthRange.endDate.toISOString() };
+    }
+    if (range === 'lastMonth') {
+      const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+      const monthRange = getMonthRangeInTimezone(lastMonth, 'UTC');
+      return { start: monthRange.startDate.toISOString(), end: monthRange.endDate.toISOString() };
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const range = getRevenueDateRange(revenueRange);
+    if (!range) return;
+    setRevenueLoading(true);
+    const SUCCESS_STATES = ['paid', 'successful', 'success', 'complete', 'completed', 'succeeded'];
+    supabase
+      .from('kajabi_transactions')
+      .select('amount_in_cents, action, state')
+      .gte('created_at_kajabi', range.start)
+      .lte('created_at_kajabi', range.end)
+      .then(({ data }) => {
+        if (!data) { setRevenueCents(null); setRevenueLoading(false); return; }
+        const total = data.reduce((sum, t) => {
+          const action    = t.action ?? (t.amount_in_cents >= 0 ? 'charge' : 'refund');
+          const isRefund  = action === 'refund' || t.amount_in_cents < 0;
+          const isDispute = action === 'dispute';
+          const isFailed  = isDispute || (t.state != null && !SUCCESS_STATES.includes(t.state.toLowerCase()));
+          if (isRefund || isFailed) return sum;
+          return sum + Math.abs(t.amount_in_cents ?? 0);
+        }, 0);
+        setRevenueCents(total);
+        setRevenueLoading(false);
+      });
+  }, [revenueRange]);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -531,6 +585,42 @@ export default function ManagementPage() {
                   <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>From Calendly closers</div>
                 )}
               </div>
+            </div>
+
+            {/* Revenue card */}
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '12px 14px',
+                border: '1px solid #e5e7eb',
+                minWidth: 0,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Gross Revenue
+                </div>
+                <select
+                  value={revenueRange}
+                  onChange={(e) => setRevenueRange(e.target.value)}
+                  style={{ fontSize: '11px', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '2px 6px', background: '#f9fafb', cursor: 'pointer' }}
+                >
+                  <option value="lastWeek">Last week</option>
+                  <option value="currentWeek">This week</option>
+                  <option value="lastMonth">Last month</option>
+                  <option value="currentMonth">This month</option>
+                </select>
+              </div>
+              <div style={{ fontSize: '26px', fontWeight: '700', color: '#059669' }}>
+                {revenueLoading
+                  ? '…'
+                  : revenueCents != null
+                    ? `$${(revenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+                    : '—'}
+              </div>
+              <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>from Kajabi transactions</div>
             </div>
           </div>
 

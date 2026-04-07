@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -54,6 +54,7 @@ async function loadHandlers() {
   calendlyWebhookHandler = await loadHandler('./lib/api-handlers/calendly-webhook.js', 'calendly-webhook');
   kajabiWebhookHandler = await loadHandler('./lib/api-handlers/kajabi-webhook.js', 'kajabi-webhook');
   kajabiTokenHandler = await loadHandler('./lib/api-handlers/kajabi-token.js', 'kajabi-token');
+  syncKajabiHandler = await loadHandler('./lib/api-handlers/sync-kajabi.js', 'sync-kajabi');
   rubenShiftToggleHandler = await loadHandler('./lib/api-handlers/ruben-shift-toggle.js', 'ruben-shift-toggle');
   aiSetterHandler = await loadHandler('./lib/api-handlers/ai-setter.js', 'ai-setter');
   storeFbclidHandler = await loadHandler('./lib/api-handlers/store-fbclid.js', 'store-fbclid');
@@ -141,6 +142,11 @@ app.post('/api/kajabi-webhook', async (req, res) => {
 app.get('/api/kajabi-token', async (req, res) => {
   if (!kajabiTokenHandler) await loadHandlers();
   return adaptVercelHandler(kajabiTokenHandler)(req, res);
+});
+
+app.post('/api/sync-kajabi', async (req, res) => {
+  if (!syncKajabiHandler) await loadHandlers();
+  return adaptVercelHandler(syncKajabiHandler)(req, res);
 });
 
 app.post('/api/ruben-shift-toggle', async (req, res) => {

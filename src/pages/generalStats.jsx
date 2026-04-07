@@ -1977,6 +1977,26 @@ export default function StatsDashboard() {
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [revenueCents, setRevenueCents] = useState(null);
+
+  const fetchRevenue = async (start, end) => {
+    const SUCCESS_STATES = ['paid', 'successful', 'success', 'complete', 'completed', 'succeeded'];
+    const { data } = await supabase
+      .from('kajabi_transactions')
+      .select('amount_in_cents, action, state')
+      .gte('created_at_kajabi', start)
+      .lte('created_at_kajabi', end);
+    if (!data) return;
+    const total = data.reduce((sum, t) => {
+      const action   = t.action ?? (t.amount_in_cents >= 0 ? 'charge' : 'refund');
+      const isRefund  = action === 'refund' || t.amount_in_cents < 0;
+      const isDispute = action === 'dispute';
+      const isFailed  = isDispute || (t.state != null && !SUCCESS_STATES.includes(t.state.toLowerCase()));
+      if (isRefund || isFailed) return sum;
+      return sum + Math.abs(t.amount_in_cents ?? 0);
+    }, 0);
+    setRevenueCents(total);
+  };
 
   // Load stats on initial mount only
   useEffect(() => {
@@ -1987,6 +2007,7 @@ export default function StatsDashboard() {
       setLoading(false);
     };
     loadInitialStats();
+    fetchRevenue(startDate, endDate);
   }, []);
 
   const loadStats = async (customStartDate = null, customEndDate = null) => {
@@ -1996,6 +2017,7 @@ export default function StatsDashboard() {
     const data = await fetchStatsData(start, end);
     setStats(data);
     setLoading(false);
+    fetchRevenue(start, end);
   };
 
   useEffect(() => {
@@ -3206,6 +3228,21 @@ export default function StatsDashboard() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Revenue Summary */}
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-lg shadow text-white">
+            <h3 className="text-sm font-medium mb-2 opacity-90">Gross Revenue</h3>
+            <div className="text-3xl font-bold">
+              {revenueCents == null
+                ? '—'
+                : `$${(revenueCents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+            </div>
+            <div className="text-sm mt-2 opacity-90">
+              {totalPurchased > 0 && revenueCents != null
+                ? `$${Math.round(revenueCents / totalPurchased / 100).toLocaleString('en-US')} avg / deal`
+                : 'from Kajabi transactions'}
+            </div>
           </div>
         </div>
 
