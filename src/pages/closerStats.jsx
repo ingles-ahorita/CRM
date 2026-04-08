@@ -10,6 +10,9 @@ import {
   getCloserCommissionBreakdown,
   adjustedBaseCommissionFromOffer,
   payoffIncrementFromOffer,
+  shiftMonthKeyByMonths,
+  utcPurchaseDateBoundsForMonthKey,
+  monthRangeISOStringsForCreditMonth,
 } from '../lib/closerCommission';
 import { LOCK_IN_OFFER_DB_ID } from '../lib/specialOffers';
 
@@ -154,11 +157,8 @@ export default function CloserStatsDashboard() {
     } else if (viewMode === 'secondInstallments') {
       const loadSecondInstallmentsList = async () => {
         setSecondInstallmentsListLoading(true);
-        // Calculate previous month for second installments
-        const [year, monthNum] = selectedMonth.split('-');
-        const prevMonthDate = new Date(parseInt(year), parseInt(monthNum) - 2, 1);
-        const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-        const secondInstallmentsData = await fetchSecondInstallmentsList(closer, prevMonth);
+        // List rows credited in selectedMonth (sale month +1 default, or +2 when delay flag set)
+        const secondInstallmentsData = await fetchSecondInstallmentsList(closer, selectedMonth);
         setSecondInstallmentsList(secondInstallmentsData);
         setSecondInstallmentsListLoading(false);
       };
@@ -166,7 +166,7 @@ export default function CloserStatsDashboard() {
     }
   }, [closer, selectedMonth, viewMode]);
 
-  // Fetch second installments from previous month
+  // Second-installment count/commission credited in selectedMonth (default: prior-month sales; override: second_installment_pay_date in month)
   useEffect(() => {
     const loadSecondInstallments = async () => {
       setSecondInstallmentsLoading(true);
@@ -868,20 +868,18 @@ export default function CloserStatsDashboard() {
           <div className="bg-white rounded-lg shadow">
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-900">
-                Second Installments - {(() => {
-                  const [year, monthNum] = selectedMonth.split('-');
-                  const prevMonthDate = new Date(parseInt(year), parseInt(monthNum) - 2, 1);
-                  return `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-                })()}
+                Second Installments credited in {selectedMonth}
               </h2>
               <p className="text-sm text-gray-500 mt-1">
                 {secondInstallmentsList.length} second installment{secondInstallmentsList.length !== 1 ? 's' : ''} found
+                {' '}(default: sale in the prior calendar month; or any row whose{' '}
+                <code className="text-xs bg-gray-100 px-1 rounded">second_installment_pay_date</code> falls in this month)
               </p>
             </div>
             {secondInstallmentsListLoading ? (
               <div className="p-8 text-center text-gray-500">Loading second installments...</div>
             ) : secondInstallmentsList.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No second installments found for the previous month.</div>
+              <div className="p-8 text-center text-gray-500">No second installments credited in this month.</div>
             ) : (
               <div>
                 {/* Second Installments Log Header - matches general + Commission + Notes */}
@@ -1374,67 +1372,75 @@ async function fetchSameMonthRefundsCommission(closer = null, month = null) {
   return filtered.reduce((sum, x) => sum + (Number(x.commission) || 0), 0);
 }
 
-async function fetchSecondInstallments(closer = null, currentMonth = null) {
-  if (!currentMonth) return { count: 0, commission: 0 };
+async function fetchSecondInstallments(closer = null, creditMonthKey = null) {
+  if (!creditMonthKey) return { count: 0, commission: 0 };
 
-  // Calculate previous month
-  const [year, monthNum] = currentMonth.split('-');
-  const prevMonthDate = new Date(parseInt(year), parseInt(monthNum) - 2, 1);
-  const prevYear = prevMonthDate.getFullYear();
-  const prevMonth = prevMonthDate.getMonth() + 1;
-  
-  // Create dates at start and end of previous month in UTC
-  const startDate = new Date(Date.UTC(prevYear, prevMonth - 1, 1, 0, 0, 0, 0));
-  const endDate = new Date(Date.UTC(prevYear, prevMonth, 0, 23, 59, 59, 999));
-  
-  // Format dates for Supabase query
-  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
-  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
-  
-  // Query outcome_log for second installments from previous month (include commission)
-  let query = supabase
-    .from('outcome_log')
-    .select(`
+  const purchaseDefault = shiftMonthKeyByMonths(creditMonthKey, -1);
+  const bDefault = purchaseDefault ? utcPurchaseDateBoundsForMonthKey(purchaseDefault) : null;
+  const bOverride = monthRangeISOStringsForCreditMonth(creditMonthKey);
+  if (!bDefault || !bOverride) return { count: 0, commission: 0 };
+
+  const selectCols = `
       id,
       call_id,
       commission,
+      second_installment_pay_date,
       calls!inner!call_id (
         closer_id
       )
-    `)
-    .eq('outcome', 'yes')
-    .eq('paid_second_installment', true)
-    .gte('purchase_date', startDateISO)
-    .lte('purchase_date', endDateISO);
+    `;
 
-  // Filter by closer_id if specified
+  const runDefaultQuery = () => {
+    let q = supabase
+      .from('outcome_log')
+      .select(selectCols)
+      .eq('outcome', 'yes')
+      .eq('paid_second_installment', true)
+      .is('second_installment_pay_date', null)
+      .gte('purchase_date', bDefault.startDateISO)
+      .lte('purchase_date', bDefault.endDateISO);
+    if (closer) q = q.eq('calls.closer_id', closer);
+    return q;
+  };
+
+  const runOverrideQuery = () => {
+    let q = supabase
+      .from('outcome_log')
+      .select(selectCols)
+      .eq('outcome', 'yes')
+      .eq('paid_second_installment', true)
+      .not('second_installment_pay_date', 'is', null)
+      .gte('second_installment_pay_date', bOverride.startDateISO)
+      .lte('second_installment_pay_date', bOverride.endDateISO);
+    if (closer) q = q.eq('calls.closer_id', closer);
+    return q;
+  };
+
+  const [{ data: d1, error: e1 }, { data: d2, error: e2 }] = await Promise.all([
+    runDefaultQuery(),
+    runOverrideQuery(),
+  ]);
+
+  if (e1) console.error('Error fetching second installments (default timing):', e1);
+  if (e2) console.error('Error fetching second installments (pay date override):', e2);
+
+  let merged = [...(d1 || []), ...(d2 || [])];
   if (closer) {
-    query = query.eq('calls.closer_id', closer);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    console.error('Error fetching second installments:', error);
-    return { count: 0, commission: 0 };
-  }
-
-  // Filter by closer_id in JavaScript as well (in case join filter doesn't work)
-  let filteredData = data || [];
-  if (closer) {
-    filteredData = filteredData.filter(item => 
-      item.calls && item.calls.closer_id === closer
+    merged = merged.filter(
+      (item) => item.calls && String(item.calls.closer_id) === String(closer)
     );
   }
+  const byId = new Map();
+  for (const row of merged) {
+    if (row?.id != null) byId.set(row.id, row);
+  }
+  const filteredData = Array.from(byId.values());
 
-  // Calculate total commission
-  const totalCommission = filteredData.reduce((sum, item) => {
-    return sum + (item.commission || 0);
-  }, 0);
+  const totalCommission = filteredData.reduce((sum, item) => sum + (Number(item.commission) || 0), 0);
 
   return {
     count: filteredData.length,
-    commission: totalCommission
+    commission: totalCommission,
   };
 }
 
@@ -1804,23 +1810,15 @@ async function fetchRefundsList(closer = null, month = null) {
   return refunds;
 }
 
-async function fetchSecondInstallmentsList(closer = null, month = null) {
-  if (!month) return [];
+async function fetchSecondInstallmentsList(closer = null, creditMonthKey = null) {
+  if (!creditMonthKey) return [];
 
-  // Parse month (format: YYYY-MM)
-  const [year, monthNum] = month.split('-');
-  // Create dates at start and end of month in UTC
-  const startDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum) - 1, 1, 0, 0, 0, 0));
-  const endDate = new Date(Date.UTC(parseInt(year), parseInt(monthNum), 0, 23, 59, 59, 999));
-  
-  // Format dates for Supabase query
-  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
-  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
-  
-  // Query outcome_log for second installments
-  let query = supabase
-    .from('outcome_log')
-    .select(`
+  const purchaseDefault = shiftMonthKeyByMonths(creditMonthKey, -1);
+  const bDefault = purchaseDefault ? utcPurchaseDateBoundsForMonthKey(purchaseDefault) : null;
+  const bOverride = monthRangeISOStringsForCreditMonth(creditMonthKey);
+  if (!bDefault || !bOverride) return [];
+
+  const selectCols = `
       *,
       calls!inner!call_id (
         *,
@@ -1833,28 +1831,50 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
         name,
         base_commission
       )
-    `)
-    .eq('outcome', 'yes')
-    .eq('paid_second_installment', true)
-    .gte('purchase_date', startDateISO)
-    .lte('purchase_date', endDateISO)
-    .order('purchase_date', { ascending: false });
+    `;
 
-  // Filter by closer_id if specified
-  if (closer) {
-    query = query.eq('calls.closer_id', closer);
+  const runListDefault = () => {
+    let q = supabase
+      .from('outcome_log')
+      .select(selectCols)
+      .eq('outcome', 'yes')
+      .eq('paid_second_installment', true)
+      .is('second_installment_pay_date', null)
+      .gte('purchase_date', bDefault.startDateISO)
+      .lte('purchase_date', bDefault.endDateISO)
+      .order('purchase_date', { ascending: false });
+    if (closer) q = q.eq('calls.closer_id', closer);
+    return q;
+  };
+
+  const runListOverride = () => {
+    let q = supabase
+      .from('outcome_log')
+      .select(selectCols)
+      .eq('outcome', 'yes')
+      .eq('paid_second_installment', true)
+      .not('second_installment_pay_date', 'is', null)
+      .gte('second_installment_pay_date', bOverride.startDateISO)
+      .lte('second_installment_pay_date', bOverride.endDateISO)
+      .order('second_installment_pay_date', { ascending: false });
+    if (closer) q = q.eq('calls.closer_id', closer);
+    return q;
+  };
+
+  const [{ data: logsDefault, error: errDefault }, { data: logsOverride, error: errOverride }] =
+    await Promise.all([runListDefault(), runListOverride()]);
+
+  if (errDefault) console.error('Error fetching second installments list (default):', errDefault);
+  if (errOverride) console.error('Error fetching second installments list (pay date override):', errOverride);
+
+  const outcomeLogs = [...(logsDefault || []), ...(logsOverride || [])];
+  const byId = new Map();
+  for (const ol of outcomeLogs) {
+    if (ol?.id != null) byId.set(ol.id, ol);
   }
 
-  const { data: outcomeLogs, error } = await query;
-
-  if (error) {
-    console.error('Error fetching second installments list:', error);
-    return [];
-  }
-
-  // Transform outcome_log entries
-  let secondInstallments = (outcomeLogs || [])
-    .map(outcomeLog => ({
+  let secondInstallments = Array.from(byId.values())
+    .map((outcomeLog) => ({
       ...outcomeLog.calls,
       outcome_log_id: outcomeLog.id,
       purchase_date: outcomeLog.purchase_date,
@@ -1867,28 +1887,17 @@ async function fetchSecondInstallmentsList(closer = null, month = null) {
       kajabi_payoff_id: outcomeLog.kajabi_payoff_id ?? null,
       purchased_at: outcomeLog.purchase_date,
       purchased: true,
-      paid_second_installment: outcomeLog.paid_second_installment
+      paid_second_installment: outcomeLog.paid_second_installment,
+      second_installment_pay_date: outcomeLog.second_installment_pay_date,
     }))
-    .filter(item => {
-      // Filter by closer_id if specified
-      if (closer && item.closer_id !== closer) {
-        return false;
-      }
-      
-      // Filter by date range
-      if (!item.purchase_date) return false;
-      const purchaseDate = new Date(item.purchase_date);
-      const purchaseDateOnly = new Date(purchaseDate.getFullYear(), purchaseDate.getMonth(), purchaseDate.getDate());
-      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-      const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-      
-      return purchaseDateOnly >= startDateOnly && purchaseDateOnly <= endDateOnly;
+    .filter((item) => {
+      if (closer && String(item.closer_id) !== String(closer)) return false;
+      return !!item.purchase_date;
     });
-  
-  // Sort by purchase_date descending
+
   secondInstallments.sort((a, b) => {
-    const dateA = new Date(a.purchase_date);
-    const dateB = new Date(b.purchase_date);
+    const dateA = new Date(a.second_installment_pay_date || a.purchase_date);
+    const dateB = new Date(b.second_installment_pay_date || b.purchase_date);
     return dateB - dateA;
   });
 

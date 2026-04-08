@@ -7,9 +7,51 @@
  * so base + same-month refunds reconciles to net; refund rows store negative clawback in `commission`.
  * Payoff month (payoff_date): counts **payoff_commission − adjusted base** when a Kajabi payoff is linked.
  * If payoff_date is missing, the increment is attributed to the sale month (legacy).
+ *
+ * Second installment (paid_second_installment): duplicate base commission is credited in the calendar month **after**
+ * the sale by default (same UTC month bounds as before). If `second_installment_pay_date` is set, that installment
+ * is credited in the calendar month of that timestamp (DEFAULT_TIMEZONE), instead of the default rule.
  */
 import { supabase } from './supabaseClient';
 import * as DateHelpers from '../utils/dateHelpers';
+
+/** URL params are strings; Supabase may return numeric closer_id — strict === would drop rows. */
+function outcomeRowMatchesCloser(row, closerId) {
+  return String(row?.calls?.closer_id) === String(closerId);
+}
+
+/** Start/end ISO range for a commission credit month in DEFAULT_TIMEZONE (same idea as payoff_date filtering). */
+export function monthRangeISOStringsForCreditMonth(monthKey) {
+  const [year, monthNum] = monthKey.split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(monthNum)) return null;
+  const monthDate = new Date(Date.UTC(year, monthNum - 1, 15));
+  const monthRange = DateHelpers.getMonthRangeInTimezone(monthDate, DateHelpers.DEFAULT_TIMEZONE);
+  if (!monthRange) return null;
+  return {
+    startDateISO: monthRange.startDate.toISOString(),
+    endDateISO: monthRange.endDate.toISOString(),
+  };
+}
+
+/** Shift calendar month key `YYYY-MM` by deltaMonths (e.g. -1 = previous month). */
+export function shiftMonthKeyByMonths(monthKey, deltaMonths) {
+  const [y, m] = monthKey.split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return null;
+  const d = new Date(y, m - 1 + deltaMonths, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** UTC day bounds for a calendar month (matches legacy second-installment queries). */
+export function utcPurchaseDateBoundsForMonthKey(monthKey) {
+  const [year, monthNum] = monthKey.split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(monthNum)) return null;
+  const startDate = new Date(Date.UTC(year, monthNum - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(year, monthNum, 0, 23, 59, 59, 999));
+  return {
+    startDateISO: `${startDate.toISOString().split('T')[0]}T00:00:00.000Z`,
+    endDateISO: `${endDate.toISOString().split('T')[0]}T23:59:59.999Z`,
+  };
+}
 
 /**
  * Same formula as Modal when PIF is off: base minus discount %.
@@ -165,8 +207,8 @@ async function fetchBaseCommission(closerId, monthKey) {
     return 0;
   }
 
-  const yesFiltered = (yesData || []).filter((x) => x.calls?.closer_id === closerId);
-  const refundFiltered = (refundData || []).filter((x) => x.calls?.closer_id === closerId);
+  const yesFiltered = (yesData || []).filter((x) => outcomeRowMatchesCloser(x, closerId));
+  const refundFiltered = (refundData || []).filter((x) => outcomeRowMatchesCloser(x, closerId));
 
   let sum = 0;
   for (const row of yesFiltered) {
@@ -210,7 +252,7 @@ async function fetchPayoffIncrementCommission(closerId, monthKey) {
     return 0;
   }
 
-  const filtered = (data || []).filter((x) => x.calls?.closer_id === closerId);
+  const filtered = (data || []).filter((x) => outcomeRowMatchesCloser(x, closerId));
   let sum = 0;
   for (const row of filtered) {
     const offer = row.offers;
@@ -220,31 +262,43 @@ async function fetchPayoffIncrementCommission(closerId, monthKey) {
   return sum;
 }
 
-async function fetchSecondInstallmentsCommission(closerId, monthKey) {
-  const [year, monthNum] = monthKey.split('-');
-  const prevMonthDate = new Date(parseInt(year, 10), parseInt(monthNum, 10) - 2, 1);
-  const prevYear = prevMonthDate.getFullYear();
-  const prevMonth = prevMonthDate.getMonth() + 1;
+async function fetchSecondInstallmentsCommission(closerId, creditMonthKey) {
+  const purchaseMonthDefault = shiftMonthKeyByMonths(creditMonthKey, -1);
+  const boundsDefault = purchaseMonthDefault ? utcPurchaseDateBoundsForMonthKey(purchaseMonthDefault) : null;
+  const boundsOverride = monthRangeISOStringsForCreditMonth(creditMonthKey);
+  if (!boundsDefault || !boundsOverride) return 0;
 
-  const startDate = new Date(Date.UTC(prevYear, prevMonth - 1, 1, 0, 0, 0, 0));
-  const endDate = new Date(Date.UTC(prevYear, prevMonth, 0, 23, 59, 59, 999));
-  const startDateISO = startDate.toISOString().split('T')[0] + 'T00:00:00.000Z';
-  const endDateISO = endDate.toISOString().split('T')[0] + 'T23:59:59.999Z';
+  const selectCols = 'commission, calls!inner!call_id(closer_id)';
 
-  const { data, error } = await supabase
-    .from('outcome_log')
-    .select('commission, calls!inner!call_id(closer_id)')
-    .eq('outcome', 'yes')
-    .eq('paid_second_installment', true)
-    .gte('purchase_date', startDateISO)
-    .lte('purchase_date', endDateISO);
+  const [{ data: dataDefault, error: errDefault }, { data: dataOverride, error: errOverride }] =
+    await Promise.all([
+      supabase
+        .from('outcome_log')
+        .select(selectCols)
+        .eq('outcome', 'yes')
+        .eq('paid_second_installment', true)
+        .is('second_installment_pay_date', null)
+        .gte('purchase_date', boundsDefault.startDateISO)
+        .lte('purchase_date', boundsDefault.endDateISO),
+      supabase
+        .from('outcome_log')
+        .select(selectCols)
+        .eq('outcome', 'yes')
+        .eq('paid_second_installment', true)
+        .not('second_installment_pay_date', 'is', null)
+        .gte('second_installment_pay_date', boundsOverride.startDateISO)
+        .lte('second_installment_pay_date', boundsOverride.endDateISO),
+    ]);
 
-  if (error) {
-    console.error('Error fetching second installments commission:', error);
-    return 0;
+  if (errDefault) {
+    console.error('Error fetching second installments commission (default timing):', errDefault);
+  }
+  if (errOverride) {
+    console.error('Error fetching second installments commission (pay date override):', errOverride);
   }
 
-  const filtered = (data || []).filter((x) => x.calls?.closer_id === closerId);
+  const rows = [...(dataDefault || []), ...(dataOverride || [])];
+  const filtered = rows.filter((x) => outcomeRowMatchesCloser(x, closerId));
   return filtered.reduce((sum, x) => sum + (Number(x.commission) || 0), 0);
 }
 
@@ -268,7 +322,7 @@ async function fetchRefundsCommission(closerId, monthKey) {
     return 0;
   }
 
-  const filtered = (data || []).filter((x) => x.calls?.closer_id === closerId);
+  const filtered = (data || []).filter((x) => outcomeRowMatchesCloser(x, closerId));
   const excludingSameMonth = filtered.filter(
     (x) =>
       !x.purchase_date ||
@@ -299,6 +353,6 @@ async function fetchSameMonthRefundsCommission(closerId, monthKey) {
     return 0;
   }
 
-  const filtered = (data || []).filter((x) => x.calls?.closer_id === closerId);
+  const filtered = (data || []).filter((x) => outcomeRowMatchesCloser(x, closerId));
   return filtered.reduce((sum, x) => sum + (Number(x.commission) || 0), 0);
 }

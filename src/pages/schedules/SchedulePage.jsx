@@ -117,15 +117,20 @@ export default function SchedulePage() {
       const day = String(date.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     }
-    
-    // Convert date to the specified timezone
-    const dateStr = date.toLocaleDateString('en-CA', { 
+
+    // Use formatToParts instead of locale string shape to always build YYYY-MM-DD.
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    });
-    return dateStr; // Returns YYYY-MM-DD format
+    }).formatToParts(date);
+
+    const year = parts.find((p) => p.type === 'year')?.value;
+    const month = parts.find((p) => p.type === 'month')?.value;
+    const day = parts.find((p) => p.type === 'day')?.value;
+
+    return `${year}-${month}-${day}`;
   };
 
   // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion) - kept for backward compatibility
