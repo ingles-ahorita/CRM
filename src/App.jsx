@@ -28,6 +28,7 @@ import MultipayCompletionPage from './pages/MultipayCompletionPage';
 import CloserAvailabilityPage from './pages/CloserAvailabilityPage';
 import CommissionOverviewPage from './pages/CommissionOverviewPage';
 import RevenueOverviewPage from './pages/RevenueOverviewPage';
+import AIChatPage from './pages/AIChatPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -116,6 +117,11 @@ function AppRoutes() {
       <Route path="/revenue" element={
         <ProtectedRoute>
           <RevenueOverviewPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/ai-chat" element={
+        <ProtectedRoute>
+          <AIChatPage />
         </ProtectedRoute>
       } />
 
