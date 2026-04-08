@@ -23,10 +23,13 @@ export default function AIChatPage() {
     setError(null);
 
     try {
+      // Build OpenAI-format history from current display messages (before appending the new user message)
+      const history = messages.map((m) => ({ role: m.role, content: m.text }));
+
       const res = await fetch('/api/crm-ai-query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q }),
+        body: JSON.stringify({ question: q, history }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
