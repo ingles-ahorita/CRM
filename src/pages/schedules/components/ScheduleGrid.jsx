@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Edit2, Trash2, Clock, ArrowDown, Pencil } from 'lucide-react';
+import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 // Generate colors for setters
 const generateColors = (count) => {
@@ -20,6 +21,9 @@ const generateColors = (count) => {
   }
   return result;
 };
+
+/** DB times + specific_date are interpreted as UTC civil calendar + wall clock. */
+const SCHEDULE_STORAGE_TZ = 'UTC';
 
 export default function ScheduleGrid({ weekDates, schedules, setters, onEditSchedule, onDeleteSchedule, timezone = 'local' }) {
   const [hoveredCell, setHoveredCell] = useState(null);
@@ -60,6 +64,14 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
     return formatDateInTimezone(date, timezone);
   };
 
+  /** Calendar YYYY-MM-DD + 1 day (for overnight shift end in source TZ). */
+  const addOneCalendarDay = (ymd) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+  };
+
   // Convert time string (HH:MM) to minutes since midnight
   const timeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
@@ -67,191 +79,102 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
     return hours * 60 + minutes;
   };
 
-  // Convert minutes since midnight to time string
-  const minutesToTime = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  const targetTimezone = timezone === 'local'
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+    : timezone;
+
+  /** YYYY-MM-DD per column in the *view* timezone (matches header under each weekday). */
+  const weekDayKeys = weekDates.map((d) => formatDateLocal(d));
+
+  /**
+   * UTC calendar date for recurring shifts on this column: same civil day as the column header
+   * (noon in view TZ → YMD in UTC), not local-midnight Date skew.
+   */
+  const utcStorageYmdFromViewColumnYmd = (viewYmd) => {
+    if (!viewYmd) return '';
+    const noonUtc = fromZonedTime(`${viewYmd}T12:00:00`, targetTimezone);
+    return formatInTimeZone(noonUtc, SCHEDULE_STORAGE_TZ, 'yyyy-MM-dd');
   };
 
-  // Get day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
-  const getDayOfWeek = (date) => {
-    const day = date.getDay();
-    return day === 0 ? 6 : day - 1; // Convert to Monday=0, Sunday=6
-  };
+  const utcStorageYmdForColumnDayIndex = (dayIndex) =>
+    utcStorageYmdFromViewColumnYmd(weekDayKeys[dayIndex]);
 
-  // Build a map of which setter is scheduled for each hour/day
+  // Build a map of which setter is scheduled for each hour/day in the selected timezone.
   const buildScheduleMap = () => {
     const scheduleMap = {}; // { dayIndex_hour: { setterId, scheduleId, startTime, endTime } }
-    
-    schedules.forEach(schedule => {
-      let dayIndex;
-      
-      if (schedule.specific_date) {
-        // Date-specific override - find which day of the week it falls on
-        // Use the date string directly, don't convert to Date object to avoid timezone issues
-        const scheduleDateStr = schedule.specific_date; // Already in YYYY-MM-DD format
-        dayIndex = weekDates.findIndex(d => {
-          const dStr = formatDateLocal(d);
-          return dStr === scheduleDateStr;
-        });
-        
-        if (dayIndex === -1) return; // Not in this week
-      } else {
-        // Recurring schedule - convert from database format (0=Sunday) to grid format (0=Monday)
-        // Database: 0=Sunday, 1=Monday, ..., 6=Saturday
-        // Grid: 0=Monday, 1=Tuesday, ..., 6=Sunday
-        const dbDay = schedule.day_of_week;
-        dayIndex = dbDay === 0 ? 6 : dbDay - 1;
-      }
 
+    const addOneDay = addOneCalendarDay;
+    const addDays = (ymd, days) => {
+      const [y, m, d] = ymd.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      dt.setUTCDate(dt.getUTCDate() + days);
+      return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+    };
+
+    schedules.forEach((schedule) => {
+      const isOverride = schedule.specific_date !== null;
       const startMinutes = timeToMinutes(schedule.start_time);
       const endMinutes = timeToMinutes(schedule.end_time);
-      const isOvernight = endMinutes <= startMinutes; // End time is before or equal to start = overnight shift
-      const effectiveEndMinutes = isOvernight ? endMinutes + (24 * 60) : endMinutes; // Add 24 hours if overnight
-      
-      // Mark each hour that this schedule covers
-      for (let hour = 0; hour < 24; hour++) {
-        const hourStartMinutes = hour * 60;
-        const hourEndMinutes = (hour + 1) * 60;
-        
-        // Check if this hour overlaps with the schedule
-        let overlaps = false;
-        if (isOvernight) {
-          // Overnight shift: on the start day, only show hours from start to 23:59
-          // The end part (00:00 to end) will be shown on the next day
-          overlaps = hourStartMinutes >= startMinutes;
-        } else {
-          // Same-day shift: normal overlap check
-          overlaps = hourStartMinutes < effectiveEndMinutes && hourEndMinutes > startMinutes;
-        }
-        
-        if (overlaps) {
-          const key = `${dayIndex}_${hour}`;
-          const isOverride = schedule.specific_date !== null;
-          
-          // Priority: Date-specific overrides always take priority over recurring schedules
-          if (!scheduleMap[key]) {
-            // No existing schedule, add this one
-            scheduleMap[key] = {
-              setterId: schedule.setter_id,
-              setterName: schedule.setters?.name || 'Unknown',
-              scheduleId: schedule.id,
-              startTime: schedule.start_time,
-              endTime: schedule.end_time,
-              isOverride: isOverride,
-              isOvernight: isOvernight,
-              beforeShift: schedule.before_shift || false,
-              schedule: schedule, // Store full schedule object
-              date: schedule.specific_date || formatDateLocal(weekDates[dayIndex]) // Date for this occurrence
-            };
-          } else {
-            // There's already a schedule in this slot
-            const existingIsOverride = scheduleMap[key].isOverride;
-            
-            if (isOverride && !existingIsOverride) {
-              // New schedule is an override, existing is recurring - override takes priority
-              scheduleMap[key] = {
-                setterId: schedule.setter_id,
-                setterName: schedule.setters?.name || 'Unknown',
-                scheduleId: schedule.id,
-                startTime: schedule.start_time,
-                endTime: schedule.end_time,
-                isOverride: isOverride,
-                isOvernight: isOvernight,
-                beforeShift: schedule.before_shift || false,
-                schedule: schedule,
-                date: schedule.specific_date || formatDateLocal(weekDates[dayIndex])
-              };
-            } else if (!isOverride && existingIsOverride) {
-              // New schedule is recurring, existing is override - keep existing override
-              // Do nothing, keep the existing override
-            } else {
-              // Both are same type (both overrides or both recurring) - keep the one that starts earlier
-              if (timeToMinutes(schedule.start_time) < timeToMinutes(scheduleMap[key].startTime)) {
-                scheduleMap[key] = {
-                  setterId: schedule.setter_id,
-                  setterName: schedule.setters?.name || 'Unknown',
-                  scheduleId: schedule.id,
-                  startTime: schedule.start_time,
-                  endTime: schedule.end_time,
-                  isOverride: isOverride,
-                  isOvernight: isOvernight,
-                  schedule: schedule,
-                  date: schedule.specific_date || formatDateLocal(weekDates[dayIndex])
-                };
-              }
-            }
-          }
+      const isOvernight = endMinutes <= startMinutes;
+
+      let sourceDateCandidates = [];
+      if (isOverride && schedule.specific_date) {
+        sourceDateCandidates = [schedule.specific_date];
+      } else {
+        const dbDay = schedule.day_of_week;
+        const gridDayIndex = dbDay === 0 ? 6 : dbDay - 1; // Monday=0 ... Sunday=6
+        const currentWeekSourceDate = utcStorageYmdFromViewColumnYmd(weekDayKeys[gridDayIndex]);
+        sourceDateCandidates = [currentWeekSourceDate];
+        // Week starts Monday. To render Monday early-hours correctly, include the prior Sunday
+        // recurring occurrence so its overnight spill appears in this week's Monday column.
+        if (isOvernight && gridDayIndex === 6) {
+          sourceDateCandidates.push(addDays(currentWeekSourceDate, -7));
         }
       }
-      
-      // If it's an overnight shift, also mark hours on the next day
-      if (isOvernight) {
-        const nextDayIndex = (dayIndex + 1) % 7; // Wrap around to Monday if Sunday
-        for (let hour = 0; hour < 24; hour++) {
-          const hourStartMinutes = hour * 60;
-          const hourEndMinutes = (hour + 1) * 60;
-          
-          // Hours from 00:00 to end time on next day
-          if (hourEndMinutes <= endMinutes) {
-            const key = `${nextDayIndex}_${hour}`;
-            const isOverride = schedule.specific_date !== null;
-            
-            // Priority: Date-specific overrides always take priority over recurring schedules
-            if (!scheduleMap[key]) {
+      for (const sourceDateYMD of sourceDateCandidates) {
+        if (!sourceDateYMD) continue;
+
+        const sourceEndDateYMD = isOvernight ? addOneDay(sourceDateYMD) : sourceDateYMD;
+        const startUtc = fromZonedTime(`${sourceDateYMD}T${schedule.start_time}`, SCHEDULE_STORAGE_TZ);
+        const endUtc = fromZonedTime(`${sourceEndDateYMD}T${schedule.end_time}`, SCHEDULE_STORAGE_TZ);
+        if (!(startUtc instanceof Date) || !(endUtc instanceof Date) || endUtc <= startUtc) continue;
+
+        for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+          const dayKey = weekDayKeys[dayIndex];
+          for (let hour = 0; hour < 24; hour++) {
+            const hh = String(hour).padStart(2, '0');
+            const cellStartUtc = fromZonedTime(`${dayKey}T${hh}:00:00`, targetTimezone);
+            const cellEndUtc = new Date(cellStartUtc.getTime() + 60 * 60 * 1000);
+            const overlaps = cellStartUtc < endUtc && cellEndUtc > startUtc;
+            if (!overlaps) continue;
+
+            const key = `${dayIndex}_${hour}`;
+            const existing = scheduleMap[key];
+            const shouldReplace =
+              !existing ||
+              (isOverride && !existing.isOverride) ||
+              (isOverride === existing.isOverride &&
+                timeToMinutes(schedule.start_time) < timeToMinutes(existing.startTime));
+
+            if (shouldReplace) {
               scheduleMap[key] = {
                 setterId: schedule.setter_id,
                 setterName: schedule.setters?.name || 'Unknown',
                 scheduleId: schedule.id,
                 startTime: schedule.start_time,
                 endTime: schedule.end_time,
-                isOverride: isOverride,
-                isOvernight: true,
-                schedule: schedule,
-                date: schedule.specific_date || formatDateLocal(weekDates[nextDayIndex])
+                isOverride,
+                isOvernight,
+                beforeShift: schedule.before_shift || false,
+                schedule,
+                date: sourceDateYMD, // Keep source date for edit/create-override flows.
               };
-            } else {
-              const existingIsOverride = scheduleMap[key].isOverride;
-              
-              if (isOverride && !existingIsOverride) {
-                // New schedule is an override, existing is recurring - override takes priority
-                scheduleMap[key] = {
-                  setterId: schedule.setter_id,
-                  setterName: schedule.setters?.name || 'Unknown',
-                  scheduleId: schedule.id,
-                  startTime: schedule.start_time,
-                  endTime: schedule.end_time,
-                  isOverride: isOverride,
-                  isOvernight: true,
-                  schedule: schedule,
-                  date: schedule.specific_date || formatDateLocal(weekDates[nextDayIndex])
-                };
-              } else if (!isOverride && existingIsOverride) {
-                // New schedule is recurring, existing is override - keep existing override
-                // Do nothing
-              } else {
-                // Both are same type - keep the one that starts earlier
-                if (timeToMinutes(schedule.start_time) < timeToMinutes(scheduleMap[key].startTime)) {
-                  scheduleMap[key] = {
-                    setterId: schedule.setter_id,
-                    setterName: schedule.setters?.name || 'Unknown',
-                    scheduleId: schedule.id,
-                    startTime: schedule.start_time,
-                    endTime: schedule.end_time,
-                    isOverride: isOverride,
-                    isOvernight: true,
-                    schedule: schedule,
-                    date: schedule.specific_date || formatDateLocal(weekDates[nextDayIndex])
-                  };
-                }
-              }
             }
           }
         }
       }
     });
-    
+
     return scheduleMap;
   };
 
@@ -263,7 +186,7 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
     const schedule = scheduleMap[key];
     if (schedule) {
       // Update the date to match the actual cell that was clicked
-      const clickedDate = formatDateLocal(weekDates[dayIndex]);
+      const clickedDate = utcStorageYmdForColumnDayIndex(dayIndex);
       const updatedSchedule = {
         ...schedule,
         date: clickedDate,
@@ -273,13 +196,42 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
     }
   };
 
-  const formatTime = (timeStr) => {
+  const formatTime = (timeStr, scheduleDate) => {
     if (!timeStr) return '';
-    const [hours, minutes] = timeStr.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
+    const hhmm = timeStr.slice(0, 5);
+    const [hours, minutes] = hhmm.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return hhmm;
+
+    const sourceDate = scheduleDate || utcStorageYmdForColumnDayIndex(0);
+    const utcMoment = fromZonedTime(
+      `${sourceDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`,
+      SCHEDULE_STORAGE_TZ
+    );
+    const targetTz = timezone === 'local'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : timezone;
+
+    return formatInTimeZone(utcMoment, targetTz, 'h:mm a');
+  };
+
+  /** Interpret stored UTC wall time on calendarDateYMD; display in setter TZ (or UTC if unset). */
+  const formatTimeInSetterTz = (timeStr, calendarDateYMD, setterTimezone) => {
+    if (!timeStr) return '';
+    const hhmm = timeStr.slice(0, 5);
+    const [hours, minutes] = hhmm.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return hhmm;
+
+    const sourceDate = calendarDateYMD || utcStorageYmdForColumnDayIndex(0);
+    const tz =
+      setterTimezone && String(setterTimezone).trim()
+        ? String(setterTimezone).trim()
+        : SCHEDULE_STORAGE_TZ;
+
+    const utcMoment = fromZonedTime(
+      `${sourceDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`,
+      SCHEDULE_STORAGE_TZ
+    );
+    return formatInTimeZone(utcMoment, tz, 'h:mm a');
   };
 
   // Function to darken a hex color
@@ -433,8 +385,23 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
                         {schedule.setterName}
                       </div>
                       <div style={{ fontSize: '11px', opacity: 0.9, marginTop: '4px' }}>
-                        {formatTime(schedule.startTime)} - {formatTime(schedule.endTime)}
+                        {formatTimeInSetterTz(
+                          schedule.startTime,
+                          schedule.date,
+                          schedule.schedule?.setters?.timezone
+                        )}{' '}
+                        -{' '}
+                        {formatTimeInSetterTz(
+                          schedule.endTime,
+                          schedule.isOvernight ? addOneCalendarDay(schedule.date) : schedule.date,
+                          schedule.schedule?.setters?.timezone
+                        )}
                         {schedule.isOvernight && ' (next day)'}
+                      </div>
+                      <div style={{ fontSize: '10px', opacity: 0.75, marginTop: '2px' }}>
+                        {schedule.schedule?.setters?.timezone?.trim()
+                          ? `Setter TZ: ${schedule.schedule.setters.timezone.trim()}`
+                          : `Setter TZ: ${SCHEDULE_STORAGE_TZ} (default)`}
                       </div>
                       {schedule.isOverride && (
                         <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '4px', fontStyle: 'italic' }}>
@@ -482,7 +449,7 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
               {selectedSchedule.setterName}
             </div>
             <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-              {formatTime(selectedSchedule.startTime)} - {formatTime(selectedSchedule.endTime)}
+              {formatTime(selectedSchedule.startTime, selectedSchedule.date)} - {formatTime(selectedSchedule.endTime, selectedSchedule.date)}
               {selectedSchedule.isOvernight && ' (overnight - ends next day)'}
             </div>
             {selectedSchedule.beforeShift && (
@@ -499,7 +466,11 @@ export default function ScheduleGrid({ weekDates, schedules, setters, onEditSche
                   // Pass the date for this occurrence if it's a recurring schedule
                   // Use the date from the clicked cell, not the stored date
                   const dateForOverride = schedule.specific_date ? null : selectedSchedule.date;
-                  onEditSchedule(schedule, dateForOverride);
+                  const viewOccurrenceYmd =
+                    selectedSchedule.clickedDayIndex != null
+                      ? formatDateLocal(weekDates[selectedSchedule.clickedDayIndex])
+                      : undefined;
+                  onEditSchedule(schedule, dateForOverride, viewOccurrenceYmd);
                   setSelectedSchedule(null);
                 }
               }}

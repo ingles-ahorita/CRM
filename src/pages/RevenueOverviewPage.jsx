@@ -66,10 +66,10 @@ export default function RevenueOverviewPage() {
       // 2. Fetch transactions in range (these are the actual cash events)
       const { data: txData, error: txErr } = await supabase
         .from('kajabi_transactions')
-        .select('kajabi_transaction_id, kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, action, state, amount_in_cents, currency, created_at_kajabi, raw')
-        .gte('created_at_kajabi', start)
-        .lte('created_at_kajabi', end)
-        .order('created_at_kajabi', { ascending: false });
+        .select('kajabi_transaction_id, kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, action, state, amount_in_cents, currency, created_at_kajabi, effective_date, raw')
+        .gte('effective_date', start)
+        .lte('effective_date', end)
+        .order('effective_date', { ascending: false });
 
       if (txErr) throw txErr;
       if (!txData || txData.length === 0) {
@@ -151,7 +151,7 @@ export default function RevenueOverviewPage() {
           isOrphan,
           amountCents:   t.amount_in_cents ?? 0,
           currency:      t.currency ?? 'USD',
-          createdAt:     t.created_at_kajabi,
+          createdAt:     t.effective_date ?? t.created_at_kajabi,
           offerName:     resolvedOffer?.name ?? (effectiveOfferId ? `Offer ${effectiveOfferId}` : '—'),
           closerName:    closer ?? (isOrphan ? '(recurring)' : '—'),
           paymentType:   purchase?.payment_type ?? null,

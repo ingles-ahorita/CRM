@@ -1,41 +1,20 @@
 import { supabase } from '../lib/supabaseClient.js';
 
 /**
- * Gets the current date and time components in Spain timezone (CET/CEST)
- * @returns {Object} Object with date, time, dayOfWeek, and minutes
+ * Gets current UTC date/time components.
+ * Using UTC avoids DST shifts from local country timezone changes.
  */
-function getSpainTime() {
-  // Spain uses Europe/Madrid timezone (CET/CEST)
+function getUTCTime() {
   const now = new Date();
-  // Get Spain time as a formatted string, then parse it
-  const spainTimeStr = now.toLocaleString('en-US', { 
-    timeZone: 'Europe/Madrid',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  });
-  
-  // Parse the formatted string (format: MM/DD/YYYY, HH:MM:SS)
-  const [datePart, timePart] = spainTimeStr.split(', ');
-  const [month, day, year] = datePart.split('/');
-  const [hours, minutes, seconds] = timePart.split(':');
-  
-  // Create a date object in local time (but represents Spain time)
-  const spainDate = new Date(year, month - 1, day, hours, minutes, seconds);
-  
   return {
-    date: spainDate,
-    year: parseInt(year),
-    month: parseInt(month),
-    day: parseInt(day),
-    hours: parseInt(hours),
-    minutes: parseInt(minutes),
-    seconds: parseInt(seconds),
-    dayOfWeek: spainDate.getDay()
+    date: now,
+    year: now.getUTCFullYear(),
+    month: now.getUTCMonth() + 1,
+    day: now.getUTCDate(),
+    hours: now.getUTCHours(),
+    minutes: now.getUTCMinutes(),
+    seconds: now.getUTCSeconds(),
+    dayOfWeek: now.getUTCDay(),
   };
 }
 
@@ -53,14 +32,14 @@ function timeToMinutes(timeStr) {
 }
 
 /**
- * Formats a date as YYYY-MM-DD in local time (no timezone conversion)
+ * Formats a date as YYYY-MM-DD in UTC
  * @param {Date} date - Date object
  * @returns {string} Date string in YYYY-MM-DD format
  */
-function formatDateLocal(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+function formatDateUTC(date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
@@ -98,17 +77,17 @@ function timeInRange(checkMinutes, startTime, endTime, isStartDay = true) {
  */
 export async function getCurrentSetterOnShift() {
   try {
-    // Get current time in Spain timezone
-    const spainNow = getSpainTime();
-    const currentDate = `${spainNow.year}-${String(spainNow.month).padStart(2, '0')}-${String(spainNow.day).padStart(2, '0')}`;
-    const currentDayOfWeek = spainNow.dayOfWeek; // 0=Sunday, 1=Monday, etc.
-    const currentTime = `${String(spainNow.hours).padStart(2, '0')}:${String(spainNow.minutes).padStart(2, '0')}:00`;
+    // Get current time in UTC
+    const utcNow = getUTCTime();
+    const currentDate = `${utcNow.year}-${String(utcNow.month).padStart(2, '0')}-${String(utcNow.day).padStart(2, '0')}`;
+    const currentDayOfWeek = utcNow.dayOfWeek; // 0=Sunday, 1=Monday, etc.
+    const currentTime = `${String(utcNow.hours).padStart(2, '0')}:${String(utcNow.minutes).padStart(2, '0')}:00`;
     const currentMinutes = timeToMinutes(currentTime);
 
     // Calculate next day for overnight shift checking
-    const nextDate = new Date(spainNow.year, spainNow.month - 1, spainNow.day);
-    nextDate.setDate(nextDate.getDate() + 1);
-    const nextDateStr = formatDateLocal(nextDate);
+    const nextDate = new Date(Date.UTC(utcNow.year, utcNow.month - 1, utcNow.day));
+    nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    const nextDateStr = formatDateUTC(nextDate);
 
     // First, check for date-specific overrides on today
     const { data: todayOverrides, error: todayError } = await supabase
