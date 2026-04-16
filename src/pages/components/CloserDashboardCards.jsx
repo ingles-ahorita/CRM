@@ -18,6 +18,9 @@ export default function CloserDashboardCards({ closer }) {
   const [multipayPurchases, setMultipayPurchases] = useState([]);
   const [last5ShowUps, setLast5ShowUps] = useState([]);
   const [yesterdayShowUpRate, setYesterdayShowUpRate] = useState({ rate: null, showedUp: 0, confirmed: 0 });
+  const [recoveredRange, setRecoveredRange] = useState('lastWeek');
+  const [recoveredStats, setRecoveredStats] = useState(null);
+  const [recoveredLoading, setRecoveredLoading] = useState(true);
 
   const currentMonthKey = (() => {
     const ym = DateHelpers.getYearMonthInTimezone(new Date(), DateHelpers.DEFAULT_TIMEZONE);
@@ -294,6 +297,97 @@ export default function CloserDashboardCards({ closer }) {
     });
   }
 
+  function getNamedDateRange(range) {
+    const now = new Date();
+    if (range === 'currentWeek') {
+      const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(now);
+      return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
+    }
+    if (range === 'lastWeek') {
+      const prevWeek = new Date(now);
+      prevWeek.setUTCDate(prevWeek.getUTCDate() - 7);
+      const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(prevWeek);
+      return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
+    }
+    if (range === 'currentMonth') {
+      const monthRange = DateHelpers.getMonthRangeInTimezone(now, 'UTC');
+      return { start: monthRange.startDate.toISOString(), end: monthRange.endDate.toISOString() };
+    }
+    if (range === 'lastMonth') {
+      const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+      const monthRange = DateHelpers.getMonthRangeInTimezone(lastMonth, 'UTC');
+      return { start: monthRange.startDate.toISOString(), end: monthRange.endDate.toISOString() };
+    }
+    return null;
+  }
+
+  useEffect(() => {
+    if (!closer) return;
+    const range = getNamedDateRange(recoveredRange);
+    if (!range) return;
+    let cancelled = false;
+    setRecoveredLoading(true);
+    const { start, end } = range;
+
+    Promise.all([
+      // No-shows: calls where showed_up = false
+      supabase
+        .from('calls')
+        .select('id', { count: 'exact', head: true })
+        .eq('closer_id', closer)
+        .eq('showed_up', false)
+        .gte('call_date', start)
+        .lte('call_date', end),
+      // Recontacted: no_show_state = 'contacted'
+      supabase
+        .from('calls')
+        .select('id', { count: 'exact', head: true })
+        .eq('closer_id', closer)
+        .eq('no_show_state', 'contacted')
+        .gte('call_date', start)
+        .lte('call_date', end),
+      // Rebooked: recovered = true (by book_date)
+      supabase
+        .from('calls')
+        .select('id', { count: 'exact', head: true })
+        .eq('closer_id', closer)
+        .eq('recovered', true)
+        .gte('book_date', start)
+        .lte('book_date', end),
+      // Recovered show-ups: recovered = true AND showed_up = true
+      supabase
+        .from('calls')
+        .select('id', { count: 'exact', head: true })
+        .eq('closer_id', closer)
+        .eq('recovered', true)
+        .eq('showed_up', true)
+        .gte('call_date', start)
+        .lte('call_date', end),
+      // Closed from recovered: outcome = yes on a recovered call by this closer
+      supabase
+        .from('outcome_log')
+        .select('id, calls!inner!call_id(closer_id, recovered)', { count: 'exact', head: false })
+        .eq('outcome', 'yes')
+        .gte('purchase_date', start)
+        .lte('purchase_date', end),
+    ]).then(([noShowsRes, recontactedRes, rebookedRes, showUpsRes, closedRes]) => {
+      if (cancelled) return;
+      const closedCount = (closedRes.data || []).filter(
+        (r) => r.calls?.closer_id === closer && r.calls?.recovered === true
+      ).length;
+      setRecoveredStats({
+        noShows:     noShowsRes.count ?? 0,
+        recontacted: recontactedRes.count ?? 0,
+        rebooked:    rebookedRes.count ?? 0,
+        showUps:     showUpsRes.count ?? 0,
+        closed:      closedCount,
+      });
+      setRecoveredLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [closer, recoveredRange]);
+
   if (!closer) return null;
 
   function outcomeColor(outcome) {
@@ -459,8 +553,41 @@ export default function CloserDashboardCards({ closer }) {
         </div>
         </div>
 
-        {/* Right: Kajabi multipay sidebar */}
-        <div className="lg:w-72 lg:shrink-0 lg:self-start">
+        {/* Right: Kajabi multipay + Recovered leads sidebar */}
+        <div className="lg:w-88 lg:shrink-0 lg:self-start" style={{ width: '340px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Recovered leads card */}
+          <div className="bg-white rounded-lg shadow-sm p-4">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recovered leads</h2>
+              <select
+                value={recoveredRange}
+                onChange={(e) => setRecoveredRange(e.target.value)}
+                style={{ fontSize: '11px', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '2px 6px', background: '#f9fafb', cursor: 'pointer' }}
+              >
+                <option value="lastWeek">Last week</option>
+                <option value="currentWeek">This week</option>
+                <option value="lastMonth">Last month</option>
+                <option value="currentMonth">This month</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', gap: 0 }}>
+              {[
+                { label: 'No-shows',  value: recoveredStats?.noShows },
+                { label: 'Contacted', value: recoveredStats?.recontacted },
+                { label: 'Rebooked',  value: recoveredStats?.rebooked },
+                { label: 'Showups',   value: recoveredStats?.showUps },
+                { label: 'Closed',    value: recoveredStats?.closed },
+              ].map(({ label, value }, i) => (
+                <div key={label} style={{ flex: '1 1 0', minWidth: 0, paddingLeft: i === 0 ? 0 : 6, paddingRight: 6, ...(i > 0 ? { borderLeft: '1px solid #e5e7eb' } : {}) }}>
+                  <div style={{ fontSize: '9px', color: '#9ca3af', marginBottom: '1px', lineHeight: 1.2, wordBreak: 'break-word' }}>{label}</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827', lineHeight: 1.1 }}>
+                    {recoveredLoading ? '…' : (value ?? 0)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="bg-white rounded-lg shadow-sm p-4">
             <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Kajabi multipay (last month)</h2>
             <p className="text-xs text-gray-400 mb-2">Gray / red (1 pay, &gt;1 mo) / green (2 pay)</p>
@@ -477,13 +604,15 @@ export default function CloserDashboardCards({ closer }) {
                     tabIndex={row.lead_id ? 0 : undefined}
                     onClick={row.lead_id ? () => navigate(`/lead/${row.lead_id}`) : undefined}
                     onKeyDown={row.lead_id ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lead/${row.lead_id}`); } } : undefined}
-                    className={`flex flex-col gap-0.5 text-xs py-1.5 px-2 rounded min-w-0 ${
+                    className={`flex flex-col text-xs py-1 px-2 rounded min-w-0 ${
                       row.status === 'gray' ? 'bg-gray-100' : row.status === 'red' ? 'bg-red-50' : 'bg-green-50'
                     } ${row.lead_id ? 'cursor-pointer hover:opacity-80' : ''}`}
                   >
-                    <div className="font-medium text-gray-900 truncate" title={row.name}>{row.name}</div>
-                    <div className="text-gray-500 truncate text-[11px]" title={row.email}>{row.email}</div>
-                    <div className="text-gray-400 text-[11px]">{row.date}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
+                      <span className="font-medium text-gray-900 truncate" title={row.name}>{row.name}</span>
+                      <span className="text-gray-400 shrink-0" style={{ fontSize: '10px' }}>{row.date}</span>
+                    </div>
+                    <div className="text-gray-500 truncate" style={{ fontSize: '10px' }} title={row.email}>{row.email}</div>
                   </li>
                 ))
               )}
