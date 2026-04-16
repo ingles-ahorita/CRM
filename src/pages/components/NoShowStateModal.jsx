@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 const NO_SHOW_OPTIONS = [
   { value: 'no_show', label: 'No show' },
   { value: 'contacted', label: 'Contacted' },
-  { value: 'rebooked', label: 'Rebooked' },
   { value: 'dead', label: 'Dead' },
 ];
 
