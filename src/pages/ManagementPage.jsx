@@ -16,7 +16,7 @@ import { fetchAll } from '../utils/fetchLeads';
 import {getDailySlotsTotal} from '../utils/ocuppancy';
 import Header from './components/Header';
 import { useSimpleAuth } from '../useSimpleAuth'; 
-import {useSearchParams} from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { getWeekBoundsUTC, getMonthRangeInTimezone } from '../utils/dateHelpers';
 import { EndShiftModal } from './components/EndShiftModal';
 import { useRealtimeLeads } from '../hooks/useRealtimeLeads';
@@ -24,6 +24,7 @@ import { supabase } from '../lib/supabaseClient';
 
 export default function ManagementPage() {
   const { userId } = useSimpleAuth();
+  const navigate = useNavigate();
 
   const [slots, setSlots] = useState({});
   const [dashboardStats, setDashboardStats] = useState({
@@ -77,11 +78,21 @@ export default function ManagementPage() {
 
   const [isEndShiftModalOpen, setIsEndShiftModalOpen] = useState(false);
 
+  const MTD_GOAL_CENTS = 55_000 * 100;
+
   const [revenueRange, setRevenueRange] = useState('lastWeek');
   const [revenueCents, setRevenueCents] = useState(null);
   const [revenueLoading, setRevenueLoading] = useState(true);
+  const [mtdRevenueCents, setMtdRevenueCents] = useState(null);
+  const [mtdRevenueLoading, setMtdRevenueLoading] = useState(true);
+  const [recoveredRange, setRecoveredRange] = useState('lastWeek');
+  const [recoveredSeries, setRecoveredSeries] = useState([]);
+  const [recoveredLoading, setRecoveredLoading] = useState(true);
+  const [aovRange, setAovRange] = useState('currentMonth');
+  const [aovData, setAovData] = useState(null); // { overall, byCloser: [{name, aov, sales}] }
+  const [aovLoading, setAovLoading] = useState(true);
 
-  const getRevenueDateRange = (range) => {
+  const getNamedDateRange = (range) => {
     const now = new Date();
     if (range === 'currentWeek') {
       const { weekStart, weekEnd } = getWeekBoundsUTC(now);
@@ -103,6 +114,10 @@ export default function ManagementPage() {
       return { start: monthRange.startDate.toISOString(), end: monthRange.endDate.toISOString() };
     }
     return null;
+  };
+
+  const getRevenueDateRange = (range) => {
+    return getNamedDateRange(range);
   };
 
   useEffect(() => {
@@ -129,6 +144,99 @@ export default function ManagementPage() {
         setRevenueLoading(false);
       });
   }, [revenueRange]);
+
+  useEffect(() => {
+    const now = new Date();
+    const monthRange = getMonthRangeInTimezone(now, 'UTC');
+    const start = monthRange.startDate.toISOString();
+    const end = now.toISOString();
+    const SUCCESS_STATES = ['paid', 'successful', 'success', 'complete', 'completed', 'succeeded'];
+    setMtdRevenueLoading(true);
+    supabase
+      .from('kajabi_transactions')
+      .select('amount_in_cents, action, state, effective_date, payment_resolved_at')
+      .or(`and(effective_date.gte.${start},effective_date.lte.${end}),and(payment_resolved_at.gte.${start},payment_resolved_at.lte.${end})`)
+      .then(({ data }) => {
+        if (!data) { setMtdRevenueCents(null); setMtdRevenueLoading(false); return; }
+        const total = data.reduce((sum, t) => {
+          const resolvedInThisMonth = t.payment_resolved_at != null
+            && t.payment_resolved_at >= start
+            && t.payment_resolved_at <= end
+            && (t.effective_date == null || t.effective_date < start || t.effective_date > end);
+          const action    = resolvedInThisMonth ? 'charge' : (t.action ?? (t.amount_in_cents >= 0 ? 'charge' : 'refund'));
+          const isRefund  = action === 'refund' || t.amount_in_cents < 0;
+          const isDispute = action === 'dispute';
+          const isFailed  = !resolvedInThisMonth && (isDispute || (t.state != null && !SUCCESS_STATES.includes(t.state.toLowerCase())));
+          if (isFailed) return sum;
+          if (isRefund) return sum - Math.abs(t.amount_in_cents ?? 0);
+          return sum + Math.abs(t.amount_in_cents ?? 0);
+        }, 0);
+        setMtdRevenueCents(total);
+        setMtdRevenueLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    const range = getNamedDateRange(aovRange);
+    if (!range) return;
+    let cancelled = false;
+    setAovLoading(true);
+    supabase
+      .from('outcome_log')
+      .select('closer_id, offers!offer_id(price), closers!closer_id(name)')
+      .eq('outcome', 'yes')
+      .not('offer_id', 'is', null)
+      .gte('purchase_date', range.start)
+      .lte('purchase_date', range.end)
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (!data || data.length === 0) { setAovData({ overall: null, byCloser: [] }); setAovLoading(false); return; }
+        const byCloser = {};
+        let totalPrice = 0, totalCount = 0;
+        for (const row of data) {
+          const price = Number(row.offers?.price ?? 0);
+          const name = row.closers?.name ?? 'Unknown';
+          const id = row.closer_id ?? 'unknown';
+          if (!byCloser[id]) byCloser[id] = { name, total: 0, count: 0 };
+          byCloser[id].total += price;
+          byCloser[id].count += 1;
+          totalPrice += price;
+          totalCount += 1;
+        }
+        const closerList = Object.entries(byCloser)
+          .map(([id, c]) => ({ id, name: c.name, aov: c.count > 0 ? c.total / c.count : 0, sales: c.count }))
+          .sort((a, b) => b.aov - a.aov);
+        setAovData({ overall: totalCount > 0 ? totalPrice / totalCount : null, byCloser: closerList });
+        setAovLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [aovRange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadRecoveredSeries = async () => {
+      const range = getNamedDateRange(recoveredRange);
+      if (!range) return;
+      setRecoveredLoading(true);
+      try {
+        const startDate = new Date(range.start);
+        const today = new Date();
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const daysNeeded = Math.min(90, Math.max(1, Math.ceil((today - startDate) / msPerDay) + 1));
+        const res = await fetch(`/api/management-series?days=${daysNeeded}`);
+        const json = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setRecoveredSeries(Array.isArray(json?.series) ? json.series : []);
+      } catch (err) {
+        console.error('Recovered series error:', err);
+        if (!cancelled) setRecoveredSeries([]);
+      } finally {
+        if (!cancelled) setRecoveredLoading(false);
+      }
+    };
+    loadRecoveredSeries();
+    return () => { cancelled = true; };
+  }, [recoveredRange]);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -622,6 +730,90 @@ export default function ManagementPage() {
               </div>
               <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '2px' }}>from Kajabi transactions</div>
             </div>
+
+            {/* MTD Revenue Progress Bar */}
+            {(() => {
+              const now = new Date();
+              const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+              const dayOfMonth = now.getUTCDate();
+              const expectedPct = dayOfMonth / daysInMonth;
+              const expectedCents = MTD_GOAL_CENTS * expectedPct;
+              const actualPct = mtdRevenueCents != null ? Math.min((mtdRevenueCents / MTD_GOAL_CENTS) * 100, 100) : 0;
+              const todayLinePct = Math.min(expectedPct * 100, 100);
+              const fmt = (cents) => `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+              let barColor = '#ef4444';
+              if (mtdRevenueCents != null) {
+                if (mtdRevenueCents >= expectedCents) barColor = '#22c55e';
+                else if (mtdRevenueCents >= expectedCents * 0.95) barColor = '#f59e0b';
+              }
+              return (
+                <div
+                  style={{
+                    backgroundColor: '#fff',
+                    borderRadius: '12px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    padding: '12px 14px',
+                    border: '1px solid #e5e7eb',
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                    Monthly Goal · Net Revenue
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
+                    <span style={{ fontSize: '22px', fontWeight: '700', color: barColor }}>
+                      {mtdRevenueLoading ? '…' : fmt(mtdRevenueCents ?? 0)}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap' }}>
+                      of {fmt(MTD_GOAL_CENTS)}
+                    </span>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{ position: 'relative', height: '20px', marginTop: '10px' }}>
+                    {/* Track */}
+                    <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', transform: 'translateY(-50%)', height: '10px', backgroundColor: '#f3f4f6', borderRadius: '5px' }} />
+                    {/* Filled portion */}
+                    {!mtdRevenueLoading && (
+                      <div style={{
+                        position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
+                        width: `${actualPct}%`,
+                        height: '10px',
+                        backgroundColor: barColor,
+                        borderRadius: '5px',
+                        transition: 'width 0.4s ease',
+                        opacity: 0.85,
+                      }} />
+                    )}
+                    {/* Today's expected line */}
+                    <div
+                      title={`Expected today (day ${dayOfMonth}/${daysInMonth}): ${fmt(expectedCents)}`}
+                      style={{
+                        position: 'absolute',
+                        left: `${todayLinePct}%`,
+                        top: 0,
+                        bottom: 0,
+                        width: '2px',
+                        backgroundColor: '#374151',
+                        transform: 'translateX(-50%)',
+                        borderRadius: '1px',
+                        zIndex: 2,
+                      }}
+                    />
+                  </div>
+
+                  {/* Sub-line */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
+                    <span style={{ fontSize: '10px', color: '#9ca3af' }}>
+                      {mtdRevenueLoading ? '…' : `${actualPct.toFixed(1)}% reached`}
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#9ca3af' }}>
+                      Day {dayOfMonth}/{daysInMonth} · target {fmt(expectedCents)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           <div
@@ -974,33 +1166,124 @@ export default function ManagementPage() {
                 backgroundColor: '#fff',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                padding: '16px 20px',
+                padding: '12px 14px',
                 border: '1px solid #e5e7eb',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-                Recovered leads
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Recovered leads
+                </div>
+                <select
+                  value={recoveredRange}
+                  onChange={(e) => setRecoveredRange(e.target.value)}
+                  style={{ fontSize: '11px', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '2px 6px', background: '#f9fafb', cursor: 'pointer' }}
+                >
+                  <option value="lastWeek">Last week</option>
+                  <option value="currentWeek">This week</option>
+                  <option value="lastMonth">Last month</option>
+                  <option value="currentMonth">This month</option>
+                </select>
               </div>
               {(() => {
-                const now = new Date();
-                const { weekStart } = getWeekBoundsUTC(now);
-                const mondayStr = weekStart.toISOString().slice(0, 10);
-                const todayStr = now.toISOString().slice(0, 10);
-                const thisWeek = chartSeries.filter((d) => d.date && d.date >= mondayStr && d.date <= todayStr);
-                const recovered = thisWeek.reduce((a, d) => a + (d.recoveredCount ?? 0), 0);
-                return (
-                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
-                    {chartLoading ? '…' : recovered}
-                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px', fontWeight: 400 }}>
-                      by book date (this week)
+                const range = getNamedDateRange(recoveredRange);
+                const startStr = range?.start?.slice(0, 10);
+                const endStr = range?.end?.slice(0, 10);
+                const selectedRange = recoveredSeries.filter((d) => d.date && (!startStr || d.date >= startStr) && (!endStr || d.date <= endStr));
+                const noShows = selectedRange.reduce((a, d) => a + (d.noShowCount ?? 0), 0);
+                const recontacted = selectedRange.reduce((a, d) => a + (d.recontactedCount ?? 0), 0);
+                const rebooked = selectedRange.reduce((a, d) => a + (d.rebookedCount ?? 0), 0);
+                const recoveredShowUps = selectedRange.reduce((a, d) => a + (d.recoveredShowUpsCount ?? 0), 0);
+                const closedFromRecovered = selectedRange.reduce((a, d) => a + (d.closedFromRecoveredCount ?? 0), 0);
+                const RecoveredMetric = ({ label, value, first }) => (
+                  <div style={{ flex: '1 1 0', minWidth: 0, paddingLeft: first ? 0 : 8, paddingRight: 8, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
+                    <div style={{ fontSize: '10px', color: '#9ca3af', marginBottom: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827', lineHeight: 1.1 }}>
+                      {recoveredLoading ? '…' : value}
                     </div>
+                  </div>
+                );
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', gap: 0 }}>
+                      <RecoveredMetric first label="No-shows" value={noShows} />
+                      <RecoveredMetric label="Contacted" value={recontacted} />
+                      <RecoveredMetric label="Rebooked" value={rebooked} />
+                      <RecoveredMetric label="Showups" value={recoveredShowUps} />
+                      <RecoveredMetric label="Closed" value={closedFromRecovered} />
                   </div>
                 );
               })()}
             </div>
+
+            {/* AOV by closer */}
+            <div
+              style={{
+                backgroundColor: '#fff',
+                borderRadius: '12px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                padding: '12px 14px',
+                border: '1px solid #e5e7eb',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  AOV by closer
+                </div>
+                <select
+                  value={aovRange}
+                  onChange={(e) => setAovRange(e.target.value)}
+                  style={{ fontSize: '11px', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '2px 6px', background: '#f9fafb', cursor: 'pointer' }}
+                >
+                  <option value="lastWeek">Last week</option>
+                  <option value="currentWeek">This week</option>
+                  <option value="lastMonth">Last month</option>
+                  <option value="currentMonth">This month</option>
+                </select>
+              </div>
+              {aovLoading ? (
+                <div style={{ fontSize: '13px', color: '#9ca3af' }}>…</div>
+              ) : !aovData || aovData.byCloser.length === 0 ? (
+                <div style={{ fontSize: '12px', color: '#9ca3af' }}>No sales with offers in this range</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: '11px', color: '#9ca3af', marginBottom: '6px' }}>
+                    Overall: <span style={{ fontWeight: '700', color: '#111827', fontSize: '14px' }}>
+                      ${aovData.overall != null ? aovData.overall.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '—'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    {aovData.byCloser.map((c, i) => {
+                      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : null;
+                      return (
+                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, overflow: 'hidden', marginRight: '8px' }}>
+                            <span style={{ fontSize: '11px', color: '#9ca3af', flexShrink: 0, width: '14px', textAlign: 'right' }}>
+                              {medal ?? `${i + 1}`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/closer-stats/${c.id}`)}
+                              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#374151', fontWeight: '500', fontSize: '12px', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: 'underline', textDecorationColor: '#d1d5db' }}
+                            >
+                              {c.name}
+                            </button>
+                          </span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                            <span style={{ fontWeight: '700', color: '#111827' }}>
+                              ${c.aov.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </span>
+                            <span style={{ fontSize: '10px', color: '#9ca3af' }}>{c.sales} sale{c.sales !== 1 ? 's' : ''}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
-        
+
         <Header
           state={{...headerState, setterMap: dataState.setterMap, closerMap: dataState.closerMap}}
           setState={setHeaderState}

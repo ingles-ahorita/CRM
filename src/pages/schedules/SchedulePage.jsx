@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import { ChevronLeft, ChevronRight, Plus, Calendar, Edit2, Trash2, Pencil, Globe } from 'lucide-react';
+import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 import ScheduleGrid from './components/ScheduleGrid';
 import ScheduleForm from './components/ScheduleForm';
 
@@ -22,8 +23,12 @@ export default function SchedulePage() {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [isDateOverrideMode, setIsDateOverrideMode] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
+  /** UTC YMD for the occurrence being edited (from grid or DB specific_date). */
+  const [editingUtcOccurrenceYmd, setEditingUtcOccurrenceYmd] = useState(null);
+  /** View-TZ YMD for the column clicked (grid only). */
+  const [editingViewOccurrenceYmd, setEditingViewOccurrenceYmd] = useState(null);
   const [selectedTimezone, setSelectedTimezone] = useState(() => {
-    return localStorage.getItem('scheduleTimezone') || 'Europe/Madrid';
+    return localStorage.getItem('scheduleTimezone') || 'UTC';
   });
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export default function SchedulePage() {
     try {
       const { data, error } = await supabase
         .from('setters')
-        .select('id, name')
+        .select('id, name, timezone')
         .order('name');
 
       if (error) throw error;
@@ -65,13 +70,15 @@ export default function SchedulePage() {
       
       // Calculate week dates (Monday to Sunday)
       const weekDates = getWeekDates(currentWeekStart);
+      const prevDate = new Date(weekDates[0]);
+      prevDate.setDate(prevDate.getDate() - 1);
       
       // Fetch recurring schedules (day_of_week is not null, specific_date is null)
       const { data: recurringData, error: recurringError } = await supabase
         .from('setter_schedules')
         .select(`
           *,
-          setters (id, name)
+          setters (id, name, timezone)
         `)
         .is('specific_date', null);
 
@@ -82,10 +89,10 @@ export default function SchedulePage() {
         .from('setter_schedules')
         .select(`
           *,
-          setters (id, name)
+          setters (id, name, timezone)
         `)
         .not('specific_date', 'is', null)
-        .gte('specific_date', formatDateLocal(weekDates[0]))
+        .gte('specific_date', formatDateLocal(prevDate))
         .lte('specific_date', formatDateLocal(weekDates[6]));
 
       if (overrideError) throw overrideError;
@@ -117,15 +124,20 @@ export default function SchedulePage() {
       const day = String(date.getDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     }
-    
-    // Convert date to the specified timezone
-    const dateStr = date.toLocaleDateString('en-CA', { 
+
+    // Use formatToParts instead of locale string shape to always build YYYY-MM-DD.
+    const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    });
-    return dateStr; // Returns YYYY-MM-DD format
+    }).formatToParts(date);
+
+    const year = parts.find((p) => p.type === 'year')?.value;
+    const month = parts.find((p) => p.type === 'month')?.value;
+    const day = parts.find((p) => p.type === 'day')?.value;
+
+    return `${year}-${month}-${day}`;
   };
 
   // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion) - kept for backward compatibility
@@ -139,19 +151,33 @@ export default function SchedulePage() {
     setCurrentWeekStart(newDate);
   };
 
+  const viewTimezoneLabel =
+    timezoneOptions.find((o) => o.value === selectedTimezone)?.label ?? selectedTimezone;
+
   const handleScheduleSaved = () => {
     fetchSchedules();
     setIsFormOpen(false);
     setEditingSchedule(null);
     setIsDateOverrideMode(false);
     setSelectedDate(null);
+    setEditingUtcOccurrenceYmd(null);
+    setEditingViewOccurrenceYmd(null);
   };
 
-  const handleEditSchedule = (schedule, dateForOverride = null) => {
+  const handleEditSchedule = (schedule, dateForOverride = null, viewOccurrenceYmd = null) => {
     setEditingSchedule(schedule);
     setIsDateOverrideMode(schedule.specific_date !== null);
-    // If editing a recurring schedule, use the provided date for override option
-    setSelectedDate(schedule.specific_date ? new Date(schedule.specific_date) : (dateForOverride ? new Date(dateForOverride) : null));
+    setEditingUtcOccurrenceYmd(
+      schedule.specific_date ?? (typeof dateForOverride === 'string' ? dateForOverride : null)
+    );
+    setEditingViewOccurrenceYmd(viewOccurrenceYmd ?? null);
+    setSelectedDate(
+      schedule.specific_date
+        ? new Date(`${schedule.specific_date}T12:00:00`)
+        : dateForOverride
+          ? new Date(`${dateForOverride}T12:00:00`)
+          : null
+    );
     setIsFormOpen(true);
   };
 
@@ -219,18 +245,25 @@ export default function SchedulePage() {
     return a.specific_date.localeCompare(b.specific_date);
   });
 
-  const formatTime = (timeStr) => {
+  const formatTime = (timeStr, scheduleDate) => {
     if (!timeStr) return '';
-    const [hours, minutes] = timeStr.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
+    const hhmm = timeStr.slice(0, 5);
+    const [hours, minutes] = hhmm.split(':').map(Number);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return hhmm;
+    const baseDate = scheduleDate || formatDateInTimezone(new Date(), 'UTC');
+    const utcMoment = fromZonedTime(
+      `${baseDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`,
+      'UTC'
+    );
+    const targetTz = selectedTimezone === 'local'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : selectedTimezone;
+    return formatInTimeZone(utcMoment, targetTz, 'h:mm a');
   };
 
   const formatDateDisplay = (dateStr) => {
     if (!dateStr) return '';
-    const date = new Date(dateStr + 'T00:00:00');
+    const date = new Date(`${dateStr}T12:00:00Z`);
     
     if (selectedTimezone === 'local') {
       return date.toLocaleDateString('en-US', { 
@@ -416,6 +449,8 @@ export default function SchedulePage() {
                 setIsDateOverrideMode(false);
                 setEditingSchedule(null);
                 setSelectedDate(null);
+                setEditingUtcOccurrenceYmd(null);
+                setEditingViewOccurrenceYmd(null);
                 setIsFormOpen(true);
               }}
               style={{
@@ -448,6 +483,8 @@ export default function SchedulePage() {
                 setIsDateOverrideMode(true);
                 setEditingSchedule(null);
                 setSelectedDate(null);
+                setEditingUtcOccurrenceYmd(null);
+                setEditingViewOccurrenceYmd(null);
                 setIsFormOpen(true);
               }}
               style={{
@@ -584,7 +621,7 @@ export default function SchedulePage() {
                             color: '#6b7280',
                             marginTop: '4px'
                           }}>
-                            {formatTime(override.start_time)} - {formatTime(override.end_time)}
+                            {formatTime(override.start_time, override.specific_date)} - {formatTime(override.end_time, override.specific_date)}
                             {isOvernight && (
                               <span style={{ 
                                 fontSize: '11px', 
@@ -671,6 +708,8 @@ export default function SchedulePage() {
               setEditingSchedule(null);
               setIsDateOverrideMode(false);
               setSelectedDate(null);
+              setEditingUtcOccurrenceYmd(null);
+              setEditingViewOccurrenceYmd(null);
             }}
             setters={setters}
             editingSchedule={editingSchedule}
@@ -679,6 +718,10 @@ export default function SchedulePage() {
             weekDates={weekDates}
             existingSchedules={schedules}
             onSave={handleScheduleSaved}
+            viewTimezone={selectedTimezone}
+            viewTimezoneLabel={viewTimezoneLabel}
+            utcOccurrenceYmd={editingUtcOccurrenceYmd}
+            viewOccurrenceYmd={editingViewOccurrenceYmd}
           />
         )}
       </div>

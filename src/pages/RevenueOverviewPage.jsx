@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import * as DateHelpers from '../utils/dateHelpers';
+import { fetchCustomer } from '../lib/kajabiApi';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
@@ -20,6 +21,20 @@ function SummaryCard({ label, value, sub, colorClass = 'text-gray-900' }) {
       {sub && <span className="text-xs text-gray-400">{sub}</span>}
     </div>
   );
+}
+
+function extractEmailFromRaw(raw) {
+  const attrs = raw?.attributes || {};
+  return attrs.email || attrs.customer_email || attrs.member_email || null;
+}
+
+function extractCustomerIdFromRaw(raw) {
+  const relId = raw?.relationships?.customer?.data?.id;
+  if (relId != null) return String(relId);
+  const attrs = raw?.attributes || {};
+  if (attrs.customer_id != null) return String(attrs.customer_id);
+  if (attrs.member_id != null) return String(attrs.member_id);
+  return null;
 }
 
 export default function RevenueOverviewPage() {
@@ -64,12 +79,14 @@ export default function RevenueOverviewPage() {
       setHasData(true);
 
       // 2. Fetch transactions in range (these are the actual cash events)
+      // Also include transactions that resolved in this month (payment_resolved_at in range)
+      // even if their original attempt was in a prior month — so they appear as charges here
+      // while still appearing as failed in the original month.
       const { data: txData, error: txErr } = await supabase
         .from('kajabi_transactions')
-        .select('kajabi_transaction_id, kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, action, state, amount_in_cents, currency, created_at_kajabi, raw')
-        .gte('created_at_kajabi', start)
-        .lte('created_at_kajabi', end)
-        .order('created_at_kajabi', { ascending: false });
+        .select('kajabi_transaction_id, kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, action, state, amount_in_cents, currency, created_at_kajabi, effective_date, payment_resolved_at, raw')
+        .or(`and(effective_date.gte.${start},effective_date.lte.${end}),and(payment_resolved_at.gte.${start},payment_resolved_at.lte.${end})`)
+        .order('effective_date', { ascending: false });
 
       if (txErr) throw txErr;
       if (!txData || txData.length === 0) {
@@ -92,6 +109,52 @@ export default function RevenueOverviewPage() {
 
       const purchaseById = {};
       for (const p of purchaseData || []) purchaseById[p.kajabi_purchase_id] = p;
+
+      // 3b. Resolve customer emails from local leads table (customer_id = Kajabi customer id)
+      const customerIds = [...new Set([
+        ...txData.map((t) => t.kajabi_customer_id),
+        ...(purchaseData || []).map((p) => p.kajabi_customer_id),
+        ...txData.map((t) => extractCustomerIdFromRaw(t.raw)),
+      ].filter(Boolean).map(String))];
+
+      const { data: leadEmailData, error: leadEmailErr } = customerIds.length > 0
+        ? await supabase
+            .from('leads')
+            .select('customer_id, email')
+            .in('customer_id', customerIds)
+        : { data: [], error: null };
+
+      if (leadEmailErr) throw leadEmailErr;
+
+      const emailByCustomerId = {};
+      for (const lead of leadEmailData || []) {
+        const customerId = lead.customer_id != null ? String(lead.customer_id) : null;
+        if (!customerId) continue;
+        if (!emailByCustomerId[customerId] && lead.email) emailByCustomerId[customerId] = lead.email;
+      }
+
+      // Some failed rows only carry email in raw payload attributes
+      for (const t of txData) {
+        const rawCustomerId = extractCustomerIdFromRaw(t.raw);
+        const rawEmail = extractEmailFromRaw(t.raw);
+        if (rawCustomerId && rawEmail && !emailByCustomerId[String(rawCustomerId)]) {
+          emailByCustomerId[String(rawCustomerId)] = rawEmail;
+        }
+      }
+
+      // 3c. Fallback to Kajabi customer API for missing emails (helps recurring/orphan rows)
+      const missingCustomerIds = customerIds.filter((id) => !emailByCustomerId[id]);
+      if (missingCustomerIds.length > 0) {
+        const customerLookups = await Promise.allSettled(
+          missingCustomerIds.map(async (id) => ({ id, customer: await fetchCustomer(id) }))
+        );
+        customerLookups.forEach((result) => {
+          if (result.status !== 'fulfilled') return;
+          const id = result.value.id;
+          const email = result.value.customer?.email ?? null;
+          if (email) emailByCustomerId[id] = email;
+        });
+      }
 
       // 4. Fetch offer names — use offer_id from purchase if linked, else from transaction directly
       const offerIds = [...new Set([
@@ -127,12 +190,25 @@ export default function RevenueOverviewPage() {
         const purchase = purchaseById[t.kajabi_purchase_id] ?? null;
         const offer    = purchase ? offerByKajabiId[String(purchase.kajabi_offer_id)] ?? null : null;
         const closer   = t.kajabi_purchase_id ? closerByPurchaseId[String(t.kajabi_purchase_id)] ?? null : null;
+        const customerId = purchase?.kajabi_customer_id ?? t.kajabi_customer_id ?? extractCustomerIdFromRaw(t.raw) ?? null;
 
-        const action = t.action ?? (t.amount_in_cents >= 0 ? 'charge' : 'refund');
+        // A row can appear in two ways:
+        // 1. Via effective_date (the original attempt date) — shown as-is (may be failed)
+        // 2. Via payment_resolved_at (resolved in this month after failing in a prior month) — shown as a charge
+        const resolvedInThisMonth = t.payment_resolved_at != null
+          && t.payment_resolved_at >= start
+          && t.payment_resolved_at <= end
+          && (t.effective_date == null || t.effective_date < start || t.effective_date > end);
+
+        const action = resolvedInThisMonth
+          ? 'charge'
+          : (t.action ?? (t.amount_in_cents >= 0 ? 'charge' : 'refund'));
         const isCharge  = action === 'charge';
         const isRefund  = action === 'refund' || t.amount_in_cents < 0;
         const isDispute = action === 'dispute';
-        const isFailed  = isDispute || (t.state != null && !['paid', 'successful', 'success', 'complete', 'completed', 'succeeded'].includes(t.state.toLowerCase()));
+        const isFailed  = !resolvedInThisMonth && (
+          isDispute || (t.state != null && !['paid', 'successful', 'success', 'complete', 'completed', 'succeeded'].includes(t.state.toLowerCase()))
+        );
 
         // Resolve offer: prefer purchase linkage, fall back to transaction's direct offer_id
         const effectiveOfferId = purchase?.kajabi_offer_id ?? t.kajabi_offer_id;
@@ -140,24 +216,30 @@ export default function RevenueOverviewPage() {
         const isOrphan = !t.kajabi_purchase_id; // recurring payment from a previous month's purchase
 
         return {
-          txId:          t.kajabi_transaction_id,
-          purchaseId:    t.kajabi_purchase_id,
+          txId:              t.kajabi_transaction_id,
+          purchaseId:        t.kajabi_purchase_id,
           action,
-          state:         t.state,
+          state:             resolvedInThisMonth ? 'paid' : t.state,
           isCharge,
           isDispute,
           isFailed,
           isRefund,
           isOrphan,
-          amountCents:   t.amount_in_cents ?? 0,
-          currency:      t.currency ?? 'USD',
-          createdAt:     t.created_at_kajabi,
-          offerName:     resolvedOffer?.name ?? (effectiveOfferId ? `Offer ${effectiveOfferId}` : '—'),
-          closerName:    closer ?? (isOrphan ? '(recurring)' : '—'),
-          paymentType:   purchase?.payment_type ?? null,
-          couponCode:    purchase?.coupon_code ?? null,
-          purchaseDate:  purchase?.created_at_kajabi ?? null,
-          raw:           t.raw,
+          isResolved:        resolvedInThisMonth,
+          amountCents:       t.amount_in_cents ?? 0,
+          currency:          t.currency ?? 'USD',
+          createdAt:         resolvedInThisMonth
+            ? t.payment_resolved_at
+            : (t.effective_date ?? t.created_at_kajabi),
+          offerName:         resolvedOffer?.name ?? (effectiveOfferId ? `Offer ${effectiveOfferId}` : '—'),
+          closerName:        closer ?? (isOrphan ? '(recurring)' : '—'),
+          email:             customerId
+            ? (emailByCustomerId[String(customerId)] ?? extractEmailFromRaw(t.raw) ?? '—')
+            : (extractEmailFromRaw(t.raw) ?? '—'),
+          paymentType:       purchase?.payment_type ?? null,
+          couponCode:        purchase?.coupon_code ?? null,
+          purchaseDate:      purchase?.created_at_kajabi ?? null,
+          raw:               t.raw,
         };
       });
 
@@ -481,7 +563,7 @@ export default function RevenueOverviewPage() {
                       <table className="w-full divide-y divide-gray-100">
                         <thead className="bg-gray-50">
                           <tr>
-                            {['', 'Date', 'Offer', 'Closer', 'Type', 'State', 'Coupon', 'Amount'].map((h) => (
+                            {['', 'Date', 'Offer', 'Email', 'Closer', 'Type', 'State', 'Coupon', 'Amount'].map((h) => (
                               <th key={h} className="px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider text-center">{h}</th>
                             ))}
                           </tr>
@@ -498,10 +580,13 @@ export default function RevenueOverviewPage() {
                                 </td>
                                 <td className="px-4 py-3 text-sm text-center text-gray-700">{fmtDate(r.createdAt)}</td>
                                 <td className="px-4 py-3 text-sm text-center font-medium text-gray-800">{r.offerName}</td>
+                                <td className="px-4 py-3 text-sm text-center text-gray-600">{r.email}</td>
                                 <td className="px-4 py-3 text-sm text-center text-gray-600">{r.closerName}</td>
                                 <td className="px-4 py-3 text-sm text-center">
                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                                    r.isDispute
+                                    r.isResolved
+                                      ? 'bg-teal-100 text-teal-700'
+                                      : r.isDispute
                                       ? 'bg-orange-100 text-orange-700'
                                       : r.isFailed
                                       ? 'bg-gray-200 text-gray-500'
@@ -513,7 +598,7 @@ export default function RevenueOverviewPage() {
                                       ? 'bg-purple-100 text-purple-700'
                                       : 'bg-green-100 text-green-700'
                                   }`}>
-                                    {r.isDispute ? 'dispute' : r.isFailed ? 'failed' : r.isRefund ? 'refund' : r.isOrphan ? 'recurring' : (r.paymentType ?? 'charge')}
+                                    {r.isResolved ? 'resolved' : r.isDispute ? 'dispute' : r.isFailed ? 'failed' : r.isRefund ? 'refund' : r.isOrphan ? 'recurring' : (r.paymentType ?? 'charge')}
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-center">
@@ -530,7 +615,7 @@ export default function RevenueOverviewPage() {
                               </tr>
                               {expandedTx === r.txId && (
                                 <tr className="bg-gray-900">
-                                  <td colSpan={8} className="px-4 py-3">
+                                  <td colSpan={9} className="px-4 py-3">
                                     <pre className="text-xs text-green-400 font-mono whitespace-pre-wrap break-all leading-relaxed max-h-64 overflow-y-auto">
                                       {JSON.stringify(r.raw ?? { note: 'No raw data — re-sync to capture' }, null, 2)}
                                     </pre>
@@ -542,7 +627,7 @@ export default function RevenueOverviewPage() {
                         </tbody>
                         <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                           <tr>
-                            <td colSpan={6} className="px-4 py-3 text-sm font-bold text-gray-800 text-right">Net Revenue</td>
+                            <td colSpan={7} className="px-4 py-3 text-sm font-bold text-gray-800 text-right">Net Revenue</td>
                             <td className={`px-4 py-3 text-sm font-bold tabular-nums text-center ${netCents >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                               {formatMoney(netCents)}
                             </td>

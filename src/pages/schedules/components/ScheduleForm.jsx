@@ -1,6 +1,64 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabaseClient';
 import { X } from 'lucide-react';
+import { fromZonedTime, formatInTimeZone } from 'date-fns-tz';
+
+/** DB schedule wall times + dates are UTC (matches ScheduleGrid). */
+const SCHEDULE_STORAGE_TZ = 'UTC';
+
+function resolveViewTimezone(viewTimezone) {
+  return viewTimezone === 'local'
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+    : viewTimezone;
+}
+
+function formatDateInTimezone(date, tz) {
+  if (!date) return '';
+  if (tz === 'local') {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+  return `${year}-${month}-${day}`;
+}
+
+/** UTC calendar date for the grid column (noon that civil day in view TZ → UTC YMD). */
+function utcStorageYmdForWeekColumn(weekDates, dayIndex, viewTimezone) {
+  if (!weekDates?.length || dayIndex < 0 || dayIndex >= weekDates.length) return '';
+  const vt = resolveViewTimezone(viewTimezone);
+  const viewYmd = formatDateInTimezone(weekDates[dayIndex], vt);
+  return formatInTimeZone(
+    fromZonedTime(`${viewYmd}T12:00:00`, vt),
+    SCHEDULE_STORAGE_TZ,
+    'yyyy-MM-dd'
+  );
+}
+
+function addOneCalendarDay(ymd) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+function padDbTime(t) {
+  if (!t) return '00:00:00';
+  const p = String(t).split(':');
+  const hh = String(parseInt(p[0], 10) || 0).padStart(2, '0');
+  const mm = String(parseInt(p[1], 10) || 0).padStart(2, '0');
+  const ss = String(parseInt(p[2], 10) || 0).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
 
 export default function ScheduleForm({ 
   isOpen, 
@@ -11,7 +69,11 @@ export default function ScheduleForm({
   selectedDate,
   weekDates,
   existingSchedules = [],
-  onSave 
+  onSave,
+  viewTimezone = 'UTC',
+  viewTimezoneLabel = '',
+  utcOccurrenceYmd = null,
+  viewOccurrenceYmd = null
 }) {
   const [formData, setFormData] = useState({
     setter_id: '',
@@ -28,51 +90,69 @@ export default function ScheduleForm({
 
   useEffect(() => {
     if (editingSchedule) {
-      // Strip seconds from time if present (database returns HH:MM:SS, input needs HH:MM)
-      const formatTimeForInput = (timeStr) => {
-        if (!timeStr) return '';
-        return timeStr.substring(0, 5); // Take first 5 characters (HH:MM)
-      };
-      
+      const vt = resolveViewTimezone(viewTimezone);
       const isRecurring = editingSchedule.specific_date === null;
-      
-      // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion)
-      const formatDateLocal = (date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
+
+      const lineMins = (ts) => {
+        const [h, m] = String(ts || '0:0').split(':').map((x) => parseInt(x, 10) || 0);
+        return h * 60 + m;
       };
 
-      // Set overrideDate if editing a recurring schedule
+      const gridIdx =
+        editingSchedule.day_of_week != null
+          ? editingSchedule.day_of_week === 0
+            ? 6
+            : editingSchedule.day_of_week - 1
+          : 0;
+      const storageAnchorYmd = editingSchedule.specific_date
+        ? editingSchedule.specific_date
+        : utcOccurrenceYmd ||
+          (weekDates?.length
+            ? utcStorageYmdForWeekColumn(weekDates, gridIdx, viewTimezone)
+            : formatInTimeZone(new Date(), SCHEDULE_STORAGE_TZ, 'yyyy-MM-dd'));
+
+      const st = padDbTime(editingSchedule.start_time);
+      const et = padDbTime(editingSchedule.end_time);
+      const overnightDb = lineMins(editingSchedule.end_time) <= lineMins(editingSchedule.start_time);
+      const startUtc = fromZonedTime(`${storageAnchorYmd}T${st}`, SCHEDULE_STORAGE_TZ);
+      const endYmd = overnightDb ? addOneCalendarDay(storageAnchorYmd) : storageAnchorYmd;
+      const endUtc = fromZonedTime(`${endYmd}T${et}`, SCHEDULE_STORAGE_TZ);
+
+      const startView = formatInTimeZone(startUtc, vt, 'HH:mm');
+      const endView = formatInTimeZone(endUtc, vt, 'HH:mm');
+      const specificView = editingSchedule.specific_date
+        ? formatInTimeZone(startUtc, vt, 'yyyy-MM-dd')
+        : '';
+
       if (isRecurring) {
-        if (selectedDate) {
-          setOverrideDate(formatDateLocal(selectedDate));
+        if (viewOccurrenceYmd) {
+          setOverrideDate(viewOccurrenceYmd);
+        } else if (selectedDate) {
+          setOverrideDate(formatDateInTimezone(selectedDate, vt));
         } else if (weekDates && weekDates.length > 0) {
-          // If no selectedDate but we have weekDates, use the day of week from the schedule
           const dbDay = editingSchedule.day_of_week;
-          const gridDay = dbDay === 0 ? 6 : dbDay - 1; // Convert to grid format
+          const gridDay = dbDay === 0 ? 6 : dbDay - 1;
           if (gridDay >= 0 && gridDay < weekDates.length) {
-            setOverrideDate(formatDateLocal(weekDates[gridDay]));
+            setOverrideDate(formatDateInTimezone(weekDates[gridDay], vt));
           } else {
-            // Fallback: use Monday of current week
-            setOverrideDate(formatDateLocal(weekDates[0]));
+            setOverrideDate(formatDateInTimezone(weekDates[0], vt));
           }
         }
       } else {
         setOverrideDate(null);
       }
-      
-      setEditAsOverride(false); // Reset edit mode
-      
+
+      setEditAsOverride(false);
+
       setFormData({
         setter_id: editingSchedule.setter_id || '',
-        days_of_week: editingSchedule.day_of_week !== null && editingSchedule.day_of_week !== undefined 
-          ? [editingSchedule.day_of_week.toString()] 
-          : [],
-        start_time: formatTimeForInput(editingSchedule.start_time),
-        end_time: formatTimeForInput(editingSchedule.end_time),
-        specific_date: editingSchedule.specific_date || '',
+        days_of_week:
+          editingSchedule.day_of_week !== null && editingSchedule.day_of_week !== undefined
+            ? [editingSchedule.day_of_week.toString()]
+            : [],
+        start_time: startView,
+        end_time: endView,
+        specific_date: specificView,
         before_shift: editingSchedule.before_shift || false
       });
     } else {
@@ -87,23 +167,25 @@ export default function ScheduleForm({
       setEditAsOverride(false);
       setOverrideDate(null);
     }
-  }, [editingSchedule, isOpen, selectedDate, weekDates]);
+  }, [
+    editingSchedule,
+    isOpen,
+    selectedDate,
+    weekDates,
+    viewTimezone,
+    utcOccurrenceYmd,
+    viewOccurrenceYmd
+  ]);
 
   useEffect(() => {
-    if (isDateOverrideMode && selectedDate) {
-      // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion)
-      const formatDateLocal = (date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-      const dateStr = formatDateLocal(selectedDate);
-      setFormData(prev => ({ ...prev, specific_date: dateStr, days_of_week: [] }));
-    } else if (isDateOverrideMode && !selectedDate) {
-      setFormData(prev => ({ ...prev, specific_date: '', days_of_week: [] }));
+    const vt = resolveViewTimezone(viewTimezone);
+    if (isDateOverrideMode && selectedDate && !editingSchedule) {
+      const dateStr = formatDateInTimezone(selectedDate, vt);
+      setFormData((prev) => ({ ...prev, specific_date: dateStr, days_of_week: [] }));
+    } else if (isDateOverrideMode && !selectedDate && !editingSchedule) {
+      setFormData((prev) => ({ ...prev, specific_date: '', days_of_week: [] }));
     }
-  }, [isDateOverrideMode, selectedDate]);
+  }, [isDateOverrideMode, selectedDate, viewTimezone, editingSchedule]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -144,61 +226,112 @@ export default function ScheduleForm({
         throw new Error('Start and end times cannot be the same');
       }
 
-      // Check for conflicts
-      const conflicts = checkConflicts(
-        formData.setter_id,
-        effectiveIsOverride ? [] : formData.days_of_week,
-        formData.start_time + ':00',
-        formData.end_time + ':00',
-        effectiveIsOverride ? (formData.specific_date || overrideDate) : null
-      );
+      const vt = resolveViewTimezone(viewTimezone);
+      const overnightForm = endMinutes <= startMinutes;
 
-      if (conflicts.length > 0) {
-        const conflictMessages = conflicts.map(c => c.message).join('\n');
-        throw new Error(`Schedule conflicts detected:\n\n${conflictMessages}\n\nPlease adjust the time or remove the conflicting schedule first.`);
-      }
-
-      const basePayload = {
-        setter_id: formData.setter_id,
-        start_time: formData.start_time + ':00', // Add seconds for database
-        end_time: formData.end_time + ':00',
-        before_shift: formData.before_shift || false,
+      const viewPairToUtcStorage = (viewYmd, startHm, endHm) => {
+        const sUtc = fromZonedTime(`${viewYmd}T${startHm}:00`, vt);
+        const endYmd = overnightForm ? addOneCalendarDay(viewYmd) : viewYmd;
+        const eUtc = fromZonedTime(`${endYmd}T${endHm}:00`, vt);
+        return {
+          start_time: formatInTimeZone(sUtc, SCHEDULE_STORAGE_TZ, 'HH:mm:ss'),
+          end_time: formatInTimeZone(eUtc, SCHEDULE_STORAGE_TZ, 'HH:mm:ss'),
+          specific_date_utc: formatInTimeZone(sUtc, SCHEDULE_STORAGE_TZ, 'yyyy-MM-dd')
+        };
       };
 
       if (editingSchedule) {
         const isRecurring = editingSchedule.specific_date === null;
-        
+
         if (isRecurring && editAsOverride && overrideDate) {
-          // Editing a recurring schedule but creating a date override instead
-          // Create new date override, don't modify the recurring schedule
-          const payload = {
-            ...basePayload,
-            specific_date: overrideDate,
+          const { start_time, end_time, specific_date_utc } = viewPairToUtcStorage(
+            overrideDate,
+            formData.start_time,
+            formData.end_time
+          );
+          const conflicts = checkConflicts(
+            formData.setter_id,
+            [],
+            start_time,
+            end_time,
+            specific_date_utc
+          );
+          if (conflicts.length > 0) {
+            const conflictMessages = conflicts.map((c) => c.message).join('\n');
+            throw new Error(
+              `Schedule conflicts detected:\n\n${conflictMessages}\n\nPlease adjust the time or remove the conflicting schedule first.`
+            );
+          }
+          const { error: insertError } = await supabase.from('setter_schedules').insert({
+            setter_id: formData.setter_id,
+            start_time,
+            end_time,
+            before_shift: formData.before_shift || false,
+            specific_date: specific_date_utc,
             day_of_week: null
-          };
-          
-          const { error: insertError } = await supabase
-            .from('setter_schedules')
-            .insert(payload);
-          
+          });
           if (insertError) throw insertError;
         } else {
-          // Update existing schedule
-          const payload = { ...basePayload };
-          if (isDateOverrideMode || editAsOverride) {
-            // For date overrides, use the formData date if provided, otherwise keep the original date
-            // This prevents timezone shifts when updating
-            if (formData.specific_date) {
-              payload.specific_date = formData.specific_date;
-            } else if (overrideDate) {
-              payload.specific_date = overrideDate;
-            } else if (editingSchedule.specific_date) {
-              // Keep the original date if no new date is provided
-              payload.specific_date = editingSchedule.specific_date;
+          let start_time;
+          let end_time;
+          let specific_date_utc;
+
+          if (isDateOverrideMode || (editingSchedule && editingSchedule.specific_date !== null)) {
+            const viewYmd = formData.specific_date || overrideDate;
+            if (!viewYmd) throw new Error('Please select a date for the override');
+            ({ start_time, end_time, specific_date_utc } = viewPairToUtcStorage(
+              viewYmd,
+              formData.start_time,
+              formData.end_time
+            ));
+            const conflicts = checkConflicts(
+              formData.setter_id,
+              [],
+              start_time,
+              end_time,
+              specific_date_utc
+            );
+            if (conflicts.length > 0) {
+              const conflictMessages = conflicts.map((c) => c.message).join('\n');
+              throw new Error(
+                `Schedule conflicts detected:\n\n${conflictMessages}\n\nPlease adjust the time or remove the conflicting schedule first.`
+              );
             }
+          } else {
+            const dbDay = parseInt(formData.days_of_week[0], 10);
+            const gridDay = dbDay === 0 ? 6 : dbDay - 1;
+            const viewYmd = formatDateInTimezone(weekDates[gridDay], vt);
+            ({ start_time, end_time } = viewPairToUtcStorage(
+              viewYmd,
+              formData.start_time,
+              formData.end_time
+            ));
+            const conflicts = checkConflicts(
+              formData.setter_id,
+              formData.days_of_week,
+              start_time,
+              end_time,
+              null
+            );
+            if (conflicts.length > 0) {
+              const conflictMessages = conflicts.map((c) => c.message).join('\n');
+              throw new Error(
+                `Schedule conflicts detected:\n\n${conflictMessages}\n\nPlease adjust the time or remove the conflicting schedule first.`
+              );
+            }
+          }
+
+          const payload = {
+            setter_id: formData.setter_id,
+            start_time,
+            end_time,
+            before_shift: formData.before_shift || false
+          };
+          if (isDateOverrideMode || editingSchedule.specific_date !== null) {
+            payload.specific_date = specific_date_utc;
             payload.day_of_week = null;
           } else {
-            payload.day_of_week = parseInt(formData.days_of_week[0]);
+            payload.day_of_week = parseInt(formData.days_of_week[0], 10);
             payload.specific_date = null;
           }
 
@@ -209,33 +342,75 @@ export default function ScheduleForm({
 
           if (updateError) throw updateError;
         }
-      } else {
-        // Create new schedules - one for each selected day
-        if (isDateOverrideMode) {
-          // Single date override
-          const payload = {
-            ...basePayload,
-            specific_date: formData.specific_date,
-            day_of_week: null
-          };
-          const { error: insertError } = await supabase
-            .from('setter_schedules')
-            .insert(payload);
-          if (insertError) throw insertError;
-        } else {
-          // Multiple recurring schedules - one per selected day
-          const schedulesToInsert = formData.days_of_week.map(dayValue => ({
-            ...basePayload,
-            day_of_week: parseInt(dayValue),
-            specific_date: null
-          }));
-
-          const { error: insertError } = await supabase
-            .from('setter_schedules')
-            .insert(schedulesToInsert);
-
-          if (insertError) throw insertError;
+      } else if (isDateOverrideMode) {
+        const viewYmd = formData.specific_date;
+        if (!viewYmd) throw new Error('Please select a date for the override');
+        const { start_time, end_time, specific_date_utc } = viewPairToUtcStorage(
+          viewYmd,
+          formData.start_time,
+          formData.end_time
+        );
+        const conflicts = checkConflicts(
+          formData.setter_id,
+          [],
+          start_time,
+          end_time,
+          specific_date_utc
+        );
+        if (conflicts.length > 0) {
+          const conflictMessages = conflicts.map((c) => c.message).join('\n');
+          throw new Error(
+            `Schedule conflicts detected:\n\n${conflictMessages}\n\nPlease adjust the time or remove the conflicting schedule first.`
+          );
         }
+        const { error: insertError } = await supabase.from('setter_schedules').insert({
+          setter_id: formData.setter_id,
+          start_time,
+          end_time,
+          before_shift: formData.before_shift || false,
+          specific_date: specific_date_utc,
+          day_of_week: null
+        });
+        if (insertError) throw insertError;
+      } else {
+        const schedulesToInsert = [];
+        for (const dayValue of formData.days_of_week) {
+          const dbDay = parseInt(dayValue, 10);
+          const gridDay = dbDay === 0 ? 6 : dbDay - 1;
+          const viewYmd = formatDateInTimezone(weekDates[gridDay], vt);
+          const { start_time, end_time } = viewPairToUtcStorage(
+            viewYmd,
+            formData.start_time,
+            formData.end_time
+          );
+          const conflicts = checkConflicts(
+            formData.setter_id,
+            [dayValue],
+            start_time,
+            end_time,
+            null
+          );
+          if (conflicts.length > 0) {
+            const conflictMessages = conflicts.map((c) => c.message).join('\n');
+            throw new Error(
+              `Schedule conflicts detected:\n\n${conflictMessages}\n\nPlease adjust the time or remove the conflicting schedule first.`
+            );
+          }
+          schedulesToInsert.push({
+            setter_id: formData.setter_id,
+            start_time,
+            end_time,
+            before_shift: formData.before_shift || false,
+            day_of_week: dbDay,
+            specific_date: null
+          });
+        }
+
+        const { error: insertError } = await supabase
+          .from('setter_schedules')
+          .insert(schedulesToInsert);
+
+        if (insertError) throw insertError;
       }
 
       onSave();
@@ -267,51 +442,37 @@ export default function ScheduleForm({
     return hours * 60 + minutes;
   };
 
-  // Check for time overlap between two time ranges (handles overnight shifts)
+  /** Half-open minute ranges [s, e) on one calendar day. */
+  const rangesOverlapM = (s1, e1, s2, e2) => s1 < e2 && s2 < e1;
+
+  /**
+   * Overlap for two shifts on the *same* recurring weekday (UTC wall times).
+   * Overnight = end <= start: evening [start, 24h) on day D, morning [0, end) on D+1 only.
+   * Same-day shift lives entirely on D — it must not be compared to the overnight morning tail (that's D+1).
+   */
   const timesOverlap = (start1, end1, start2, end2) => {
     const s1 = timeToMinutes(start1);
     const e1 = timeToMinutes(end1);
     const s2 = timeToMinutes(start2);
     const e2 = timeToMinutes(end2);
-    
-    const isOvernight1 = e1 <= s1;
-    const isOvernight2 = e2 <= s2;
-    
-    // If both are same-day shifts, normal overlap check
-    if (!isOvernight1 && !isOvernight2) {
-      return s1 < e2 && s2 < e1;
+
+    const o1 = e1 <= s1;
+    const o2 = e2 <= s2;
+
+    if (!o1 && !o2) {
+      return rangesOverlapM(s1, e1, s2, e2);
     }
-    
-    // If one is overnight, we need special handling
-    // For overnight shifts, they overlap if:
-    // - They overlap in the "first part" (start to 23:59)
-    // - OR they overlap in the "second part" (00:00 to end)
-    
-    if (isOvernight1 && !isOvernight2) {
-      // Shift 1 is overnight (e.g., 22:00-02:00), shift 2 is same-day (e.g., 09:00-17:00)
-      // Check if shift 2 overlaps with first part (s1 to 23:59) OR second part (00:00 to e1)
-      // First part: shift 2 overlaps if it's between s1 and 23:59
-      const overlapsFirstPart = s2 >= s1 && s2 < 24 * 60;
-      // Second part: shift 2 overlaps if it's between 00:00 and e1
-      const overlapsSecondPart = s2 < e1 && e2 > 0;
-      return overlapsFirstPart || overlapsSecondPart;
+    if (o1 && !o2) {
+      return rangesOverlapM(s1, 24 * 60, s2, e2);
     }
-    
-    if (!isOvernight1 && isOvernight2) {
-      // Shift 1 is same-day, shift 2 is overnight
-      // Check if shift 1 overlaps with first part (s2 to 23:59) OR second part (00:00 to e2)
-      const overlapsFirstPart = s1 >= s2 && s1 < 24 * 60;
-      const overlapsSecondPart = s1 < e2 && e1 > 0;
-      return overlapsFirstPart || overlapsSecondPart;
+    if (!o1 && o2) {
+      return rangesOverlapM(s1, e1, s2, 24 * 60);
     }
-    
-    // Both are overnight - they always overlap (both cover midnight)
-    return true;
+    return rangesOverlapM(s1, 24 * 60, s2, 24 * 60) || rangesOverlapM(0, e1, 0, e2);
   };
 
   // Check for conflicts with existing schedules
   const checkConflicts = (setterId, daysOfWeek, startTime, endTime, specificDate) => {
-    console.log('checkConflicts', setterId, daysOfWeek, startTime, endTime, specificDate);
     const conflicts = [];
     
     // Filter schedules for the same setter, excluding the one being edited
@@ -401,20 +562,21 @@ export default function ScheduleForm({
         // Only check if our schedule starts early enough to potentially conflict
         // (if our schedule starts after the previous day's overnight shift ends, no conflict)
         const prevDayOfWeek = (dayOfWeek - 1 + 7) % 7; // Wrap around
-        const prevDayOvernightSchedule = relevantSchedules.find(s => {
+        const prevDayOvernightSchedule = relevantSchedules.find((s) => {
           if (s.specific_date !== null) return false;
           if (s.day_of_week !== prevDayOfWeek) return false;
-          // Check if previous day has an overnight shift that extends into our day
           const prevIsOvernight = timeToMinutes(s.end_time) <= timeToMinutes(s.start_time);
           if (!prevIsOvernight) return false;
-          // Previous day's overnight shift ends at s.end_time (e.g., 02:00)
-          // Check if our schedule overlaps with the end part (00:00 to s.end_time)
-          // Only check if our schedule starts before or at the time the previous shift ends
-          const ourStartMinutes = timeToMinutes(startTime);
-          const prevEndMinutes = timeToMinutes(s.end_time);
-          if (ourStartMinutes > prevEndMinutes) return false; // Our schedule starts after previous shift ends, no conflict
-          const endPartStart = '00:00:00';
-          return timesOverlap(endPartStart, s.end_time, startTime, endTime);
+          // Previous day's spill on *our* calendar day: [0, prevEnd)
+          const prevEndM = timeToMinutes(s.end_time);
+          const ourS = timeToMinutes(startTime);
+          const ourE = timeToMinutes(endTime);
+          const ourOvernight = ourE <= ourS;
+          if (ourOvernight) {
+            // Our evening on this day only vs their morning spill
+            return rangesOverlapM(0, prevEndM, ourS, 24 * 60);
+          }
+          return rangesOverlapM(0, prevEndM, ourS, ourE);
         });
         
         if (prevDayOvernightSchedule) {
@@ -434,17 +596,19 @@ export default function ScheduleForm({
         // Only check if the next day's schedule starts early enough to conflict with our end part
         if (isOvernight) {
           const nextDayOfWeek = (dayOfWeek + 1) % 7; // Wrap around (Sunday=0, Monday=1, etc.)
-          const conflictingNextDay = relevantSchedules.find(s => {
+          const ourEndM = timeToMinutes(endTime);
+          const conflictingNextDay = relevantSchedules.find((s) => {
             if (s.specific_date !== null) return false;
             if (s.day_of_week !== nextDayOfWeek) return false;
-            // Check if the next day's schedule overlaps with the end part of our overnight shift (00:00 to end)
-            // For the next day check, we only care about the end part: 00:00 to endTime
-            // Only check if next day's schedule starts before or at our end time
-            const nextStartMinutes = timeToMinutes(s.start_time);
-            const ourEndMinutes = timeToMinutes(endTime);
-            if (nextStartMinutes > ourEndMinutes) return false; // Next day's schedule starts after our shift ends, no conflict
-            const endPartStart = '00:00:00';
-            return timesOverlap(endPartStart, endTime, s.start_time, s.end_time);
+            const sS = timeToMinutes(s.start_time);
+            const sE = timeToMinutes(s.end_time);
+            const sOvernight = sE <= sS;
+            // Our spill on the *next* calendar day: [0, ourEndM)
+            if (!sOvernight) {
+              return rangesOverlapM(0, ourEndM, sS, sE);
+            }
+            // Their overnight on that day only uses evening [sS, 24h); morning [0,sE) is the *following* day
+            return rangesOverlapM(0, ourEndM, sS, 24 * 60);
           });
 
           if (conflictingNextDay) {
@@ -467,6 +631,11 @@ export default function ScheduleForm({
   };
 
   if (!isOpen) return null;
+
+  const vtRender = resolveViewTimezone(viewTimezone);
+  const overrideDateLabel =
+    overrideDate &&
+    formatInTimeZone(fromZonedTime(`${overrideDate}T12:00:00`, vtRender), vtRender, 'EEE, MMM d, yyyy');
 
   return (
     <div style={{
@@ -592,7 +761,7 @@ export default function ScheduleForm({
                   style={{ width: '18px', height: '18px', accentColor: '#0ea5e9' }}
                 />
                 <span style={{ fontSize: '14px', color: '#0c4a6e' }}>
-                  Create date override for {new Date(overrideDate).toLocaleDateString()} only
+                  Create date override for {overrideDateLabel || overrideDate} only
                 </span>
               </label>
             </div>
@@ -823,14 +992,7 @@ export default function ScheduleForm({
                 }}>
                   <span>Quick select:</span>
                   {weekDates.map((date, index) => {
-                    // Helper function to format date as YYYY-MM-DD in local time (no timezone conversion)
-                    const formatDateLocal = (date) => {
-                      const year = date.getFullYear();
-                      const month = String(date.getMonth() + 1).padStart(2, '0');
-                      const day = String(date.getDate()).padStart(2, '0');
-                      return `${year}-${month}-${day}`;
-                    };
-                    const dateStr = formatDateLocal(date);
+                    const dateStr = formatDateInTimezone(date, vtRender);
                     const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
                     return (
                       <button
@@ -864,6 +1026,12 @@ export default function ScheduleForm({
           )}
 
           {/* Time Selection */}
+          <div style={{ marginBottom: '8px', fontSize: '12px', color: '#6b7280' }}>
+            Times use the schedule page timezone:{' '}
+            <span style={{ fontWeight: '600', color: '#374151' }}>
+              {viewTimezoneLabel || (viewTimezone === 'local' ? 'Browser local' : viewTimezone)}
+            </span>
+          </div>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
             <div style={{ flex: 1 }}>
               <label style={{ 

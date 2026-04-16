@@ -14,6 +14,7 @@ import CloserDashboard from './pages/CloserDashboard';
 import ShiftsPage from './pages/ShiftsPage';
 import SchedulePage from './pages/schedules/SchedulePage';
 import TestSetterSchedule from './pages/TestSetterSchedule';
+import CurrentSetterApiTestPage from './pages/CurrentSetterApiTestPage';
 import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
 import UTMAnalyticsPage from './pages/utmAnalytics';
@@ -28,6 +29,7 @@ import MultipayCompletionPage from './pages/MultipayCompletionPage';
 import CloserAvailabilityPage from './pages/CloserAvailabilityPage';
 import CommissionOverviewPage from './pages/CommissionOverviewPage';
 import RevenueOverviewPage from './pages/RevenueOverviewPage';
+import AIChatPage from './pages/AIChatPage';
 import AdminSidebar from './components/AdminSidebar';
 import './App.css';
 
@@ -78,6 +80,11 @@ function AppRoutes() {
           <TestSetterSchedule />
         </ProtectedRoute>
       } />
+      <Route path="/test-current-setter-api" element={
+        <ProtectedRoute>
+          <CurrentSetterApiTestPage />
+        </ProtectedRoute>
+      } />
       <Route path="/offers" element={
         <ProtectedRoute>
           <OffersPage />
@@ -116,6 +123,11 @@ function AppRoutes() {
       <Route path="/revenue" element={
         <ProtectedRoute>
           <RevenueOverviewPage />
+        </ProtectedRoute>
+      } />
+      <Route path="/ai-chat" element={
+        <ProtectedRoute>
+          <AIChatPage />
         </ProtectedRoute>
       } />
 

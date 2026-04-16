@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler;
+let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -65,6 +65,7 @@ async function loadHandlers() {
   zoomWebhookHandler = await loadHandler('./lib/api-handlers/zoom-webhook.js', 'zoom-webhook');
   closerAvailabilityHandler = await loadHandler('./lib/api-handlers/closer-availability.js', 'closer-availability');
   createCalendarEventHandler = await loadHandler('./lib/api-handlers/create-calendar-event.js', 'create-calendar-event');
+  crmAiQueryHandler = await loadHandler('./lib/api-handlers/crm-ai-query.js', 'crm-ai-query');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -197,6 +198,11 @@ app.post('/api/zoom-webhook', async (req, res) => {
 app.get('/api/closer-availability', async (req, res) => {
   if (!closerAvailabilityHandler) await loadHandlers();
   return adaptVercelHandler(closerAvailabilityHandler)(req, res);
+});
+
+app.post('/api/crm-ai-query', async (req, res) => {
+  if (!crmAiQueryHandler) await loadHandlers();
+  return adaptVercelHandler(crmAiQueryHandler)(req, res);
 });
 
 // N8N webhook proxy endpoint
