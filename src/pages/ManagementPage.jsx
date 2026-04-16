@@ -80,8 +80,11 @@ export default function ManagementPage() {
   const [revenueRange, setRevenueRange] = useState('lastWeek');
   const [revenueCents, setRevenueCents] = useState(null);
   const [revenueLoading, setRevenueLoading] = useState(true);
+  const [recoveredRange, setRecoveredRange] = useState('lastWeek');
+  const [recoveredSeries, setRecoveredSeries] = useState([]);
+  const [recoveredLoading, setRecoveredLoading] = useState(true);
 
-  const getRevenueDateRange = (range) => {
+  const getNamedDateRange = (range) => {
     const now = new Date();
     if (range === 'currentWeek') {
       const { weekStart, weekEnd } = getWeekBoundsUTC(now);
@@ -103,6 +106,10 @@ export default function ManagementPage() {
       return { start: monthRange.startDate.toISOString(), end: monthRange.endDate.toISOString() };
     }
     return null;
+  };
+
+  const getRevenueDateRange = (range) => {
+    return getNamedDateRange(range);
   };
 
   useEffect(() => {
@@ -129,6 +136,32 @@ export default function ManagementPage() {
         setRevenueLoading(false);
       });
   }, [revenueRange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadRecoveredSeries = async () => {
+      const range = getNamedDateRange(recoveredRange);
+      if (!range) return;
+      setRecoveredLoading(true);
+      try {
+        const startDate = new Date(range.start);
+        const today = new Date();
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const daysNeeded = Math.min(90, Math.max(1, Math.ceil((today - startDate) / msPerDay) + 1));
+        const res = await fetch(`/api/management-series?days=${daysNeeded}`);
+        const json = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setRecoveredSeries(Array.isArray(json?.series) ? json.series : []);
+      } catch (err) {
+        console.error('Recovered series error:', err);
+        if (!cancelled) setRecoveredSeries([]);
+      } finally {
+        if (!cancelled) setRecoveredLoading(false);
+      }
+    };
+    loadRecoveredSeries();
+    return () => { cancelled = true; };
+  }, [recoveredRange]);
 
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -974,26 +1007,50 @@ export default function ManagementPage() {
                 backgroundColor: '#fff',
                 borderRadius: '12px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                padding: '16px 20px',
+                padding: '12px 14px',
                 border: '1px solid #e5e7eb',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-                Recovered leads
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Recovered leads
+                </div>
+                <select
+                  value={recoveredRange}
+                  onChange={(e) => setRecoveredRange(e.target.value)}
+                  style={{ fontSize: '11px', color: '#374151', border: '1px solid #e5e7eb', borderRadius: '6px', padding: '2px 6px', background: '#f9fafb', cursor: 'pointer' }}
+                >
+                  <option value="lastWeek">Last week</option>
+                  <option value="currentWeek">This week</option>
+                  <option value="lastMonth">Last month</option>
+                  <option value="currentMonth">This month</option>
+                </select>
               </div>
               {(() => {
-                const now = new Date();
-                const { weekStart } = getWeekBoundsUTC(now);
-                const mondayStr = weekStart.toISOString().slice(0, 10);
-                const todayStr = now.toISOString().slice(0, 10);
-                const thisWeek = chartSeries.filter((d) => d.date && d.date >= mondayStr && d.date <= todayStr);
-                const recovered = thisWeek.reduce((a, d) => a + (d.recoveredCount ?? 0), 0);
-                return (
-                  <div style={{ fontSize: '20px', fontWeight: '700', color: '#111827' }}>
-                    {chartLoading ? '…' : recovered}
-                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px', fontWeight: 400 }}>
-                      by book date (this week)
+                const range = getNamedDateRange(recoveredRange);
+                const startStr = range?.start?.slice(0, 10);
+                const endStr = range?.end?.slice(0, 10);
+                const selectedRange = recoveredSeries.filter((d) => d.date && (!startStr || d.date >= startStr) && (!endStr || d.date <= endStr));
+                const noShows = selectedRange.reduce((a, d) => a + (d.noShowCount ?? 0), 0);
+                const recontacted = selectedRange.reduce((a, d) => a + (d.recontactedCount ?? 0), 0);
+                const rebooked = selectedRange.reduce((a, d) => a + (d.rebookedCount ?? 0), 0);
+                const recoveredShowUps = selectedRange.reduce((a, d) => a + (d.recoveredShowUpsCount ?? 0), 0);
+                const closedFromRecovered = selectedRange.reduce((a, d) => a + (d.closedFromRecoveredCount ?? 0), 0);
+                const RecoveredMetric = ({ label, value, first }) => (
+                  <div style={{ flex: '1 1 0', minWidth: 0, paddingLeft: first ? 0 : 8, paddingRight: 8, ...(first ? {} : { borderLeft: '1px solid #e5e7eb' }) }}>
+                    <div style={{ fontSize: '10px', color: '#9ca3af', marginBottom: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#111827', lineHeight: 1.1 }}>
+                      {recoveredLoading ? '…' : value}
                     </div>
+                  </div>
+                );
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', gap: 0 }}>
+                      <RecoveredMetric first label="No-shows" value={noShows} />
+                      <RecoveredMetric label="Contacted" value={recontacted} />
+                      <RecoveredMetric label="Rebooked" value={rebooked} />
+                      <RecoveredMetric label="Showups" value={recoveredShowUps} />
+                      <RecoveredMetric label="Closed" value={closedFromRecovered} />
                   </div>
                 );
               })()}

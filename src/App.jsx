@@ -14,6 +14,7 @@ import CloserDashboard from './pages/CloserDashboard';
 import ShiftsPage from './pages/ShiftsPage';
 import SchedulePage from './pages/schedules/SchedulePage';
 import TestSetterSchedule from './pages/TestSetterSchedule';
+import CurrentSetterApiTestPage from './pages/CurrentSetterApiTestPage';
 import RubenShift from './pages/RubenShift';
 import RubenShiftsView from './pages/RubenShiftsView';
 import UTMAnalyticsPage from './pages/utmAnalytics';
@@ -77,6 +78,11 @@ function AppRoutes() {
       <Route path="/test-setter" element={
         <ProtectedRoute>
           <TestSetterSchedule />
+        </ProtectedRoute>
+      } />
+      <Route path="/test-current-setter-api" element={
+        <ProtectedRoute>
+          <CurrentSetterApiTestPage />
         </ProtectedRoute>
       } />
       <Route path="/offers" element={
