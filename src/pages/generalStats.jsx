@@ -419,8 +419,8 @@ const totalPurchased = purchasedCalls.length;
         if (call.offer_installments != null && Number(call.offer_installments) === 0) {
           closerStats[closerId].pif++;
         }
-        // Payoffs = explicit payoff flag on the purchase row
-        if (call.payoff === true || call.payoff === 'true') {
+        // Payoffs = outcome_log.PIF (Paid off / payoff checkbox on the sale log)
+        if (call.PIF === true || call.PIF === 'true') {
           closerStats[closerId].payoffs++;
         }
       }
