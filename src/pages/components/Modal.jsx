@@ -63,7 +63,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const table = mode === 'closer' ? 'outcome_log' : 'setter_notes';
-    const noteId = mode === 'closer' ? lead.closer_note_id : lead.setter_note_id;
+    const noteId = mode === 'closer' ? lead?.closer_note_id : lead?.setter_note_id;
   
   // Fetch Lock-in offer Kajabi ID when modal opens (closer mode) – for filtering purchases when outcome is lock_in
   useEffect(() => {
@@ -106,7 +106,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     }
 
     const fetchCalendlyQuestions = async () => {
-      const callIdToFetch = callId || lead.id;
+      const callIdToFetch = callId || lead?.id;
       if (callIdToFetch) {
         const { data: callData, error: callError } = await supabase
           .from('calls')
@@ -121,7 +121,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
       }
     };
     fetchCalendlyQuestions();
-  }, [isOpen, mode, callId, lead.id]);
+  }, [isOpen, mode, callId, lead?.id]);
 
   // Fetch note data when modal opens
   useEffect(() => {
@@ -192,7 +192,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
 
   // Suggest Kajabi purchases by lead email (closer, outcome yes/lock_in/refund, no linked purchase yet)
   useEffect(() => {
-    if (!isOpen || mode !== 'closer' || !lead?.email) {
+    if (!isOpen || mode !== 'closer' || !lead?.leads?.email) {
       setSuggestedPurchases([]);
       setSuggestError(null);
       return;
@@ -208,7 +208,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
     let cancelled = false;
     setSuggestLoading(true);
     setSuggestError(null);
-    findCustomerByEmail(lead.email)
+    findCustomerByEmail(lead?.leads?.email)
       .then((customer) => {
         if (cancelled || !customer?.id) {
           setSuggestedPurchases([]);
@@ -244,7 +244,7 @@ export const NotesModal = ({ isOpen, onClose, lead, callId, mode, initialKajabiP
         if (!cancelled) setSuggestLoading(false);
       });
     return () => { cancelled = true; };
-  }, [isOpen, mode, outcome, lead?.email, selectedKajabiPurchaseId, lockInKajabiId]);
+  }, [isOpen, mode, outcome, lead?.leads?.email, selectedKajabiPurchaseId, lockInKajabiId]);
 
   // Fetch customer details for suggested purchases (name, email per customer id)
   useEffect(() => {
@@ -1798,22 +1798,22 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
       setIsLoading(true);
 
       // Fetch setter note if exists
-      if (lead.setter_note_id) {
+      if (lead?.setter_note_id) {
         const { data, error } = await supabase
           .from('setter_notes')
           .select('*')
-          .eq('id', lead.setter_note_id)
+          .eq('id', lead?.setter_note_id)
           .single();
         
         if (!error) setSetterNote(data);
       }
 
       // Fetch closer note if exists
-      if (lead.closer_note_id) {
+      if (lead?.closer_note_id) {
         const { data, error } = await supabase
           .from('outcome_log')
           .select('*, offer:offer_id(id, name)')
-          .eq('id', lead.closer_note_id)
+          .eq('id', lead?.closer_note_id)
           .single();
         
         if (!error) setCloserNote(data);
@@ -1889,7 +1889,7 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
       }
 
       // Fetch calendly_questions from calls table
-      const callIdToFetch = callId || lead.id;
+      const callIdToFetch = callId || lead?.id;
       if (callIdToFetch) {
         const { data: callData, error: callError } = await supabase
           .from('calls')
@@ -1907,7 +1907,7 @@ export const ViewNotesModal = ({ isOpen, onClose, lead, callId }) => {
     };
 
     fetchNotes();
-  }, [isOpen, lead.setter_note_id, lead.closer_note_id, callId]);
+  }, [isOpen, lead?.setter_note_id, lead?.closer_note_id, callId]);
   
   // Helper function to render a single transcription
   const renderTranscription = (transcriptionText, index, createdAt) => {

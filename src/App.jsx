@@ -1,149 +1,212 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useLocation } from 'react-router-dom';
-import LeadsPage from './pages/LeadsPage';
-import ManagementPage from './pages/ManagementPage';
-import LeadDetailPage from './pages/LeadDetailPage';
-import Closer from './pages/Closer';
-import Setter from './pages/Setter';
-import EmailLogin from './pages/EmailLogin'; // ← Add this
-import ProtectedRoute from './pages/components/ProtectedRoute';
-import FortnightDashboard from './pages/setterStats';
-import StatsDashboard from './pages/generalStats';
-import CloserStatsDashboard from './pages/closerStats';
-import CloserDashboard from './pages/CloserDashboard';
-import ShiftsPage from './pages/ShiftsPage';
-import SchedulePage from './pages/schedules/SchedulePage';
-import TestSetterSchedule from './pages/TestSetterSchedule';
-import CurrentSetterApiTestPage from './pages/CurrentSetterApiTestPage';
-import RubenShift from './pages/RubenShift';
-import RubenShiftsView from './pages/RubenShiftsView';
-import UTMAnalyticsPage from './pages/utmAnalytics';
-import OffersPage from './pages/OffersPage';
-import UsersPage from './pages/UsersPage';
-import AISetterPage from './pages/AISetterPage';
-import KajabiPurchasesPage from './pages/KajabiPurchasesPage';
-import AllLeadsPage from './pages/AllLeadsPage';
-import CreateCallPage from './pages/CreateCallPage';
-import GoogleAnalyticsPage from './pages/GoogleAnalyticsPage';
-import MultipayCompletionPage from './pages/MultipayCompletionPage';
-import CloserAvailabilityPage from './pages/CloserAvailabilityPage';
-import CommissionOverviewPage from './pages/CommissionOverviewPage';
-import RevenueOverviewPage from './pages/RevenueOverviewPage';
-import AIChatPage from './pages/AIChatPage';
-import AdminSidebar from './components/AdminSidebar';
-import './App.css';
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import LeadsPage from "./pages/LeadsPage";
+import ManagementPage from "./pages/ManagementPage";
+import LeadDetailPage from "./pages/LeadDetailPage";
+import Closer from "./pages/Closer";
+import Setter from "./pages/Setter";
+import EmailLogin from "./pages/EmailLogin"; // ← Add this
+import ProtectedRoute from "./pages/components/ProtectedRoute";
+import FortnightDashboard from "./pages/setterStats";
+import StatsDashboard from "./pages/generalStats";
+import CloserStatsDashboard from "./pages/closerStats";
+import CloserDashboard from "./pages/CloserDashboard";
+import ShiftsPage from "./pages/ShiftsPage";
+import SchedulePage from "./pages/schedules/SchedulePage";
+import TestSetterSchedule from "./pages/TestSetterSchedule";
+import CurrentSetterApiTestPage from "./pages/CurrentSetterApiTestPage";
+import RubenShift from "./pages/RubenShift";
+import RubenShiftsView from "./pages/RubenShiftsView";
+import UTMAnalyticsPage from "./pages/utmAnalytics";
+import OffersPage from "./pages/OffersPage";
+import UsersPage from "./pages/UsersPage";
+import AISetterPage from "./pages/AISetterPage";
+import KajabiPurchasesPage from "./pages/KajabiPurchasesPage";
+import AllLeadsPage from "./pages/AllLeadsPage";
+import CreateCallPage from "./pages/CreateCallPage";
+import GoogleAnalyticsPage from "./pages/GoogleAnalyticsPage";
+import MultipayCompletionPage from "./pages/MultipayCompletionPage";
+import CloserAvailabilityPage from "./pages/CloserAvailabilityPage";
+import CommissionOverviewPage from "./pages/CommissionOverviewPage";
+import RevenueOverviewPage from "./pages/RevenueOverviewPage";
+import AIChatPage from "./pages/AIChatPage";
+import AdminSidebar from "./components/AdminSidebar";
+import "./App.css";
+import Layout from "./layout/index.jsx";
 
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<EmailLogin />} />   
-      <Route path="/login" element={<EmailLogin />} />   
-      <Route path="/admin" element={
-        <ProtectedRoute>
-        <LeadsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/management" element={
-        <ProtectedRoute>
-        <ManagementPage />
-        </ProtectedRoute>
-      } />
+      <Route path="/" element={<EmailLogin />} />
+      <Route path="/login" element={<EmailLogin />} />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <LeadsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/management"
+        element={
+          <ProtectedRoute>
+            <ManagementPage />
+          </ProtectedRoute>
+        }
+      />
       <Route path="/lead/:leadID" element={<LeadDetailPage />} />
-      <Route path="/closer/:closer" element={<Closer />} />
+      <Route
+        path="/closer/:closer"
+        element={
+          <Layout>
+            <Closer />
+          </Layout>
+        }
+      />
       <Route path="/setter/:setter" element={<Setter />} />
-      <Route path="/stats/:setter" element={<FortnightDashboard/>} />
-      <Route path="/closer-stats/:closer" element={<CloserStatsDashboard/>} />
-      <Route path="/closer-dashboard/:closer" element={<CloserDashboard/>} />
-      <Route path="/metrics" element={<StatsDashboard/>}/>
-      <Route path="/utm-stats" element={<UTMAnalyticsPage/>}/>
-      <Route path="/purchases" element={<KajabiPurchasesPage/>}/>
-      <Route path="/leads-list" element={<ProtectedRoute><AllLeadsPage /></ProtectedRoute>}/>
-      <Route path="/create-call" element={<ProtectedRoute><CreateCallPage /></ProtectedRoute>}/>
-      <Route path="/shifts" element={
-        <ProtectedRoute>
-          <ShiftsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/schedules" element={
-        <ProtectedRoute>
-          <SchedulePage />
-        </ProtectedRoute>
-      } />
-      <Route path="/rubenshift" element={
-          <RubenShift />
-      }/>
-      <Route path="/rubenshifts" element={
-          <RubenShiftsView />
-      }/>
-      <Route path="/test-setter" element={
-        <ProtectedRoute>
-          <TestSetterSchedule />
-        </ProtectedRoute>
-      } />
-      <Route path="/test-current-setter-api" element={
-        <ProtectedRoute>
-          <CurrentSetterApiTestPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/offers" element={
-        <ProtectedRoute>
-          <OffersPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/users" element={
-        <ProtectedRoute>
-          <UsersPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/ai-setter" element={
-        <ProtectedRoute>
-          <AISetterPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/google-analytics" element={
-        <ProtectedRoute>
-          <GoogleAnalyticsPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/multipay-completion" element={
-        <ProtectedRoute>
-          <MultipayCompletionPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/closer-availability" element={
-        <ProtectedRoute>
-          <CloserAvailabilityPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/commission-overview" element={
-        <ProtectedRoute>
-          <CommissionOverviewPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/revenue" element={
-        <ProtectedRoute>
-          <RevenueOverviewPage />
-        </ProtectedRoute>
-      } />
-      <Route path="/ai-chat" element={
-        <ProtectedRoute>
-          <AIChatPage />
-        </ProtectedRoute>
-      } />
-
+      <Route path="/stats/:setter" element={<FortnightDashboard />} />
+      <Route path="/closer-stats/:closer" element={<CloserStatsDashboard />} />
+      <Route path="/closer-dashboard/:closer" element={<CloserDashboard />} />
+      <Route path="/metrics" element={<StatsDashboard />} />
+      <Route path="/utm-stats" element={<UTMAnalyticsPage />} />
+      <Route path="/purchases" element={<KajabiPurchasesPage />} />
+      <Route
+        path="/leads-list"
+        element={
+          <ProtectedRoute>
+            <AllLeadsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/create-call"
+        element={
+          <ProtectedRoute>
+            <CreateCallPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/shifts"
+        element={
+          <ProtectedRoute>
+            <ShiftsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/schedules"
+        element={
+          <ProtectedRoute>
+            <SchedulePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/rubenshift" element={<RubenShift />} />
+      <Route path="/rubenshifts" element={<RubenShiftsView />} />
+      <Route
+        path="/test-setter"
+        element={
+          <ProtectedRoute>
+            <TestSetterSchedule />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/test-current-setter-api"
+        element={
+          <ProtectedRoute>
+            <CurrentSetterApiTestPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/offers"
+        element={
+          <ProtectedRoute>
+            <OffersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoute>
+            <UsersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-setter"
+        element={
+          <ProtectedRoute>
+            <AISetterPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/google-analytics"
+        element={
+          <ProtectedRoute>
+            <GoogleAnalyticsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/multipay-completion"
+        element={
+          <ProtectedRoute>
+            <MultipayCompletionPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/closer-availability"
+        element={
+          <ProtectedRoute>
+            <CloserAvailabilityPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/commission-overview"
+        element={
+          <ProtectedRoute>
+            <CommissionOverviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/revenue"
+        element={
+          <ProtectedRoute>
+            <RevenueOverviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ai-chat"
+        element={
+          <ProtectedRoute>
+            <AIChatPage />
+          </ProtectedRoute>
+        }
+      />
     </Routes>
   );
 }
 
 export default function App() {
   const location = useLocation();
-  const isLoginPage = location.pathname === '/' || location.pathname === '/login';
-  
+  const isLoginPage =
+    location.pathname === "/" || location.pathname === "/login";
+
   // Don't show sidebar on login pages
   if (isLoginPage) {
     return <AppRoutes />;
   }
-  
+
   // Wrap all other routes with AdminSidebar
   return (
     <AdminSidebar>
