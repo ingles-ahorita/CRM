@@ -95,7 +95,7 @@ export function TransferSetterModal({
   onTransfer,
   currentUserId = null
 }) {
-  const [tempSetter, setTempSetter] = useState(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+  const [tempSetter, setTempSetter] = useState(lead?.setter_id !== null && lead?.setter_id !== undefined ? String(lead?.setter_id) : '');
   const [transferNote, setTransferNote] = useState('');
 
   const handleTransfer = async () => {
@@ -108,17 +108,17 @@ export function TransferSetterModal({
     console.log('Transferring to setter ID:', tempSetter);
     
     const success = await transferLead(
-      lead.id,
+      lead?.id,
       tempSetter,
-      lead.setter_id,
+      lead?.setter_id,
       transferNote,
       currentUserId,
-      lead.manychat_user_id,
+      lead?.manychat_user_id,
       setterOptions
     );
 
     if (success) {
-      lead.setter_id = tempSetter; // Update the local lead object
+      if (lead) lead.setter_id = tempSetter; // Update the local lead object
       onTransfer(tempSetter); // Call the parent's transfer handler
       onClose();
     } else {
@@ -127,7 +127,7 @@ export function TransferSetterModal({
   };
 
   const handleClose = () => {
-    setTempSetter(lead.setter_id !== null && lead.setter_id !== undefined ? String(lead.setter_id) : '');
+    setTempSetter(lead?.setter_id !== null && lead?.setter_id !== undefined ? String(lead?.setter_id) : '');
     setTransferNote('');
     onClose();
   };
@@ -135,7 +135,7 @@ export function TransferSetterModal({
   return (
     <Modal isOpen={isOpen} onClose={handleClose}>
       <span style={{ display: 'block', fontSize: '30px', marginBottom: '26px' }}>
-        Transfer <b>{lead.name}</b> to
+        Transfer <b>{lead?.name}</b> to
       </span>
       <SetterDropdown
         value={tempSetter}
