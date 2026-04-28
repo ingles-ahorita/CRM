@@ -12,25 +12,48 @@ function getInitials(name = "") {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function Avatar({ initials, className }) {
+function Avatar({ initials, avatarUrl, className }) {
   return (
     <div
       className={cx(
         "h-10 w-10 rounded-full flex items-center justify-center text-xs font-semibold",
         "bg-slate-100",
+        "overflow-hidden",
         className,
       )}
     >
-      <UserRound size={18} className="text-black/70" />
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+        />
+      ) : (
+        <UserRound size={18} className="text-black/70" />
+      )}
     </div>
   );
 }
 
-function RankIcon({ rank }) {
-  return <span className="text-[12px] font-bold text-slate-500">{rank}</span>;
+function RankIcon({ rank, highlight = false }) {
+  return (
+    <span
+      className={cx(
+        "text-[14px] font-extrabold",
+        highlight
+          ? "text-indigo-600"
+          : "text-slate-500",
+      )}
+    >
+      #{rank}
+    </span>
+  );
 }
 
-function Row({ rank, initials, name, subtitle, percent, highlight = false, rightPill }) {
+function Row({ rank, initials, avatarUrl, name, subtitle, percent, highlight = false, rightPill }) {
   return (
     <div
       className={cx(
@@ -39,9 +62,12 @@ function Row({ rank, initials, name, subtitle, percent, highlight = false, right
       )}
     >
       <div className="flex items-center gap-1 min-w-0">
-        <div className="w-6 flex items-center justify-center">{typeof rank === "number" ? <RankIcon rank={rank} /> : rank}</div>
+        <div className="w-6 flex items-center justify-center">
+          {typeof rank === "number" ? <RankIcon rank={rank} highlight={highlight} /> : rank}
+        </div>
         <Avatar
           initials={initials}
+          avatarUrl={avatarUrl}
           className="text-black"
         />
         <div className="min-w-0 ml-1">
@@ -122,6 +148,7 @@ export default function PifRateLeaderboard({
             key={`${r.entry?.name ?? "entry"}-${r.rank}-${idx}`}
             rank={r.rank}
             initials={r.entry?.initials || getInitials(r.entry?.name)}
+            avatarUrl={r.entry?.avatarUrl}
             name={r.isYou ? `You (${r.entry?.name ?? "—"})` : r.entry?.name ?? "—"}
             subtitle={r.entry?.subtitle || ""}
             percent={r.entry?.percent || "—"}

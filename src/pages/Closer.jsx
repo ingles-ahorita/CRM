@@ -4,7 +4,7 @@ import {
   LeadListHeader,
 } from "./components/LeadItem";
 import CloserDashboardCards from "./components/CloserDashboardCards";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { HeaderTabsAndToolbar } from "./components/Header";
 import { fetchAll } from "../utils/fetchLeads";
@@ -90,6 +90,22 @@ export default function Closer() {
     closerMap: {},
     closerList: [],
   });
+
+  const closerAvatarUrl = useMemo(() => {
+    const list = dataState?.closerList ?? [];
+    const hit = list.find((c) => String(c?.id) === String(closer));
+    return hit?.avatar_url ?? null;
+  }, [dataState?.closerList, closer]);
+
+  const closerAvatarMap = useMemo(() => {
+    const map = new Map();
+    for (const c of dataState?.closerList ?? []) {
+      const id = c?.id;
+      if (id == null) continue;
+      map.set(String(id), c?.avatar_url ?? null);
+    }
+    return map;
+  }, [dataState?.closerList]);
 
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const prevLoadingRef = useRef(true);
@@ -903,6 +919,7 @@ export default function Closer() {
           return {
             closerId: cid,
             name,
+            avatarUrl: closerAvatarMap.get(String(cid)) ?? null,
             percent: rateText,
             subtitle: `${v.pif} / ${v.total} PIF`,
             isYou: String(cid) === String(closer),
@@ -1142,6 +1159,7 @@ export default function Closer() {
           return {
             closerId: cid,
             name,
+            avatarUrl: closerAvatarMap.get(String(cid)) ?? null,
             aov,
             aoc,
             sales: v.sales,
@@ -1352,6 +1370,7 @@ export default function Closer() {
             return {
               closerId: cid,
               name,
+              avatarUrl: closerAvatarMap.get(String(cid)) ?? null,
               percent,
               subtitle: `${v.showedUp} / ${v.confirmed} showed up`,
               isYou: String(cid) === String(closer),
@@ -1426,6 +1445,37 @@ export default function Closer() {
       ) : (
         <CloserHeader
           name={dataState.closerMap[closer] || ""}
+          closerId={closer}
+          avatarUrl={closerAvatarUrl}
+          onAvatarSaved={(url) => {
+            setDataState((prev) => ({
+              ...prev,
+              closerList: (prev.closerList ?? []).map((c) =>
+                String(c?.id) === String(closer) ? { ...c, avatar_url: url } : c,
+              ),
+            }));
+
+            // Realtime UI update: patch existing leaderboard/list entries in-place
+            // so the new avatar shows everywhere immediately (without refetch).
+            setPifLeaderboard((prev) => ({
+              ...prev,
+              entries: (prev.entries ?? []).map((e) =>
+                String(e?.closerId) === String(closer) ? { ...e, avatarUrl: url } : e,
+              ),
+            }));
+            setShowUpLeaderboard((prev) => ({
+              ...prev,
+              entries: (prev.entries ?? []).map((e) =>
+                String(e?.closerId) === String(closer) ? { ...e, avatarUrl: url } : e,
+              ),
+            }));
+            setAovByCloser((prev) => ({
+              ...prev,
+              entries: (prev.entries ?? []).map((e) =>
+                String(e?.closerId) === String(closer) ? { ...e, avatarUrl: url } : e,
+              ),
+            }));
+          }}
           monthLabel={monthLabel}
           lastUpdatedLabel={lastUpdatedLabel}
           // promoLabel={promoLabel || undefined}

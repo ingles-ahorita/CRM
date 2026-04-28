@@ -137,13 +137,44 @@ function MiniBars({ bars, colors, labels, valueSuffix = "%" }) {
 function MetricBlock({ label, value, valueClassName, children }) {
   return (
     <div className="flex flex-col">
-      <div className="text-[11px] !text-black">{label}</div>
-      <div className={cx("mt-1 text-2xl font-bold leading-none !text-black", valueClassName)}>
+      <div className="text-[11px] text-slate-700">{label}</div>
+      <div
+        className={cx(
+          "mt-1 text-2xl font-bold leading-none",
+          valueClassName || "text-slate-900",
+        )}
+      >
         {value}
       </div>
       {children}
     </div>
   );
+}
+
+function parsePercent(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  const n = Number(s.replace("%", "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function pifRateClassFromPercent(pct) {
+  if (!Number.isFinite(pct)) return "text-violet-600";
+  if (pct < 20) return "text-rose-600";
+  if (pct < 25) return "text-amber-600";
+  if (pct < 30) return "text-emerald-600";
+  return "text-emerald-700";
+}
+
+function pifRateFillFromPercent(pct) {
+  // Tailwind equivalents:
+  // rose-600 #E11D48, amber-600 #D97706, emerald-600 #059669, emerald-700 #047857
+  if (!Number.isFinite(pct)) return "#4F46E5"; // indigo-600 fallback
+  if (pct < 20) return "#E11D48";
+  if (pct < 25) return "#D97706";
+  if (pct < 30) return "#059669";
+  return "#047857";
 }
 
 export default function CloserHistoricPerformance({
@@ -184,12 +215,18 @@ export default function CloserHistoricPerformance({
     return labels.map((_, i) => baseHeights[i % baseHeights.length]);
   }, [controlledPifBars, labels]);
   const pifColors = useMemo(() => {
-    const cutoff = Math.ceil(labels.length * 0.65);
     // Recharts needs actual color values (not Tailwind class names)
-    return labels.map((_, i) => (i < cutoff ? "#F97316" : "#4F46E5")); // orange-500 / indigo-600
-  }, [labels]);
+    // Color each bar based on the PIF % thresholds:
+    // <20 bad (red), 20-25 ok (yellow), 25-30 good (green), 30+ amazing (dark green)
+    return (pifBars || []).map((b) => {
+      const pct = Math.round(Math.max(0, Math.min(1, Number(b) || 0)) * 1000) / 10;
+      return pifRateFillFromPercent(pct);
+    });
+  }, [pifBars]);
 
   if (loading) return <CloserHistoricPerformanceShimmer />;
+
+  const avgPifPct = parsePercent(avgPifRate);
 
   return (
     <div className="w-full rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
@@ -207,11 +244,15 @@ export default function CloserHistoricPerformance({
       </div>
 
       <div className="px-5 pb-5 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <MetricBlock label="Avg Closing Rate" value={avgClosingRate} valueClassName="text-violet-600">
+        <MetricBlock label="Avg Closing Rate" value={avgClosingRate} valueClassName="text-black">
           <MiniBars bars={closingBars} colors={closingColors} labels={labels} />
         </MetricBlock>
 
-        <MetricBlock label="Avg PIF Rate" value={avgPifRate} valueClassName="text-violet-600">
+        <MetricBlock
+          label="Avg PIF Rate"
+          value={avgPifRate}
+          valueClassName={pifRateClassFromPercent(avgPifPct)}
+        >
           <MiniBars bars={pifBars} colors={pifColors} labels={labels} />
         </MetricBlock>
 
