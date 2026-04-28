@@ -299,10 +299,15 @@ if (searchTerm) {
   // Fetch setters and closers in a single request using Supabase's rpc/multi-table feature, if available;
   // otherwise, use batched fetch. Here's a generic approach using Promise.all:
 
-  const [settersRes, closersRes] = await Promise.all([
+  const [settersRes, closersResInitial] = await Promise.all([
     supabase.from('setters').select('id, name'),
-    supabase.from('closers').select('id, name, email')
+    supabase.from('closers').select('id, name, email, avatar_url')
   ]);
+
+  const closersRes =
+    closersResInitial?.error?.message?.toLowerCase?.().includes('avatar_url')
+      ? await supabase.from('closers').select('id, name, email')
+      : closersResInitial;
 
   if (!settersRes.error && settersRes.data) {
     const map = {};
@@ -312,7 +317,7 @@ if (searchTerm) {
 
   if (!closersRes.error && closersRes.data) {
     const map = {};
-    const list = closersRes.data.map(c => ({ id: c.id, name: c.name, email: c.email }));
+    const list = closersRes.data.map(c => ({ id: c.id, name: c.name, email: c.email, avatar_url: c.avatar_url ?? null }));
     closersRes.data.forEach(c => { map[c.id] = c.name; });
     updateDataState({ closerMap: map, closerList: list });
   }

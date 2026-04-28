@@ -45,7 +45,16 @@ function money(v) {
   }).format(Number(v));
 }
 
-function Row({ rank, name, aov, aoc, sales, isYou = false }) {
+function aovColorClass(aov) {
+  const v = Number(aov);
+  if (!Number.isFinite(v)) return "text-black";
+  if (v < 750) return "text-rose-600";
+  if (v < 875) return "text-amber-600";
+  if (v < 1000) return "text-emerald-600";
+  return "text-emerald-700";
+}
+
+function Row({ rank, name, avatarUrl, aov, aoc, sales, isYou = false }) {
   return (
     <div
       className={cx(
@@ -57,7 +66,25 @@ function Row({ rank, name, aov, aoc, sales, isYou = false }) {
         <div className="w-6 flex items-center justify-center">
           <RankIcon rank={rank} />
         </div>
-        <Avatar initials={getInitials(name)} highlight={isYou} />
+        <div
+          className={cx(
+            "h-10 w-10 rounded-full overflow-hidden flex items-center justify-center",
+            "bg-slate-100",
+          )}
+        >
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          ) : (
+            <UserRound size={18} className="text-black/70" />
+          )}
+        </div>
         <div className="min-w-0 ml-1">
           <div className="text-sm font-semibold text-slate-900 truncate">
             {isYou ? `You (${name})` : name}
@@ -69,7 +96,7 @@ function Row({ rank, name, aov, aoc, sales, isYou = false }) {
       </div>
 
       <div className="flex items-baseline gap-2 flex-shrink-0">
-        <div className={cx("text-sm font-bold", isYou ? "text-indigo-600" : "text-black")}>
+        <div className={cx("text-sm font-bold", aovColorClass(aov))}>
           {money(aov)}
            {/* / {money(aoc)} */}
         </div>
@@ -166,6 +193,7 @@ export default function AovByCloser({
             key={`${e.name}-${idx}`}
             rank={idx + 1}
             name={e.name}
+            avatarUrl={e.avatarUrl}
             aov={e.aov}
             aoc={e.aoc}
             sales={e.sales}

@@ -189,7 +189,7 @@ export default function RecoveredLeads({
           <div className="mt-3 rounded-xl bg-rose-50 border border-rose-100 px-3 py-2 text-[11px] font-semibold text-rose-700 text-center flex items-center justify-center gap-2">
             <AlertTriangle size={14} className="text-rose-600" />
             <span>
-              {neverContacted} no-shows never contacted — start follow-ups now!
+              {neverContacted} no-shows never contacted
             </span>
           </div>
         ) : null}

@@ -57,11 +57,11 @@ export default function CloserAside({
           onRangeChange={onRecoveredRangeChange}
         />
       )}
-      {loading || payoffLoading ? (
+      {/* {loading || payoffLoading ? (
         <PayoffOpportunitiesShimmer />
       ) : (
         <PayoffOpportunities entries={payoffEntries} />
-      )}
+      )} */}
       {loading || aovLoading ? (
         <AovByCloserShimmer />
       ) : (

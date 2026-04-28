@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -60,29 +60,78 @@ function DataCell({
   isAboveBenchmark = false,
   benchmarkLabel,
   midTone = "neutral",
+  topClassName,
 }) {
+  const [tipVisible, setTipVisible] = useState(false);
+  const [tipPos, setTipPos] = useState({ x: 0, y: 0 });
+
+  const onEnter = useCallback((e) => {
+    if (!benchmarkLabel) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTipPos({ x: rect.left + rect.width / 2, y: rect.bottom });
+    setTipVisible(true);
+  }, [benchmarkLabel]);
+
+  const onLeave = useCallback(() => setTipVisible(false), []);
+
+  const onFocus = useCallback((e) => {
+    if (!benchmarkLabel) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTipPos({ x: rect.left + rect.width / 2, y: rect.bottom });
+    setTipVisible(true);
+  }, [benchmarkLabel]);
+
   const midClass =
     midTone === "good"
       ? "text-emerald-600"
       : midTone === "warn"
-        ? "text-orange-600"
+        ? "text-amber-600"
         : midTone === "bad"
           ? "text-rose-600"
+          : midTone === "great"
+            ? "text-emerald-700"
           : midTone === "info"
             ? "text-blue-600"
             : "text-slate-500";
+
+  const topClass =
+    topClassName ?? (isAboveBenchmark ? "text-emerald-600" : "text-black");
 
   return (
     <div className="px-4 py-4 flex flex-col items-center justify-center text-center">
       <div
         className={cx(
           "text-[14px] font-extrabold leading-none",
-          isAboveBenchmark ? "text-emerald-600" : "text-black",
+          benchmarkLabel ? "cursor-help" : null,
+          topClass,
         )}
-        title={benchmarkLabel ? `Benchmark: ${benchmarkLabel}` : undefined}
+        tabIndex={benchmarkLabel ? 0 : undefined}
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+        onFocus={onFocus}
+        onBlur={onLeave}
       >
         {top}
       </div>
+
+      {benchmarkLabel && tipVisible ? (
+        <div
+          className="fixed z-[9999] -translate-x-1/2"
+          style={{ left: tipPos.x, top: tipPos.y + 8 }}
+          aria-hidden="true"
+        >
+          <div
+            className={cx(
+              "rounded-lg border border-slate-200 bg-slate-950 text-white",
+              "px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap",
+              "shadow-[0_12px_30px_rgba(2,6,23,0.35)]",
+            )}
+          >
+            <span className="text-white/80">Benchmark:</span>{" "}
+            <span className="text-white">{benchmarkLabel}</span>
+          </div>
+        </div>
+      ) : null}
       {mid ? (
         <div className={cx("mt-1 text-[11px] font-semibold text-slate-500", midClass)}>
           {mid}
@@ -123,6 +172,43 @@ export default function CloserMetricsTable({
   const pifMtd = mtd?.pif || { pif: 0, total: 0 };
   const pifHist = historic?.pif || { pif: 0, total: 0 };
 
+  const showUpTone = (pct) => {
+    if (!Number.isFinite(pct)) return "neutral";
+    if (pct < 45) return "bad";
+    if (pct < 55) return "warn";
+    if (pct < 65) return "good";
+    return "great";
+  };
+
+  const showUpTopClass = (tone) =>
+    tone === "bad"
+      ? "text-rose-600"
+      : tone === "warn"
+        ? "text-amber-600"
+        : tone === "good"
+          ? "text-emerald-600"
+          : tone === "great"
+            ? "text-emerald-700"
+            : "text-black";
+
+  const showUpMtdPct = pctNum(showUpMtd.showed, showUpMtd.confirmed);
+  const showUpHistPct = pctNum(showUpHist.showed, showUpHist.confirmed);
+  const showUpMtdTone = showUpTone(showUpMtdPct);
+  const showUpHistTone = showUpTone(showUpHistPct);
+
+  const pifTone = (pct) => {
+    if (!Number.isFinite(pct)) return "neutral";
+    if (pct < 20) return "bad";
+    if (pct < 25) return "warn";
+    if (pct < 30) return "good";
+    return "great";
+  };
+
+  const pifMtdPct = pctNum(pifMtd.pif, pifMtd.total);
+  const pifHistPct = pctNum(pifHist.pif, pifHist.total);
+  const pifMtdTone = pifTone(pifMtdPct);
+  const pifHistTone = pifTone(pifHistPct);
+
   return (
     <div className="w-full rounded-2xl bg-white shadow-sm overflow-hidden pb-2 border border-slate-200">
       <div className="grid grid-cols-[1.2fr_1fr_1fr]">
@@ -154,17 +240,17 @@ export default function CloserMetricsTable({
           />
           <DataCell
             top={pctText(pifMtd.pif, pifMtd.total)}
-            isAboveBenchmark={(pctNum(pifMtd.pif, pifMtd.total) ?? -1) >= 25}
-            benchmarkLabel="25%"
+            benchmarkLabel="Bad: <20% / Ok: 20–25% / Good: 25–30% / Amazing: 30%+"
             mid={`${pifMtd.pif} / ${pifMtd.total} PIF`}
-            midTone="good"
+            midTone={pifMtdTone}
+            topClassName={showUpTopClass(pifMtdTone)}
           />
           <DataCell
             top={pctText(pifHist.pif, pifHist.total)}
-            isAboveBenchmark={(pctNum(pifHist.pif, pifHist.total) ?? -1) >= 25}
-            benchmarkLabel="25%"
+            benchmarkLabel="Bad: <20% / Ok: 20–25% / Good: 25–30% / Amazing: 30%+"
             mid={`${pifHist.pif} / ${pifHist.total} PIF`}
-            midTone="good"
+            midTone={pifHistTone}
+            topClassName={showUpTopClass(pifHistTone)}
           />
         </div>
 
@@ -179,14 +265,14 @@ export default function CloserMetricsTable({
           <DataCell
             top={pctText(closingMtd.closed, closingMtd.showedUp)}
             isAboveBenchmark={(pctNum(closingMtd.closed, closingMtd.showedUp) ?? -1) >= 30}
-            benchmarkLabel="30%"
+            benchmarkLabel="Bad: <30% / Good: 30%+"
             mid={`${closingMtd.closed} / ${closingMtd.showedUp} closed`}
             midTone="good"
           />
           <DataCell
             top={pctText(closingHist.closed, closingHist.showedUp)}
             isAboveBenchmark={(pctNum(closingHist.closed, closingHist.showedUp) ?? -1) >= 30}
-            benchmarkLabel="30%"
+            benchmarkLabel="Bad: <30% / Good: 30%+"
             mid={`${closingHist.closed} / ${closingHist.showedUp} closed`}
             midTone="good"
           />
@@ -202,17 +288,17 @@ export default function CloserMetricsTable({
           />
           <DataCell
             top={pctText(showUpMtd.showed, showUpMtd.confirmed)}
-            isAboveBenchmark={(pctNum(showUpMtd.showed, showUpMtd.confirmed) ?? -1) >= 55}
-            benchmarkLabel="55%"
+            benchmarkLabel="Bad: <45% / Ok: 45–55% / Good: 55–65% / Great: 65%+"
             mid={`${showUpMtd.showed} / ${showUpMtd.confirmed}`}
-            midTone="good"
+            midTone={showUpMtdTone}
+            topClassName={showUpTopClass(showUpMtdTone)}
           />
           <DataCell
             top={pctText(showUpHist.showed, showUpHist.confirmed)}
-            isAboveBenchmark={(pctNum(showUpHist.showed, showUpHist.confirmed) ?? -1) >= 55}
-            benchmarkLabel="55%"
+            benchmarkLabel="Bad: <45% / Ok: 45–55% / Good: 55–65% / Great: 65%+"
             mid={`${showUpHist.showed} / ${showUpHist.confirmed}`}
-            midTone="good"
+            midTone={showUpHistTone}
+            topClassName={showUpTopClass(showUpHistTone)}
           />
         </div>
 

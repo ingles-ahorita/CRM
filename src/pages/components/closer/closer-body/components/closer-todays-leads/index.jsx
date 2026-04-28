@@ -37,6 +37,60 @@ function cx(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
+// Same as LeadItem.jsx
+function callTimeColor(time, isRescheduled, called) {
+  if (time === undefined) return "#e5e7eb"; // loading
+  if (isRescheduled && !called) return "#dd86ddff";
+  if (!called) return "#cfcfcfff";
+  if (time < 6) return "#88ff2dff";
+  if (time < 15) return "#fdd329ff";
+  if (time >= 15) return "#ff8b8bff";
+  return "#e5e7eb";
+}
+
+function getZoomCallLogUrl(phone, bookDate) {
+  if (!phone || !bookDate) return "#";
+  const fromDate = new Date(bookDate);
+  fromDate.setDate(fromDate.getDate() - 1);
+  const toDate = new Date(bookDate);
+  toDate.setMonth(toDate.getMonth() + 1);
+  const from = `${fromDate.getFullYear()}-${fromDate.getMonth() + 1}-${fromDate.getDate()} `;
+  const to = `${toDate.getFullYear()}-${toDate.getMonth() + 1}-${toDate.getDate()} `;
+  const phoneCleaned = "+" + phone.toString().replace(/\D/g, "");
+  return `https://us06web.zoom.us/pbx/page/telephone/callLog#/recording-list?page_size=15&page_number=1&recordingReport=0&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&keyword=${encodeURIComponent(phoneCleaned)}`;
+}
+
+function ResponsePill({ lead, calltimeLoading = false }) {
+  const phone = lead?.leads?.phone || lead?.phone;
+  const bookDate = lead?.book_date;
+  const href = getZoomCallLogUrl(phone, bookDate);
+
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+      <span
+        className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[12px] font-semibold"
+        style={{
+          backgroundColor: callTimeColor(
+            lead?.responseTimeMinutes,
+            lead?.is_reschedule,
+            lead?.called,
+          ),
+          color: "#343434ff",
+        }}
+        title="Response"
+      >
+        {calltimeLoading ? (
+          <span className="calltime-spinner" />
+        ) : lead?.called ? (
+          `${lead?.responseTimeMinutes}m`
+        ) : (
+          "Not called"
+        )}
+      </span>
+    </a>
+  );
+}
+
 const MAIN_TABS = {
   leads: "leads",
   payoff: "payoff",
@@ -548,6 +602,7 @@ function LeadRow({
   actionsOpen,
   onToggleActions,
   useCompactStatusBadges = false,
+  calltimeLoading = false,
 }) {
   const navigate = useNavigate();
   const profile = lead?.leads || {};
@@ -634,7 +689,14 @@ function LeadRow({
         lead?.cancelled ? "bg-red-500/5 text-slate-500" : null,
       )}
     >
-      <div className="grid grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px] items-center gap-4 py-2">
+      <div
+        className={cx(
+          "grid items-center gap-4 py-2",
+          useCompactStatusBadges
+            ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
+            : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
+        )}
+      >
         <div className="flex flex-col items-center justify-center gap-1">
           {emojiStack}
         </div>
@@ -791,6 +853,12 @@ function LeadRow({
             </div>
           )}
         </div>
+
+        {useCompactStatusBadges ? (
+          <div className="flex items-center justify-center">
+            <ResponsePill lead={lead} calltimeLoading={calltimeLoading} />
+          </div>
+        ) : null}
 
         <div className="flex items-center justify-center gap-1">
           <div className="flex items-center justify-center">
@@ -1524,14 +1592,14 @@ export default function CloserTodaysLeads({
           className={cx(
             "mt-3",
             payoffList.length
-              ? "overflow-x-auto [@media(min-width:1465px)]:overflow-x-visible"
+              ? "overflow-x-auto [@media(min-width:1165px)]:overflow-x-visible"
               : null,
           )}
         >
           <div
             className={cx(
               payoffList.length
-                ? "min-w-[980px] [@media(min-width:1465px)]:min-w-0"
+                ? "min-w-[680px] [@media(min-width:1165px)]:min-w-0"
                 : null,
               "divide-y divide-slate-100",
             )}
@@ -1597,14 +1665,24 @@ export default function CloserTodaysLeads({
               </div>
             ) : (
               <>
-                <div className="px-3 py-2 bg-slate-50/70 border-y border-slate-200">
-                  <div className="grid grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px] items-center gap-4 text-[11px] font-bold tracking-wide text-slate-500 uppercase">
+              <div className="px-3 py-2 bg-slate-50/70 border-y border-slate-200">
+                <div
+                  className={cx(
+                    "grid items-center gap-4 text-[11px] font-bold tracking-wide text-slate-500 uppercase",
+                    tabValue === "all"
+                      ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
+                      : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
+                  )}
+                >
                     <div className="text-center"> </div>
                     <div>Lead</div>
                     <div className="text-center">Setter</div>
                     <div className="text-center">Time</div>
                     <div className="text-center">Status</div>
-                    <div className="text-center">Notes</div>
+                  {tabValue === "all" ? (
+                    <div className="text-center">Response</div>
+                  ) : null}
+                  <div className="text-center">Notes</div>
                     <div className="text-right"> </div>
                   </div>
                 </div>
