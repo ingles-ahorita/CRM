@@ -266,6 +266,11 @@ export default function CloserMetricsTable({
             top={pctText(closingMtd.closed, closingMtd.showedUp)}
             isAboveBenchmark={(pctNum(closingMtd.closed, closingMtd.showedUp) ?? -1) >= 30}
             benchmarkLabel="Bad: <30% / Good: 30%+"
+            topClassName={
+              (pctNum(closingMtd.closed, closingMtd.showedUp) ?? -1) >= 30
+                ? "text-emerald-600"
+                : "text-rose-600"
+            }
             mid={`${closingMtd.closed} / ${closingMtd.showedUp} closed`}
             midTone="good"
           />
@@ -273,6 +278,11 @@ export default function CloserMetricsTable({
             top={pctText(closingHist.closed, closingHist.showedUp)}
             isAboveBenchmark={(pctNum(closingHist.closed, closingHist.showedUp) ?? -1) >= 30}
             benchmarkLabel="Bad: <30% / Good: 30%+"
+            topClassName={
+              (pctNum(closingHist.closed, closingHist.showedUp) ?? -1) >= 30
+                ? "text-emerald-600"
+                : "text-rose-600"
+            }
             mid={`${closingHist.closed} / ${closingHist.showedUp} closed`}
             midTone="good"
           />

@@ -756,10 +756,9 @@ function LeadRow({
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 bg-slate-100/80 rounded-full px-2 py-1 text-[11px] text-slate-600 min-w-0">
+        <div className="flex items-center justify-center gap-1.5 bg-slate-100/80 rounded-full px-2 py-1 text-[11px] text-slate-600 w-auto">
           <UserRound size={14} className="text-slate-400 flex-shrink-0" />
           <span className="truncate">
-            <span className="text-slate-500">Setter: </span>
             <span className="font-semibold text-slate-700">
               {setterName || "—"}
             </span>

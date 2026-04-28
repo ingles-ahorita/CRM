@@ -177,6 +177,17 @@ function pifRateFillFromPercent(pct) {
   return "#047857";
 }
 
+function closingRateClassFromPercent(pct) {
+  if (!Number.isFinite(pct)) return "text-violet-600";
+  return pct >= 30 ? "text-emerald-600" : "text-rose-600";
+}
+
+function closingRateFillFromPercent(pct) {
+  // rose-600 #E11D48, emerald-600 #059669
+  if (!Number.isFinite(pct)) return "#4F46E5"; // indigo-600 fallback
+  return pct >= 30 ? "#059669" : "#E11D48";
+}
+
 export default function CloserHistoricPerformance({
   loading = false,
   defaultRange = "6mo",
@@ -204,10 +215,14 @@ export default function CloserHistoricPerformance({
     return labels.map((_, i) => baseHeights[i % baseHeights.length]);
   }, [controlledClosingBars, labels]);
   const closingColors = useMemo(() => {
-    const cutoff = Math.ceil(labels.length * 0.65);
     // Recharts needs actual color values (not Tailwind class names)
-    return labels.map((_, i) => (i < cutoff ? "#059669" : "#4F46E5")); // emerald-600 / indigo-600
-  }, [labels]);
+    // Color each bar based on Closing Rate threshold:
+    // <30% red, 30%+ green
+    return (closingBars || []).map((b) => {
+      const pct = Math.round(Math.max(0, Math.min(1, Number(b) || 0)) * 1000) / 10;
+      return closingRateFillFromPercent(pct);
+    });
+  }, [closingBars]);
 
   const pifBars = useMemo(() => {
     if (controlledPifBars?.length) return controlledPifBars;
@@ -227,6 +242,7 @@ export default function CloserHistoricPerformance({
   if (loading) return <CloserHistoricPerformanceShimmer />;
 
   const avgPifPct = parsePercent(avgPifRate);
+  const avgClosingPct = parsePercent(avgClosingRate);
 
   return (
     <div className="w-full rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
@@ -244,7 +260,11 @@ export default function CloserHistoricPerformance({
       </div>
 
       <div className="px-5 pb-5 grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <MetricBlock label="Avg Closing Rate" value={avgClosingRate} valueClassName="text-black">
+        <MetricBlock
+          label="Avg Closing Rate"
+          value={avgClosingRate}
+          valueClassName={closingRateClassFromPercent(avgClosingPct)}
+        >
           <MiniBars bars={closingBars} colors={closingColors} labels={labels} />
         </MetricBlock>
 

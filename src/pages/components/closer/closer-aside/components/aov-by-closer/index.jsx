@@ -54,6 +54,8 @@ function aovColorClass(aov) {
   return "text-emerald-700";
 }
 
+// Dropdown UI (reverted from tabs)
+
 function Row({ rank, name, avatarUrl, aov, aoc, sales, isYou = false }) {
   return (
     <div
@@ -174,7 +176,6 @@ export default function AovByCloser({
           >
             <option value="this_month">This month</option>
             <option value="last_month">Last month</option>
-            {/* <option value="all_time">All time</option> */}
           </select>
         </div>
 
