@@ -5,28 +5,20 @@ function cx(...parts) {
   return parts.filter(Boolean).join(" ");
 }
 
-function PillTabs({ value, onChange, options }) {
+function RangeDropdown({ value, onChange, options }) {
   return (
-    <div className="inline-flex rounded-md bg-slate-100/80 p-1">
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={cx(
-              "px-3 py-1 text-[11px] font-semibold rounded-md transition !outline-none",
-              active
-                ? "bg-white text-indigo-600 shadow-[0_1px_2px_rgba(15,23,42,0.10)]"
-                : "text-slate-500 hover:text-slate-700 bg-slate-100/80",
-            )}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
+    <select
+      value={value}
+      onChange={(e) => onChange?.(e.target.value)}
+      className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 outline-none"
+      aria-label="Recovered leads range"
+    >
+      {options.map((opt) => (
+        <option key={opt.value} value={opt.value}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -141,7 +133,7 @@ export default function RecoveredLeads({
             Recovered Leads
           </div>
         </div>
-        <PillTabs value={range} onChange={(v) => onRangeChange?.(v)} options={tabs} />
+        <RangeDropdown value={range} onChange={(v) => onRangeChange?.(v)} options={tabs} />
       </div>
 
       <div className="px-4 pb-3">
