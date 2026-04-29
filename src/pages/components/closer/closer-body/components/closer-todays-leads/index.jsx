@@ -495,18 +495,67 @@ function ActionMenu({
   onReport,
   canReschedule,
 }) {
+  const anchorRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
+
+  useEffect(() => {
+    if (!open) return;
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+
+    const gap = 8;
+    const computeAndSetPos = () => {
+      const rect = anchor.getBoundingClientRect();
+      const menuEl = menuRef.current;
+      const menuRect = menuEl?.getBoundingClientRect?.();
+
+      if (!menuRect) {
+        setMenuPos({ left: rect.right, top: rect.bottom + gap });
+        return;
+      }
+
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < menuRect.height + gap;
+
+      const top = openUp
+        ? Math.max(gap, rect.top - menuRect.height - gap)
+        : rect.bottom + gap;
+      const left = Math.min(
+        window.innerWidth - gap,
+        Math.max(gap, rect.right - menuRect.width),
+      );
+      setMenuPos({ left, top });
+    };
+
+    computeAndSetPos();
+    const raf = requestAnimationFrame(computeAndSetPos);
+    window.addEventListener("resize", computeAndSetPos);
+    window.addEventListener("scroll", computeAndSetPos, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", computeAndSetPos);
+      window.removeEventListener("scroll", computeAndSetPos, true);
+    };
+  }, [open]);
+
   return (
     <div className="relative">
       <span
         onClick={onToggle}
         className="cursor-pointer"
         aria-label="Actions"
+        ref={anchorRef}
       >
         <MoreVertical size={20} color="#000" />
       </span>
       {open ? (
         <>
-          <div className="absolute right-0 mt-2 w-56 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-[9999]">
+          <div
+            ref={menuRef}
+            className="fixed w-56 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-[10000]"
+            style={{ left: menuPos.left, top: menuPos.top }}
+          >
             <button
               type="button"
               onClick={onCopyCallId}
@@ -574,7 +623,7 @@ function ActionMenu({
             </button>
           </div>
           <div
-            className="fixed inset-0 z-10"
+            className="fixed inset-0 z-[9999]"
             onClick={(e) => {
               e.stopPropagation();
               onToggle?.();

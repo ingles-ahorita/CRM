@@ -50,8 +50,8 @@ function aovColorClass(aov) {
   if (!Number.isFinite(v)) return "text-black";
   if (v < 750) return "text-rose-600";
   if (v < 875) return "text-amber-600";
-  if (v < 1000) return "text-emerald-600";
-  return "text-emerald-700";
+  if (v < 1000) return "text-emerald-500";
+  return "text-emerald-800 font-black drop-shadow-[0_0_16px_rgba(16,185,129,0.75)]";
 }
 
 // Dropdown UI (reverted from tabs)
