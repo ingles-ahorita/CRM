@@ -304,10 +304,17 @@ if (searchTerm) {
     supabase.from('closers').select('id, name, email, avatar_url')
   ]);
 
-  const closersRes =
-    closersResInitial?.error?.message?.toLowerCase?.().includes('avatar_url')
-      ? await supabase.from('closers').select('id, name, email')
-      : closersResInitial;
+ 
+  const closersRes = await (async () => {
+    const msg = closersResInitial?.error?.message?.toLowerCase?.() || '';
+    if (!msg) return closersResInitial;
+
+    if (msg.includes('avatar_url') && msg.includes('does not exist')) {
+      return await supabase.from('closers').select('id, name, email');
+    }
+
+    return closersResInitial;
+  })();
 
   if (!settersRes.error && settersRes.data) {
     const map = {};
@@ -317,7 +324,12 @@ if (searchTerm) {
 
   if (!closersRes.error && closersRes.data) {
     const map = {};
-    const list = closersRes.data.map(c => ({ id: c.id, name: c.name, email: c.email, avatar_url: c.avatar_url ?? null }));
+    const list = closersRes.data.map(c => ({
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      avatar_url: c.avatar_url ?? null
+    }));
     closersRes.data.forEach(c => { map[c.id] = c.name; });
     updateDataState({ closerMap: map, closerList: list });
   }

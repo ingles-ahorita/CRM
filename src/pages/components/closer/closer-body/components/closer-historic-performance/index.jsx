@@ -163,29 +163,35 @@ function pifRateClassFromPercent(pct) {
   if (!Number.isFinite(pct)) return "text-violet-600";
   if (pct < 20) return "text-rose-600";
   if (pct < 25) return "text-amber-600";
-  if (pct < 30) return "text-emerald-600";
-  return "text-emerald-700";
+  if (pct < 30) return "text-emerald-500";
+  return "text-emerald-800 font-black drop-shadow-[0_0_16px_rgba(16,185,129,0.75)]";
 }
 
 function pifRateFillFromPercent(pct) {
   // Tailwind equivalents:
-  // rose-600 #E11D48, amber-600 #D97706, emerald-600 #059669, emerald-700 #047857
+  // rose-600 #E11D48, amber-600 #D97706, emerald-500 #10B981, emerald-800 #065F46
   if (!Number.isFinite(pct)) return "#4F46E5"; // indigo-600 fallback
   if (pct < 20) return "#E11D48";
   if (pct < 25) return "#D97706";
-  if (pct < 30) return "#059669";
-  return "#047857";
+  if (pct < 30) return "#10B981";
+  return "#065F46";
 }
 
 function closingRateClassFromPercent(pct) {
   if (!Number.isFinite(pct)) return "text-violet-600";
-  return pct >= 30 ? "text-emerald-600" : "text-rose-600";
+  if (pct < 25) return "text-rose-600";
+  if (pct < 30) return "text-amber-600";
+  if (pct < 35) return "text-emerald-600";
+  return "text-emerald-700 font-black drop-shadow-[0_0_16px_rgba(16,185,129,0.75)]";
 }
 
 function closingRateFillFromPercent(pct) {
-  // rose-600 #E11D48, emerald-600 #059669
+  // rose-600 #E11D48, amber-600 #D97706, emerald-600 #059669, emerald-700 #047857
   if (!Number.isFinite(pct)) return "#4F46E5"; // indigo-600 fallback
-  return pct >= 30 ? "#059669" : "#E11D48";
+  if (pct < 25) return "#E11D48";
+  if (pct < 30) return "#D97706";
+  if (pct < 35) return "#059669";
+  return "#047857";
 }
 
 export default function CloserHistoricPerformance({
@@ -216,8 +222,8 @@ export default function CloserHistoricPerformance({
   }, [controlledClosingBars, labels]);
   const closingColors = useMemo(() => {
     // Recharts needs actual color values (not Tailwind class names)
-    // Color each bar based on Closing Rate threshold:
-    // <30% red, 30%+ green
+    // Color each bar based on Closing Rate thresholds:
+    // <25% bad (red), 25–30% not good (yellow), 30–35% good (green), 35%+ amazing (dark green)
     return (closingBars || []).map((b) => {
       const pct = Math.round(Math.max(0, Math.min(1, Number(b) || 0)) * 1000) / 10;
       return closingRateFillFromPercent(pct);

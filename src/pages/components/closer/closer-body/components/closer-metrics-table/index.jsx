@@ -81,21 +81,12 @@ function DataCell({
     setTipVisible(true);
   }, [benchmarkLabel]);
 
-  const midClass =
-    midTone === "good"
-      ? "text-emerald-600"
-      : midTone === "warn"
-        ? "text-amber-600"
-        : midTone === "bad"
-          ? "text-rose-600"
-          : midTone === "great"
-            ? "text-emerald-700"
-          : midTone === "info"
-            ? "text-blue-600"
-            : "text-slate-500";
+  // In this table, we only color the percentage (top).
+  // Keep the supporting counts (mid) neutral for readability.
+  const midClass = "text-slate-500";
 
   const topClass =
-    topClassName ?? (isAboveBenchmark ? "text-emerald-600" : "text-black");
+    topClassName ?? (isAboveBenchmark ? "text-emerald-500" : "text-black");
 
   return (
     <div className="px-4 py-4 flex flex-col items-center justify-center text-center">
@@ -186,9 +177,9 @@ export default function CloserMetricsTable({
       : tone === "warn"
         ? "text-amber-600"
         : tone === "good"
-          ? "text-emerald-600"
+          ? "text-emerald-500"
           : tone === "great"
-            ? "text-emerald-700"
+            ? "text-emerald-800 font-black drop-shadow-[0_0_16px_rgba(16,185,129,0.75)]"
             : "text-black";
 
   const showUpMtdPct = pctNum(showUpMtd.showed, showUpMtd.confirmed);
@@ -208,6 +199,19 @@ export default function CloserMetricsTable({
   const pifHistPct = pctNum(pifHist.pif, pifHist.total);
   const pifMtdTone = pifTone(pifMtdPct);
   const pifHistTone = pifTone(pifHistPct);
+
+  const closingTone = (pct) => {
+    if (!Number.isFinite(pct)) return "neutral";
+    if (pct < 25) return "bad";
+    if (pct < 30) return "warn";
+    if (pct < 35) return "good";
+    return "great";
+  };
+
+  const closingMtdPct = pctNum(closingMtd.closed, closingMtd.showedUp);
+  const closingHistPct = pctNum(closingHist.closed, closingHist.showedUp);
+  const closingMtdTone = closingTone(closingMtdPct);
+  const closingHistTone = closingTone(closingHistPct);
 
   return (
     <div className="w-full rounded-2xl bg-white shadow-sm overflow-hidden pb-2 border border-slate-200">
@@ -264,27 +268,17 @@ export default function CloserMetricsTable({
           />
           <DataCell
             top={pctText(closingMtd.closed, closingMtd.showedUp)}
-            isAboveBenchmark={(pctNum(closingMtd.closed, closingMtd.showedUp) ?? -1) >= 30}
-            benchmarkLabel="Bad: <30% / Good: 30%+"
-            topClassName={
-              (pctNum(closingMtd.closed, closingMtd.showedUp) ?? -1) >= 30
-                ? "text-emerald-600"
-                : "text-rose-600"
-            }
+            benchmarkLabel="Bad: <25% / Not good: 25–30% / Good: 30–35% / Amazing: 35%+"
+            midTone={closingMtdTone}
+            topClassName={showUpTopClass(closingMtdTone)}
             mid={`${closingMtd.closed} / ${closingMtd.showedUp} closed`}
-            midTone="good"
           />
           <DataCell
             top={pctText(closingHist.closed, closingHist.showedUp)}
-            isAboveBenchmark={(pctNum(closingHist.closed, closingHist.showedUp) ?? -1) >= 30}
-            benchmarkLabel="Bad: <30% / Good: 30%+"
-            topClassName={
-              (pctNum(closingHist.closed, closingHist.showedUp) ?? -1) >= 30
-                ? "text-emerald-600"
-                : "text-rose-600"
-            }
+            benchmarkLabel="Bad: <25% / Not good: 25–30% / Good: 30–35% / Amazing: 35%+"
+            midTone={closingHistTone}
+            topClassName={showUpTopClass(closingHistTone)}
             mid={`${closingHist.closed} / ${closingHist.showedUp} closed`}
-            midTone="good"
           />
         </div>
 

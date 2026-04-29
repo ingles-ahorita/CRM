@@ -6,7 +6,7 @@ import RecoverLeadModal from './RecoverLeadModal';
 import NoShowStateModal from './NoShowStateModal';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Mail, Phone, User, Calendar, Clock } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
@@ -1053,39 +1053,113 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSetter, lead, showToast, closerList = [], onRecoverLead }) => {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
+  const anchorRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+
+    const gap = 8;
+    const computeAndSetPos = () => {
+      const rect = anchor.getBoundingClientRect();
+      const menuEl = menuRef.current;
+      const menuRect = menuEl?.getBoundingClientRect?.();
+
+      // If menu isn't measured yet, place it near the anchor.
+      if (!menuRect) {
+        setMenuPos({ left: rect.right, top: rect.bottom + gap });
+        return;
+      }
+
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < menuRect.height + gap;
+
+      const top = openUp
+        ? Math.max(gap, rect.top - menuRect.height - gap)
+        : rect.bottom + gap;
+      const left = Math.min(
+        window.innerWidth - gap,
+        Math.max(gap, rect.right - menuRect.width),
+      );
+
+      setMenuPos({ left, top });
+    };
+
+    // Run once immediately and again after paint.
+    computeAndSetPos();
+    const raf = requestAnimationFrame(computeAndSetPos);
+
+    window.addEventListener('resize', computeAndSetPos);
+    // capture scroll from nested containers too
+    window.addEventListener('scroll', computeAndSetPos, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', computeAndSetPos);
+      window.removeEventListener('scroll', computeAndSetPos, true);
+    };
+  }, [menuOpen]);
 
   return (
-    <button
-      onClick={() => setMenuOpen(!menuOpen)}
-      style={{
-        position: 'relative',
-        alignSelf: 'flex-start',
-        background: 'none',
-        border: 'none',
-        fontWeight: 'bold',
-        cursor: 'pointer',
-        padding: '0% 1.5%',
-        marginTop: '-5px',
-        fontSize: '18px',
-        color: '#6b7280',
-        marginLeft: '2%',
-        outline: 'none'
-      }}
-    >
-      ⋮
-      
+    <>
+      <button
+        ref={anchorRef}
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenuOpen((v) => !v);
+        }}
+        style={{
+          position: 'relative',
+          alignSelf: 'flex-start',
+          background: 'none',
+          border: 'none',
+          fontWeight: 'bold',
+          cursor: 'pointer',
+          padding: '0% 1.5%',
+          marginTop: '-5px',
+          fontSize: '18px',
+          color: '#6b7280',
+          marginLeft: '2%',
+          outline: 'none'
+        }}
+        aria-label="Open menu"
+      >
+        ⋮
+      </button>
+
       {menuOpen && (
-  <>
-    <div style={{
-      position: 'absolute',
-      right: '0',
-      top: '100%',
-      backgroundColor: 'white',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-      borderRadius: '4px',
-      minWidth: '150px',
-      zIndex: 1000
-    }}>
+        <>
+          <div
+            onClick={() => setMenuOpen(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 999
+            }}
+          />
+
+          <div
+            ref={menuRef}
+            style={{
+              position: 'fixed',
+              left: menuPos.left,
+              top: menuPos.top,
+              display: 'inline-block',
+              backgroundColor: 'white',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              borderRadius: '4px',
+              width: '180px',
+              maxWidth: '240px',
+              maxHeight: '70vh',
+              overflowY: 'auto',
+              zIndex: 1000
+            }}
+          >
       <button 
         onClick={(e) => { 
           e.stopPropagation();
@@ -1365,23 +1439,10 @@ const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSet
       >
         Report
       </button>
-    </div>
-    
-    <div
-      onClick={(e) => {
-        e.stopPropagation();
-        setMenuOpen(false);
-      }}
-      style={{
-        position: 'fixed',
-        top: 0, left: 0, right: 0, bottom: 0,
-        zIndex: 999
-      }}
-    />
-  </>
-)}
-
-    </button>
+          </div>
+        </>
+      )}
+    </>
   );
 };
 

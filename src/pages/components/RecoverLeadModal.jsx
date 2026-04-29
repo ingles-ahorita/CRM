@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../../lib/supabaseClient';
 
 export default function RecoverLeadModal({ isOpen, onClose, lead, closerList = [], onSuccess, mode = 'full' }) {
   const [closerEmail, setCloserEmail] = useState('');
@@ -6,20 +7,80 @@ export default function RecoverLeadModal({ isOpen, onClose, lead, closerList = [
   const [time, setTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [availableClosers, setAvailableClosers] = useState(() => closerList || []);
+  const [closersLoading, setClosersLoading] = useState(false);
 
   const isCloserMode = mode === 'closer';
+  const assignedCloserEmail = useMemo(() => {
+    if (!isCloserMode) return '';
+    const assigned = availableClosers?.find((c) => String(c?.id) === String(lead?.closer_id));
+    return assigned?.workspace_email || assigned?.email || '';
+  }, [isCloserMode, availableClosers, lead?.closer_id]);
+
+  const needsCloserPick = isCloserMode && !assignedCloserEmail;
+  const selectedCloserId = String(closerEmail || '').trim();
+  const selectedCloser = useMemo(() => {
+    if (!selectedCloserId) return null;
+    return (availableClosers || []).find((c) => String(c?.id) === selectedCloserId) || null;
+  }, [selectedCloserId, availableClosers]);
+
   const effectiveCloserEmail = isCloserMode
-    ? (closerList?.find((c) => c.id === lead?.closer_id)?.workspace_email || closerList?.find((c) => c.id === lead?.closer_id)?.email)
-    : closerEmail;
+    ? (assignedCloserEmail || selectedCloser?.workspace_email || selectedCloser?.email || '')
+    : (selectedCloser?.workspace_email || selectedCloser?.email || '');
+
+  const isValidEmail = (e) => typeof e === 'string' && e.includes('@');
+
+  // Keep local closers in sync with prop; also fetch if empty.
+  useEffect(() => {
+    setAvailableClosers(Array.isArray(closerList) ? closerList : []);
+  }, [closerList]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if ((availableClosers?.length || 0) > 0) return;
+    let cancelled = false;
+    async function loadClosers() {
+      setClosersLoading(true);
+      try {
+        const { data, error: e } = await supabase
+          .from('closers')
+          .select('id, name, email')
+          .order('name', { ascending: true });
+        if (cancelled) return;
+        if (e) throw e;
+        setAvailableClosers(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (cancelled) return;
+        console.warn('[RecoverLeadModal] failed to load closers:', e?.message || e);
+        setAvailableClosers([]);
+      } finally {
+        if (!cancelled) setClosersLoading(false);
+      }
+    }
+    loadClosers();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, availableClosers?.length]);
+
+  // Clear error as soon as user updates any field.
+  useEffect(() => {
+    if (!error) return;
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closerEmail, date, time]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    const emailToUse = isCloserMode ? effectiveCloserEmail : closerEmail;
-    if (!emailToUse || !date || !time) {
-      setError(isCloserMode ? 'No closer assigned to this call. Please pick a date and time.' : 'Please select a closer, date, and time');
+    if (!effectiveCloserEmail || !date || !time) {
+      setError('Please select a closer, date, and time');
+      return;
+    }
+    if (!isValidEmail(effectiveCloserEmail)) {
+      setError('Selected closer is missing a calendar email. Please update closer email in DB.');
       return;
     }
     setLoading(true);
@@ -33,14 +94,15 @@ export default function RecoverLeadModal({ isOpen, onClose, lead, closerList = [
       const leadEmailValue = lead?.email ?? lead?.leads?.email ?? '';
 
       // Ensure we send the actual email string
-      const emailToSend = isCloserMode
-        ? (effectiveCloserEmail || '').trim()
-        : (emailToUse.includes('@') ? String(emailToUse).trim() : (closerList?.find((c) => c.id === emailToUse)?.workspace_email || closerList?.find((c) => c.id === emailToUse)?.email) ?? emailToUse);
+      const emailToSend = String(effectiveCloserEmail).trim();
 
-      // Derive closer_id for CRM call creation
-      const closerId = isCloserMode
-        ? lead?.closer_id
-        : closerList?.find((c) => (c.workspace_email || c.email) === emailToUse)?.id ?? closerList?.find((c) => c.id === emailToUse)?.id;
+      // Derive closer_id for CRM call creation:
+      // - If call already has a closer_id, use it
+      // - Otherwise (or if user picked a closer), use the selected closer's id
+      const closerId =
+        selectedCloser?.id ??
+        lead?.closer_id ??
+        undefined;
 
       const res = await fetch('/api/create-calendar-event', {
         method: 'POST',
@@ -110,13 +172,13 @@ export default function RecoverLeadModal({ isOpen, onClose, lead, closerList = [
           Create a 1-hour event in the closer&apos;s Google Calendar.
         </p>
         <form onSubmit={handleSubmit}>
-          {!isCloserMode && (
+          {(!isCloserMode || needsCloserPick) && (
             <div style={{ marginBottom: '16px' }}>
               <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: '500', color: '#374151' }}>
                 Closer (email)
               </label>
               <select
-                value={closerEmail}
+                value={selectedCloserId}
                 onChange={(e) => setCloserEmail(e.target.value)}
                 required
                 style={{
@@ -128,21 +190,26 @@ export default function RecoverLeadModal({ isOpen, onClose, lead, closerList = [
                   backgroundColor: '#fff',
                 }}
               >
-                <option value="">Select closer</option>
-                {(closerList || []).filter((c) => c.workspace_email || c.email).map((c) => {
+                <option value="">
+                  {closersLoading ? 'Loading closers…' : 'Select closer'}
+                </option>
+                {(availableClosers || []).map((c) => {
                   const calendarEmail = c.workspace_email || c.email;
+                  const label = calendarEmail
+                    ? `${c.name} (${calendarEmail})`
+                    : `${c.name} (missing calendar email)`;
                   return (
-                    <option key={c.id} value={calendarEmail}>
-                      {c.name} ({calendarEmail})
+                    <option key={c.id} value={String(c.id)} disabled={!calendarEmail}>
+                      {label}
                     </option>
                   );
                 })}
               </select>
             </div>
           )}
-          {isCloserMode && effectiveCloserEmail && (
+          {isCloserMode && assignedCloserEmail && (
             <p style={{ marginBottom: '16px', fontSize: '14px', color: '#6b7280' }}>
-              Event will be created in <strong>{effectiveCloserEmail}</strong>&apos;s calendar (this call&apos;s closer).
+              Event will be created in <strong>{assignedCloserEmail}</strong>&apos;s calendar (this call&apos;s closer).
             </p>
           )}
           <div style={{ marginBottom: '16px' }}>
