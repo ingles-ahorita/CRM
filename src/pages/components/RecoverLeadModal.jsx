@@ -122,7 +122,7 @@ export default function RecoverLeadModal({ isOpen, onClose, lead, closerList = [
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.details || data.error || 'Failed to create event');
+      if (!res.ok) throw new Error(data?.details || data?.error || 'Failed to create event');
       if (data.callId) {
         const baseMsg = 'Calendar event and new call created successfully';
         onSuccess?.(data.manychatWarning ? `${baseMsg}. ManyChat: ${data.manychatWarning}` : baseMsg);

@@ -32,10 +32,13 @@ const CloserBody = (props) => {
         loading={props?.leadsLoading}
         leads={props?.leads}
         setterMap={props?.setterMap}
+        closerList={props?.closerList}
         activeTab={props?.activeTab}
         onTabChange={props?.onTabChange}
         payoffLoading={props?.payoffLoading}
         payoffEntries={props?.payoffEntries}
+        onLeadDeleted={props?.onLeadDeleted}
+        onRecoveredChange={props?.onRecoveredChange}
       />
     </div>
   );

@@ -99,8 +99,7 @@ function Row({ rank, name, avatarUrl, aov, aoc, sales, isYou = false }) {
 
       <div className="flex items-baseline gap-2 flex-shrink-0">
         <div className={cx("text-sm font-bold", aovColorClass(aov))}>
-          {money(aov)}
-           {/* / {money(aoc)} */}
+          {money(aov)}/ {money(aoc)}
         </div>
       </div>
     </div>
@@ -139,7 +138,8 @@ export default function AovByCloser({
     for (const x of list) {
       const aov = Number(x?.aov);
       const sales = Number(x?.sales);
-      if (!Number.isFinite(aov) || !Number.isFinite(sales) || sales <= 0) continue;
+      if (!Number.isFinite(aov) || !Number.isFinite(sales) || sales <= 0)
+        continue;
       totalValue += aov * sales;
       totalSales += sales;
     }
@@ -148,7 +148,9 @@ export default function AovByCloser({
   }, [list]);
 
   const overallAoc = useMemo(() => {
-    const nums = list.map((x) => Number(x?.aoc)).filter((n) => Number.isFinite(n));
+    const nums = list
+      .map((x) => Number(x?.aoc))
+      .filter((n) => Number.isFinite(n));
     if (!nums.length) return null;
     return nums.reduce((a, b) => a + b, 0) / nums.length;
   }, [list]);
@@ -161,7 +163,9 @@ export default function AovByCloser({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <BarChart3 size={16} className="text-indigo-600" />
-            <div className="text-sm font-semibold text-slate-900">AOV by Closer</div>
+            <div className="text-sm font-semibold text-slate-900">
+              AOV/AOC by Closer
+            </div>
           </div>
 
           <select
@@ -182,8 +186,7 @@ export default function AovByCloser({
         <div className="mt-3 text-[11px] text-slate-400">
           Overall:{" "}
           <span className="text-slate-900 font-bold text-[15px] ml-1">
-            {money(overall)}
-             {/* / {money(overallAoc)} */}
+            {money(overall)}/ {money(overallAoc)}
           </span>
         </div>
       </div>
@@ -205,4 +208,3 @@ export default function AovByCloser({
     </div>
   );
 }
-

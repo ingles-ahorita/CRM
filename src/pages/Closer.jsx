@@ -23,6 +23,7 @@ import {
   getCloserCommissionForMonth,
   shiftMonthKeyByMonths,
 } from "../lib/closerCommission";
+import { aocForOffer, fetchCompletionRatesInst2 } from "../lib/aoc";
 
 export default function Closer() {
   // Ensure the page starts at the top on first entry
@@ -165,6 +166,8 @@ export default function Closer() {
     neverContactedCount: 0,
     leads: [],
   });
+  const [recoveredRefreshTick, setRecoveredRefreshTick] = useState(0);
+  const bumpRecoveredRefresh = () => setRecoveredRefreshTick((t) => t + 1);
 
   const [historicPerf, setHistoricPerf] = useState({
     loading: true,
@@ -604,7 +607,7 @@ export default function Closer() {
     return () => {
       cancelled = true;
     };
-  }, [closer, recoveredAside.range]);
+  }, [closer, recoveredAside.range, recoveredRefreshTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1016,7 +1019,7 @@ export default function Closer() {
         if (shouldDateFilter && (!startISO || !endISO)) throw new Error("Missing month range");
 
         const baseSelect =
-          "commission,discount,purchase_date,payoff_date,kajabi_payoff_id,PIF,calls!inner!call_id(closer_id),offers!offer_id(price,installments,base_commission,payoff_commission)";
+          "commission,discount,purchase_date,payoff_date,kajabi_payoff_id,PIF,calls!inner!call_id(closer_id),offers!offer_id(kajabi_id,price,installments,base_commission,payoff_commission)";
 
         const fetchPage = async (from, to) => {
           let q = supabase.from("outcome_log").select(baseSelect).eq("outcome", "yes");
@@ -1026,6 +1029,10 @@ export default function Closer() {
           const res = await q;
           return res?.error ? [] : res?.data || [];
         };
+
+        // Kick off completion-rate fetch in parallel with rows fetch.
+        // These rates drive AOC per offer (see src/lib/aoc.js).
+        const completionRatesPromise = fetchCompletionRatesInst2();
 
         let rows = [];
         if (shouldDateFilter) {
@@ -1040,6 +1047,8 @@ export default function Closer() {
             if (page.length < pageSize) break;
           }
         }
+
+        const completionRates = await completionRatesPromise;
         const adjustedBase = (offer, discount) => {
           if (!offer || offer.base_commission == null) return null;
           const base = Number(offer.base_commission);
@@ -1048,18 +1057,6 @@ export default function Closer() {
           const d = parseFloat(String(discount).replace(/%/g, "").trim());
           if (!Number.isFinite(d)) return base;
           return base - (base * d) / 100;
-        };
-
-        const pifCommission = (row) => {
-          const offer = row?.offers || null;
-          const payoff = Number(offer?.payoff_commission);
-          return Number.isFinite(payoff) ? payoff : null;
-        };
-
-        // Single-installment commission (first installment credit) for multipay.
-        const installmentCommission = (row) => {
-          const offer = row?.offers || null;
-          return adjustedBase(offer, row?.discount);
         };
 
         const commissionForSale = (row) => {
@@ -1097,15 +1094,12 @@ export default function Closer() {
               sales: 0,
               // For AOV (Management-style): average offer price per sale
               aovValueSum: 0,
-              // For AOC buckets (closer-specific):
-              pifSum: 0,
-              pifCount: 0,
-              mainInstSum: 0,
-              mainInstCount: 0,
-              studentInstSum: 0,
-              studentInstCount: 0,
+              // For AOC: weighted average of the static per-offer AOC values
+              // across this closer's actual sales mix (see src/lib/aoc.js).
+              aocSum: 0,
+              aocCount: 0,
             };
-          cur.sum += commissionForSale(r); // keep AOC logic intact
+          cur.sum += commissionForSale(r); // keep legacy commission tally intact
           cur.sales += 1;
 
           // AOV should match ManagementPage: avg offer price (not commission)
@@ -1114,26 +1108,13 @@ export default function Closer() {
             cur.aovValueSum += offerPrice;
           }
 
-          const inst = Number(r?.offers?.installments);
-          const isPifSale = Number.isFinite(inst) && inst === 0;
-          if (isPifSale) {
-            const v = pifCommission(r);
-            if (v != null) {
-              cur.pifSum += v;
-              cur.pifCount += 1;
-            }
-          } else if (inst === 4 || inst === 7) {
-            const v = installmentCommission(r);
-            if (v != null) {
-              cur.mainInstSum += v;
-              cur.mainInstCount += 1;
-            }
-          } else if (inst === 5) {
-            const v = installmentCommission(r);
-            if (v != null) {
-              cur.studentInstSum += v;
-              cur.studentInstCount += 1;
-            }
+          // AOC: per-sale static AOC for the offer; closer's AOC is the
+          // weighted average of these (Σ aoc / sales count). Completion
+          // rates come from `kajabi_purchases` mirror (see src/lib/aoc.js).
+          const offerAoc = aocForOffer(r?.offers, completionRates);
+          if (offerAoc != null && Number.isFinite(offerAoc)) {
+            cur.aocSum += offerAoc;
+            cur.aocCount += 1;
           }
           byCloser.set(cid, cur);
         }
@@ -1142,15 +1123,9 @@ export default function Closer() {
           // AOV: Management-style average offer price per sale
           const aov = v.sales > 0 ? v.aovValueSum / v.sales : null;
 
-          // AOC = average of the available commission buckets for this closer+range.
-          // IMPORTANT: do not inject zeros for missing buckets (that makes AOC look "wrong").
-          // Multipay commission is only on the first two installments.
-          const parts = [];
-          if (v.pifCount > 0) parts.push(v.pifSum / v.pifCount);
-          if (v.mainInstCount > 0) parts.push((v.mainInstSum / v.mainInstCount) * 2);
-          if (v.studentInstCount > 0)
-            parts.push((v.studentInstSum / v.studentInstCount) * 2);
-          const aoc = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
+          // AOC: weighted average across the closer's sales mix.
+          // closer_aoc = Σ(offer_aoc per sale) / total sales (see src/lib/aoc.js).
+          const aoc = v.aocCount > 0 ? v.aocSum / v.aocCount : null;
 
           const name =
             dataState.closerMap?.[String(cid)] ||
@@ -1517,12 +1492,14 @@ export default function Closer() {
           onTabChange={(tab) => setHeaderState((p) => ({ ...p, activeTab: tab }))}
           payoffLoading={payoffOpps.loading}
           payoffEntries={payoffOpps.entries}
-          onLeadDeleted={(callId) =>
+          onLeadDeleted={(callId) => {
             setDataState((prev) => ({
               ...prev,
               leads: (prev.leads || []).filter((l) => l.id !== callId),
-            }))
-          }
+            }));
+            bumpRecoveredRefresh();
+          }}
+          onRecoveredChange={bumpRecoveredRefresh}
         />
         <CloserAside
           loading={bodyStats.loading}
