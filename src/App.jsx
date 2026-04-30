@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useLocation } from "react-router-dom";
 import LeadsPage from "./pages/LeadsPage";
 import ManagementPage from "./pages/ManagementPage";
+import Management2 from "./pages/Management2";
 import LeadDetailPage from "./pages/LeadDetailPage";
 import Closer from "./pages/Closer";
 import Setter from "./pages/Setter";
@@ -52,6 +53,16 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <ManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/management-2"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Management2 />
+            </Layout>
           </ProtectedRoute>
         }
       />

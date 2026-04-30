@@ -1145,6 +1145,7 @@ export default function CloserTodaysLeads({
   payoffLoading = false,
   payoffEntries = [],
   onLeadDeleted,
+  onRecoveredChange,
   activeTab = "today",
   onTabChange,
 }) {
@@ -1874,7 +1875,10 @@ export default function CloserTodaysLeads({
         lead={recoverLead}
         closerList={closerList}
         mode="closer"
-        onSuccess={(msg) => alert(msg || "Calendar event created")}
+        onSuccess={(msg) => {
+          alert(msg || "Calendar event created");
+          onRecoveredChange?.();
+        }}
       />
 
       <NotesModal
