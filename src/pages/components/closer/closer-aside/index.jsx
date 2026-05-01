@@ -13,6 +13,7 @@ import ShowUpLeaderboardShimmer from "../shimmers/closer-aside/show-up-leaderboa
 
 export default function CloserAside({
   loading = false,
+  pageCloserId,
   pifRateLoading = false,
   showUpLoading = false,
   aovLoading = false,
@@ -40,6 +41,7 @@ export default function CloserAside({
       ) : (
         <PifRateLeaderboard
           entries={pifRateEntries}
+          pageCloserId={pageCloserId}
           titleRight={pifRateTitleRight}
           footer={pifRateFooter}
         />
@@ -47,7 +49,7 @@ export default function CloserAside({
       {loading || showUpLoading ? (
         <ShowUpLeaderboardShimmer />
       ) : (
-        <ShowUpLeaderboard entries={showUpEntries} />
+        <ShowUpLeaderboard entries={showUpEntries} pageCloserId={pageCloserId} />
       )}
       {loading || recoveredLoading ? (
         <RecoveredLeadsShimmer />

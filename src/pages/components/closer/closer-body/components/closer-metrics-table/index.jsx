@@ -144,7 +144,8 @@ export default function CloserMetricsTable({
   const pctText = (num, den) => {
     const n = Number(num);
     const d = Number(den);
-    if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) return "—";
+    if (!Number.isFinite(d) || d <= 0) return "0%";
+    if (!Number.isFinite(n)) return "0%";
     const v = Math.round(((n / d) * 100) * 10) / 10;
     return `${String(v).endsWith(".0") ? Math.round(v) : v}%`;
   };
@@ -152,7 +153,8 @@ export default function CloserMetricsTable({
   const pctNum = (num, den) => {
     const n = Number(num);
     const d = Number(den);
-    if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) return null;
+    if (!Number.isFinite(d) || d <= 0) return 0;
+    if (!Number.isFinite(n)) return 0;
     return (n / d) * 100;
   };
 

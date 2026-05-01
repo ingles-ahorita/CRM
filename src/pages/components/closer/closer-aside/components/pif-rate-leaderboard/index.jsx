@@ -94,23 +94,35 @@ export default function PifRateLeaderboard({
   loading = false,
   titleRight = "(#1 + you)",
   entries,
+  /** Route closer id — "You" always means this dashboard's closer, not demo data */
+  pageCloserId,
   footer,
 }) {
   if (loading) return null;
 
-  const list =
-    entries?.length
-      ? entries
-      : [
-          { name: "Eduardo", percent: "66%", subtitle: "Top performer this month" },
-          { name: "Ana", percent: "33%", subtitle: "Keep pushing PIF!", isYou: true },
-          { name: "Karina", percent: "29%", subtitle: "Solid pace" },
-          { name: "Luis", percent: "24%", subtitle: "Room to improve" },
-          { name: "Martin", percent: "18%", subtitle: "Build consistency" },
-        ];
+  const list = Array.isArray(entries) ? entries : [];
+
+  if (list.length === 0) {
+    return (
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-center gap-2">
+            <Trophy size={16} className="text-amber-500" />
+            <div className="text-sm font-semibold text-slate-900">PIF Rate Leaderboard</div>
+          </div>
+        </div>
+        <div className="px-4 pb-6 text-center text-[13px] text-slate-500">
+          No PIF data for closers this month yet.
+        </div>
+      </div>
+    );
+  }
 
   const topEntry = list[0];
-  const youIndex = list.findIndex((e) => !!e?.isYou);
+  const youIndex =
+    pageCloserId != null && pageCloserId !== ""
+      ? list.findIndex((e) => String(e?.closerId) === String(pageCloserId))
+      : -1;
   const youEntry = youIndex >= 0 ? list[youIndex] : null;
 
   const rows = [
@@ -118,10 +130,10 @@ export default function PifRateLeaderboard({
       ? {
           entry: topEntry,
           rank: 1,
-          isYou: !!topEntry?.isYou,
+          isYou: youIndex === 0,
         }
       : null,
-    youEntry && youIndex !== 0
+    youEntry && youIndex > 0
       ? {
           entry: youEntry,
           rank: youIndex + 1,

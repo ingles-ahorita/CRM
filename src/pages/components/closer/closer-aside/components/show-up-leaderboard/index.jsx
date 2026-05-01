@@ -106,26 +106,32 @@ function Row({
   );
 }
 
-export default function ShowUpLeaderboard({ loading = false, entries }) {
+export default function ShowUpLeaderboard({ loading = false, entries, pageCloserId }) {
   if (loading) return null;
 
-  const list = entries?.length
-    ? entries
-    : [
-        { name: "Eduardo", percent: "52%", subtitle: "Best show-up rate" },
-        { name: "Karina", percent: "41%", subtitle: "Strong consistency" },
-        {
-          name: "Ana",
-          percent: "28%",
-          subtitle: "28.1% this month",
-          isYou: true,
-        },
-        { name: "Luis", percent: "22%", subtitle: "Needs improvement" },
-        { name: "Martin", percent: "18%", subtitle: "Work the follow-ups" },
-      ];
+  const list = Array.isArray(entries) ? entries : [];
+
+  if (list.length === 0) {
+    return (
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-center gap-2">
+            <ClipboardList size={16} className="text-amber-500" />
+            <div className="text-sm font-semibold text-slate-900">Show Up Leaderboard</div>
+          </div>
+        </div>
+        <div className="px-4 pb-6 text-center text-[13px] text-slate-500">
+          No show-up data for closers this month yet.
+        </div>
+      </div>
+    );
+  }
 
   const topEntry = list[0];
-  const youIndex = list.findIndex((e) => !!e?.isYou);
+  const youIndex =
+    pageCloserId != null && pageCloserId !== ""
+      ? list.findIndex((e) => String(e?.closerId) === String(pageCloserId))
+      : -1;
   const youEntry = youIndex >= 0 ? list[youIndex] : null;
 
   const rows = [
@@ -133,10 +139,10 @@ export default function ShowUpLeaderboard({ loading = false, entries }) {
       ? {
           entry: topEntry,
           rank: 1,
-          isYou: !!topEntry?.isYou,
+          isYou: youIndex === 0,
         }
       : null,
-    youEntry && youIndex !== 0
+    youEntry && youIndex > 0
       ? {
           entry: youEntry,
           rank: youIndex + 1,

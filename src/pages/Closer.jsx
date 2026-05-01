@@ -1036,10 +1036,8 @@ export default function Closer() {
 
         list.sort((a, b) => (b._rate - a._rate) || (b._total - a._total));
 
-        const top5 = list.slice(0, 5);
-
-        const top = top5[0];
-        const you = list.find((x) => x.isYou);
+        const top = list[0];
+        const you = list.find((x) => String(x.closerId) === String(closer));
         let footer = "";
         if (top && you && top._rate >= 0 && you._rate >= 0) {
           const gap = Math.max(0, Math.round((top._rate - you._rate) * 10) / 10);
@@ -1063,7 +1061,7 @@ export default function Closer() {
         if (cancelled) return;
         setPifLeaderboard({
           loading: false,
-          entries: top5,
+          entries: list,
           titleRight: "This month",
           footer,
         });
@@ -1485,7 +1483,7 @@ export default function Closer() {
           .sort((a, b) => (b._rate - a._rate) || (b._confirmed - a._confirmed));
 
         if (cancelled) return;
-        setShowUpLeaderboard({ loading: false, entries: rows.slice(0, 5) });
+        setShowUpLeaderboard({ loading: false, entries: rows });
       } catch (e) {
         console.warn("[Closer] ShowUp leaderboard load failed:", e?.message || e);
         if (cancelled) return;
@@ -1629,6 +1627,7 @@ export default function Closer() {
         />
         <CloserAside
           loading={bodyStats.loading}
+          pageCloserId={closer}
           pifRateLoading={pifLeaderboard.loading}
           pifRateEntries={pifLeaderboard.entries}
           pifRateTitleRight={pifLeaderboard.titleRight}
