@@ -118,12 +118,7 @@ export default function AovByCloser({
 
   const list = useMemo(() => {
     if (entries?.length) return entries;
-    return [
-      { name: "Ana", aov: 932, sales: 9, isYou: true },
-      { name: "Matias", aov: 812, sales: 7 },
-      { name: "Emiliano", aov: 799, sales: 2 },
-      { name: "Daiana", aov: 623, sales: 4 },
-    ];
+    return [];
   }, [entries]);
 
   const top5 = list.slice(0, 5);
@@ -157,33 +152,54 @@ export default function AovByCloser({
 
   if (loading) return null;
 
-  return (
-    <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <BarChart3 size={16} className="text-indigo-600" />
-            <div className="text-sm font-semibold text-slate-900">
-              AOV/AOC by Closer
-            </div>
-          </div>
+  const emptyMessage =
+    effectiveRange === "last_month"
+      ? "No AOV/AOC data for closers last month yet."
+      : "No AOV/AOC data for closers this month yet.";
 
-          <select
-            value={effectiveRange}
-            onChange={(e) => {
-              const v = e.target.value;
-              setRange(v);
-              onRangeChange?.(v);
-            }}
-            className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 outline-none"
-            aria-label="AOV range"
-          >
-            <option value="this_month">This month</option>
-            <option value="last_month">Last month</option>
-          </select>
+  const header = (
+    <div className="px-4 pt-4 pb-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <BarChart3 size={16} className="text-indigo-600" />
+          <div className="text-sm font-semibold text-slate-900">
+            AOV/AOC by Closer
+          </div>
         </div>
 
-        <div className="mt-3 text-[11px] text-slate-400">
+        <select
+          value={effectiveRange}
+          onChange={(e) => {
+            const v = e.target.value;
+            setRange(v);
+            onRangeChange?.(v);
+          }}
+          className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 outline-none"
+          aria-label="AOV range"
+        >
+          <option value="this_month">This month</option>
+          <option value="last_month">Last month</option>
+        </select>
+      </div>
+    </div>
+  );
+
+  if (list.length === 0) {
+    return (
+      <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden min-h-[200px]">
+        {header}
+        <div className="px-4 pb-6 text-center text-[13px] text-slate-500 mt-14">
+          {emptyMessage}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+      {header}
+      <div className="px-4 pb-3 -mt-1">
+        <div className="text-[11px] text-slate-400">
           Overall:{" "}
           <span className="text-slate-900 font-bold text-[15px] ml-1">
             {money(overall)}/ {money(overallAoc)}

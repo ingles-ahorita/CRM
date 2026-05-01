@@ -1263,6 +1263,7 @@ export default function Closer() {
             aoc,
             sales: v.sales,
             isYou: String(cid) === String(closer),
+            isYou: String(cid) === String(closer),
             _aov: aov ?? -1,
           };
         });
