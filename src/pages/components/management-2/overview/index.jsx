@@ -1,10 +1,21 @@
+import ManagementDashboard from "./management-dashboard";
+import GoalRevenueVisualBlock from "./goal-revenue-visual-block";
+import TrendsChartPanel from "./trends-chart-panel";
+import FunnelSnapshots from "./funnel-snapshots";
+import TopOfFunnelPanel from "./top-of-funnel-panel";
+import RecoveredLeadsFunnel from "./recovered-leads-funnel";
+import CommissionOverviewSnapshot from "./commission-overview-snapshot";
+
 export default function Overview() {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-      <div className="text-xl font-extrabold text-slate-900">Overview</div>
-      <div className="mt-2 text-sm font-medium text-slate-500">
-        High-level metrics, revenue tracking, and business health overview will go here.
-      </div>
+    <div className="flex flex-col gap-8">
+      <ManagementDashboard />
+      <GoalRevenueVisualBlock />
+      <TrendsChartPanel />
+      <FunnelSnapshots />
+      <TopOfFunnelPanel />
+      <RecoveredLeadsFunnel />
+      <CommissionOverviewSnapshot />
     </div>
   );
 }

@@ -4,9 +4,9 @@ import AovByCloser from "./components/aov-by-closer";
 import PifRateLeaderboard from "./components/pif-rate-leaderboard";
 import RecoveredLeads from "./components/recovered-leads";
 import ShowUpLeaderboard from "./components/show-up-leaderboard";
+import KajabiMultipay from "./components/kajabi-multipay";
 
 import AovByCloserShimmer from "../shimmers/closer-aside/aov-by-closer";
-import PayoffOpportunitiesShimmer from "../shimmers/closer-aside/payoff-opportunities";
 import PifRateLeaderboardShimmer from "../shimmers/closer-aside/pif-rate-leaderboard";
 import RecoveredLeadsShimmer from "../shimmers/closer-aside/recovered-leads";
 import ShowUpLeaderboardShimmer from "../shimmers/closer-aside/show-up-leaderboard";
@@ -30,6 +30,8 @@ export default function CloserAside({
   aovEntries,
   aovRange,
   onAovRangeChange,
+  multipayLoading = false,
+  multipayEntries,
 }) {
   return (
     <div className="md:col-span-3 lg:col-span-2 flex flex-col gap-4">
@@ -71,6 +73,7 @@ export default function CloserAside({
           onRangeChange={onAovRangeChange}
         />
       )}
+      <KajabiMultipay loading={loading || multipayLoading} entries={multipayEntries} />
     </div>
   );
 }

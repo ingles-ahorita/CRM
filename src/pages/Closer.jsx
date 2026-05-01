@@ -13,6 +13,7 @@ import { StartShiftModal } from "./components/StartShiftModal";
 import { useRealtimeLeads } from "../hooks/useRealtimeLeads";
 import { supabase } from "../lib/supabaseClient";
 import { useSimpleAuth } from "../useSimpleAuth";
+import { fetchPurchases as fetchKajabiPurchases } from "../lib/kajabiApi";
 import CloserHeader from "./components/closer/closer-header";
 import * as DateHelpers from "../utils/dateHelpers";
 import CloserHeaderShimmer from "./components/closer/shimmers/closer-header";
@@ -158,6 +159,10 @@ export default function Closer() {
     loading: true,
     entries: [],
   });
+  const [multipayPurchases, setMultipayPurchases] = useState({
+    loading: true,
+    entries: [],
+  });
 
   const [recoveredAside, setRecoveredAside] = useState({
     loading: true,
@@ -191,6 +196,103 @@ export default function Closer() {
     const num = Number(n);
     if (!Number.isFinite(num)) return "—";
     return `$${Math.round(num).toLocaleString()}`;
+  };
+
+  const loadMultipayPurchasesLastMonth = async (closerId) => {
+    const now = new Date();
+    const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const firstDayLastMonth = new Date(
+      Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth(), 1, 0, 0, 0, 0),
+    );
+    const endDate = new Date(
+      Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + 1, 0, 23, 59, 59, 999),
+    );
+    const startTs = firstDayLastMonth.getTime();
+    const endTs = endDate.getTime();
+    const oneMonthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+    const allInRange = [];
+    let page = 1;
+    const perPage = 100;
+    let done = false;
+    while (!done) {
+      const result = await fetchKajabiPurchases({ page, perPage, sort: "-created_at" });
+      const data = result.data || [];
+      if (data.length === 0) break;
+      for (const p of data) {
+        const createdAt = p.attributes?.created_at;
+        if (!createdAt) continue;
+        const ts = new Date(createdAt).getTime();
+        if (ts >= startTs && ts <= endTs) allInRange.push(p);
+      }
+      const oldestInBatch = data[data.length - 1].attributes?.created_at;
+      const oldestTs = oldestInBatch ? new Date(oldestInBatch).getTime() : 0;
+      if (oldestTs > 0 && oldestTs < startTs) done = true;
+      else if (data.length < perPage) done = true;
+      else page++;
+    }
+
+    const multipayOnly = allInRange.filter(
+      (p) => String(p.attributes?.payment_type || "").toLowerCase() === "multipay",
+    );
+
+    const customerIds = [
+      ...new Set(multipayOnly.map((p) => p.relationships?.customer?.data?.id).filter(Boolean)),
+    ];
+    const leadByCustomerId = {};
+    const leadIdsForCloser = new Set();
+    if (customerIds.length > 0 && closerId) {
+      const ids = customerIds.map((id) => String(id));
+      const { data: leadRows } = await supabase
+        .from("leads")
+        .select("id, name, email, customer_id")
+        .in("customer_id", ids);
+      (leadRows || []).forEach((row) => {
+        const cid = row.customer_id != null ? String(row.customer_id) : null;
+        if (cid) leadByCustomerId[cid] = { id: row.id, name: row.name ?? null, email: row.email ?? null };
+      });
+      const leadIds = (leadRows || []).map((r) => r.id).filter(Boolean);
+      if (leadIds.length > 0) {
+        const { data: callsWithCloser } = await supabase
+          .from("calls")
+          .select("lead_id")
+          .eq("closer_id", closerId)
+          .in("lead_id", leadIds);
+        (callsWithCloser || []).forEach((c) => {
+          if (c.lead_id != null) leadIdsForCloser.add(c.lead_id);
+        });
+      }
+    }
+
+    const forThisCloser = closerId
+      ? multipayOnly.filter((p) => {
+          const customerId = p.relationships?.customer?.data?.id;
+          const lead = customerId ? leadByCustomerId[String(customerId)] : null;
+          return lead && leadIdsForCloser.has(lead.id);
+        })
+      : multipayOnly;
+
+    return forThisCloser.map((p) => {
+      const attrs = p.attributes || {};
+      const createdAt = attrs.created_at;
+      const customerId = p.relationships?.customer?.data?.id;
+      const lead = customerId ? leadByCustomerId[String(customerId)] : null;
+      const createdTs = createdAt ? new Date(createdAt).getTime() : 0;
+      const isPastOneMonth = createdTs > 0 && createdTs < oneMonthAgo;
+      const paymentsMade = attrs.multipay_payments_made != null ? Number(attrs.multipay_payments_made) : 0;
+
+      let status = "gray";
+      if (isPastOneMonth && paymentsMade === 1) status = "red";
+      else if (paymentsMade === 2) status = "green";
+
+      return {
+        lead_id: lead?.id ?? null,
+        name: lead?.name ?? "—",
+        email: lead?.email ?? "—",
+        date: createdAt ? new Date(createdAt).toLocaleDateString("en-US", { dateStyle: "medium" }) : "—",
+        status,
+      };
+    });
   };
 
   const checkActiveShift = async () => {
@@ -981,6 +1083,30 @@ export default function Closer() {
   useEffect(() => {
     let cancelled = false;
 
+    async function loadCloserMultipayPurchases() {
+      if (!closer) return;
+      setMultipayPurchases({ loading: true, entries: [] });
+
+      try {
+        const entries = await loadMultipayPurchasesLastMonth(closer);
+        if (cancelled) return;
+        setMultipayPurchases({ loading: false, entries });
+      } catch (e) {
+        console.warn("[Closer] multipay purchases load failed:", e?.message || e);
+        if (cancelled) return;
+        setMultipayPurchases({ loading: false, entries: [] });
+      }
+    }
+
+    loadCloserMultipayPurchases();
+    return () => {
+      cancelled = true;
+    };
+  }, [closer]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     async function loadAovByCloser() {
       if (!dataState?.closerMap || Object.keys(dataState.closerMap).length === 0) return;
 
@@ -1525,6 +1651,8 @@ export default function Closer() {
           aovEntries={aovByCloser.entries}
           aovRange={aovRange}
           onAovRangeChange={setAovRange}
+          multipayLoading={multipayPurchases.loading}
+          multipayEntries={multipayPurchases.entries}
         />
       </div>
 

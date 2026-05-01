@@ -33,6 +33,16 @@ import {
 } from "../../../../../../utils/phoneNumberParser";
 import NoShowStateModal from "../../../../NoShowStateModal";
 
+/** `calls` columns that affect Recovered Leads sidebar (Closer.jsx loadRecoveredAside). */
+const RECOVERED_RELATED_CALL_FIELDS = new Set([
+  "showed_up",
+  "confirmed",
+  "cancelled",
+  "recovered",
+  "no_show_state",
+  "purchased",
+]);
+
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
 }
@@ -1283,6 +1293,8 @@ export default function CloserTodaysLeads({
       ...(callRow?.leads || {}),
     };
 
+    let updatePayload = {};
+
     try {
       let formattedValue = value;
       if (
@@ -1294,7 +1306,7 @@ export default function CloserTodaysLeads({
           formattedValue = null;
       }
 
-      const updatePayload = { [field]: formattedValue, ...extraUpdates };
+      updatePayload = { [field]: formattedValue, ...extraUpdates };
       const { data: updateData, error } = await supabase
         .from("calls")
         .update(updatePayload)
@@ -1459,6 +1471,14 @@ export default function CloserTodaysLeads({
       showToast("Error updating status. See console.", "error");
       setterF(formatStatusValue(callRow?.[field]));
       return false;
+    }
+
+    const payloadKeys = Object.keys(updatePayload || {});
+    if (
+      RECOVERED_RELATED_CALL_FIELDS.has(field) ||
+      payloadKeys.some((k) => RECOVERED_RELATED_CALL_FIELDS.has(k))
+    ) {
+      onRecoveredChange?.();
     }
 
     return true;
