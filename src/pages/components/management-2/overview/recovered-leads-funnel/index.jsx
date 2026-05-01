@@ -20,7 +20,7 @@ const CLOSERS = [
 
 /** Label column width matches left/right panels so bar tracks line up visually. */
 const LABEL_COL =
-  "w-[104px] shrink-0 pt-0.5 text-left text-[12px] font-semibold leading-snug text-[#374151] sm:w-[98px]";
+  "shrink-0 pt-0.5 text-left text-[12px] font-semibold leading-snug text-[#374151] sm:w-[98px]";
 const METRICS_COL =
   "flex w-[46px] shrink-0 flex-col items-end justify-center text-right sm:w-[52px]";
 const BAR_H = "min-h-[20px]";

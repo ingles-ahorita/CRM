@@ -236,6 +236,8 @@ export default function TopOfFunnelPanel() {
     showUpRate: null,
     numberOfClasses: null,
     numberOfStudents: null,
+    attendancePresent: null,
+    attendanceTotal: null,
     error: null,
   });
   const [occupancyState, setOccupancyState] = useState({
@@ -380,6 +382,8 @@ export default function TopOfFunnelPanel() {
           showUpRate: data?.showUpRate ?? null,
           numberOfClasses: data?.numberOfClasses ?? null,
           numberOfStudents: data?.numberOfStudents ?? null,
+          attendancePresent: data?.attendancePresent ?? null,
+          attendanceTotal: data?.attendanceTotal ?? null,
           error: data?.error || null,
         });
       } catch (e) {
@@ -389,6 +393,8 @@ export default function TopOfFunnelPanel() {
           showUpRate: null,
           numberOfClasses: null,
           numberOfStudents: null,
+          attendancePresent: null,
+          attendanceTotal: null,
           error: e?.message || "Failed to load attendance",
         });
       }
@@ -492,6 +498,23 @@ export default function TopOfFunnelPanel() {
   }, []);
 
   const attendancePct = clampPct(attendanceState.showUpRate);
+  const attendancePresentDisplay =
+    attendanceState.attendancePresent != null
+      ? attendanceState.attendancePresent
+      : attendanceState.numberOfStudents;
+  const attendanceTotalDisplay =
+    attendanceState.attendanceTotal != null
+      ? attendanceState.attendanceTotal
+      : attendanceState.numberOfClasses;
+  const hasAttendanceRatio =
+    attendancePresentDisplay != null && attendanceTotalDisplay != null;
+  const attendanceMainLabel = hasAttendanceRatio
+    ? `${attendancePresentDisplay} / ${attendanceTotalDisplay}`
+    : attendanceState.showUpRate != null
+      ? formatPct(attendanceState.showUpRate)
+      : attendanceState.error
+        ? "—"
+        : "0 / 0";
   const occupancyPct = clampPct(occupancyState.occupancyPct);
 
   useEffect(() => {
@@ -624,9 +647,7 @@ export default function TopOfFunnelPanel() {
                 <AttendanceRing percent={attendancePct} />
                 <div className="min-w-0 flex-1">
                   <div className="text-[28px] font-bold tabular-nums leading-none tracking-tight text-[#111827]">
-                    {attendanceState.numberOfStudents != null && attendanceState.numberOfClasses != null
-                      ? `${attendanceState.numberOfStudents} / ${attendanceState.numberOfClasses}`
-                      : "—"}
+                    {attendanceMainLabel}
                   </div>
                   <p className="mt-2 text-[12px] font-medium text-[#9ca3af]">
                     {attendanceState.error ? "Academic app unavailable" : "From academic app"}
