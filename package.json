@@ -21,6 +21,7 @@
     "@supabase/supabase-js": "^2.101.1",
     "ai": "^6.0.48",
     "canvas-confetti": "^1.9.4",
+    "chart.js": "^4.5.1",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
@@ -32,6 +33,7 @@
     "lucide-react": "^0.544.0",
     "openai": "^6.16.0",
     "react": "^19.1.1",
+    "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.3",
     "recharts": "^3.7.0"
