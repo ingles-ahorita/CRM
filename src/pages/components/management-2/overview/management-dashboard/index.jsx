@@ -25,15 +25,6 @@ const TIME_RANGE_ITEMS = [
   { id: "custom", label: "Custom" },
 ];
 
-const AVATAR_COLOR_CLASSES = [
-  "bg-emerald-500",
-  "bg-blue-500",
-  "bg-pink-500",
-  "bg-violet-500",
-  "bg-amber-500",
-  "bg-cyan-500",
-];
-
 const EMPTY_METRICS = {
   netRevenue: 0,
   grossRevenue: 0,
@@ -189,7 +180,7 @@ export default function ManagementDashboard() {
             .lte("call_date", endISO),
           supabase
             .from("closer_shifts")
-            .select("closer_id, start_time, closers(name)")
+            .select("closer_id, start_time, closers(name, avatar_url)")
             .eq("status", "open")
             .order("start_time", { ascending: false }),
           supabase
@@ -288,6 +279,7 @@ export default function ManagementDashboard() {
           uniqueActiveClosers.push({
             id: closerId,
             name: row?.closers?.name || "?",
+            avatarUrl: row?.closers?.avatar_url || null,
           });
         }
 
@@ -302,8 +294,9 @@ export default function ManagementDashboard() {
         const activeSetters = setterSeen.size;
         const avatars = uniqueActiveClosers.slice(0, 6).map((c, idx) => ({
           key: c.id || c.name || String(idx),
+          name: c.name || "?",
           initial: String(c?.name || "?").trim().charAt(0).toUpperCase() || "?",
-          className: AVATAR_COLOR_CLASSES[idx % AVATAR_COLOR_CLASSES.length],
+          avatarUrl: c?.avatarUrl || null,
         }));
 
         if (cancelled) return;
@@ -569,7 +562,7 @@ export default function ManagementDashboard() {
                 {cardShimmerLine("h-[52px] w-full rounded-lg")}
               </div>
             ) : (
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-3 grid grid-cols-2 gap-2 mb-2">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
                   <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
                     Closers
@@ -588,19 +581,28 @@ export default function ManagementDashboard() {
                 </div>
               </div>
             )}
-            <div className="mt-2 text-[10px] font-medium text-slate-500">
+            <div className="mb-2 text-[10px] font-medium text-slate-500">
               Currently in open shifts
             </div>
             <div className="mt-auto flex flex-1 items-end gap-1.5">
               {(loading ? [] : metrics.avatars).map((a) => (
-                <div
-                  key={a.key}
-                  className={cx(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[14px] font-bold text-white shadow-sm ring-2 ring-white",
-                    a.className,
-                  )}
-                >
-                  {a.initial}
+                <div key={a.key} className="group relative h-8 w-8 shrink-0">
+                  <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-[10px] font-semibold whitespace-nowrap text-white opacity-0 shadow-[0_8px_20px_rgba(2,6,23,0.35)] transition-opacity duration-150 group-hover:opacity-100">
+                    {a.name || "Closer"}
+                  </div>
+                  <div className="absolute inset-0 flex h-8 w-8 items-center justify-center rounded-full bg-slate-500 text-[14px] font-bold text-white shadow-sm ring-2 ring-white">
+                    {a.initial}
+                  </div>
+                  {a.avatarUrl ? (
+                    <img
+                      src={a.avatarUrl}
+                      alt={a.name || "Closer"}
+                      className="absolute inset-0 h-8 w-8 rounded-full object-cover shadow-sm ring-2 ring-white"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : null}
                 </div>
               ))}
               {!loading && metrics.avatars.length === 0 ? (

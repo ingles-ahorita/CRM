@@ -1,11 +1,76 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Filter, Search } from "lucide-react";
 import LeadRow from "./lead-row";
 import LeadsStats from "./leads-stats";
-import { DUMMY_LEADS, SETTER_MAP } from "./dummy-data";
+import { fetchAll } from "../../../../../utils/fetchLeads";
+import { useRealtimeLeads } from "../../../../../hooks/useRealtimeLeads";
+import { getDailySlotsTotal } from "../../../../../utils/ocuppancy";
 
 function cx(...p) {
   return p.filter(Boolean).join(" ");
+}
+
+function shimmer(className = "") {
+  return (
+    <div
+      className={cx("animate-pulse rounded-md bg-slate-200/70", className)}
+      aria-hidden
+    />
+  );
+}
+
+const GRID_CLASS_ALL =
+  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
+const GRID_CLASS_DEFAULT =
+  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
+
+function TableSkeletonRows({ subTab, count = 8 }) {
+  const gridClass = subTab === "all" ? GRID_CLASS_ALL : GRID_CLASS_DEFAULT;
+
+  return (
+    <>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="px-3 py-2.5">
+          <div className={cx("grid items-center gap-4", gridClass)}>
+            <div className="flex justify-center">
+              {shimmer("h-6 w-6 rounded-md")}
+            </div>
+            <div className="min-w-0 space-y-2">
+              {shimmer("h-4 w-[72%] max-w-[200px]")}
+              {shimmer("h-3 w-[88%] max-w-[240px]")}
+            </div>
+            <div className="flex justify-center">
+              {shimmer("h-8 w-full max-w-[108px] rounded-full")}
+            </div>
+            <div className="flex justify-center">
+              {shimmer("h-8 w-full max-w-[108px] rounded-full")}
+            </div>
+            <div className="flex justify-center">
+              {shimmer("h-4 w-[92%] max-w-[132px]")}
+            </div>
+            <div className="flex justify-center">
+              {shimmer("h-4 w-[92%] max-w-[132px]")}
+            </div>
+            <div className="flex justify-center gap-1.5">
+              {shimmer("h-[25px] w-[25px] rounded-md")}
+              {shimmer("h-[25px] w-[25px] rounded-md")}
+              {shimmer("h-[25px] w-[25px] rounded-md")}
+              {shimmer("h-[25px] w-[25px] rounded-md")}
+            </div>
+            <div className="flex justify-center">
+              {shimmer("h-8 w-16 rounded-md")}
+            </div>
+            <div className="flex justify-center">
+              {shimmer("h-8 w-[72px] rounded-lg")}
+            </div>
+            <div className="flex justify-end">
+              {shimmer("h-8 w-8 rounded-md")}
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
 }
 
 const SUB_TABS = [
@@ -17,6 +82,32 @@ const SUB_TABS = [
   { key: "follow ups", label: "Follow Ups" },
   { key: "all", label: "All" },
 ];
+
+const DAY_RANGE_TABS = new Set([
+  "yesterday",
+  "today",
+  "tomorrow",
+  "tomorrow + 1",
+]);
+const FULL_FILTER_TABS = new Set(["all", "follow ups", "no shows"]);
+
+function FilterChip({ label, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cx(
+        "px-3 py-2 rounded-lg border text-[13px] font-medium transition !outline-none",
+        active
+          ? "bg-indigo-600 text-white border-indigo-700"
+          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
+      )}
+    >
+      {active ? "✓ " : ""}
+      {label}
+    </button>
+  );
+}
 
 function SubTabs({ value, onChange }) {
   return (
@@ -44,22 +135,102 @@ function SubTabs({ value, onChange }) {
 }
 
 export default function LeadsTable({ title = "Today's Leads" }) {
-  const safeLeads = DUMMY_LEADS;
   const [subTab, setSubTab] = useState("today");
-
-  const [sortOrder, setSortOrder] = useState("asc");
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [sortBy, setSortBy] = useState("call_date");
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [setterFilter, setSetterFilter] = useState("");
+  const [closerFilter, setCloserFilter] = useState("");
   const [statusFilters, setStatusFilters] = useState({
-    noConversations: false,
-    noManyChatId: false,
+    confirmed: false,
+    cancelled: false,
+    noShow: false,
+    noPickUp: false,
+    rescheduled: false,
+    transferred: false,
+    purchased: false,
+    noConversions: false,
     lockIn: false,
+    recovered: false,
+    noManychatId: false,
   });
   const [noShowStateFilter, setNoShowStateFilter] = useState("");
   const [openActionsId, setOpenActionsId] = useState(null);
+  const [slotsByDate, setSlotsByDate] = useState({});
+  const requestSeqRef = useRef(0);
+  const [dataState, setDataState] = useState({
+    leads: [],
+    loading: true,
+    setterMap: {},
+    closerMap: {},
+    currentDate: new Date().toISOString().split("T")[0],
+    counts: { booked: 0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0 },
+  });
+
+  useRealtimeLeads(dataState, setDataState, subTab, null, null, sortBy);
+
+  useEffect(() => {
+    const requestSeq = ++requestSeqRef.current;
+    const guardedSetDataState = (updater) => {
+      if (requestSeqRef.current !== requestSeq) return;
+      setDataState(updater);
+    };
+
+    fetchAll(
+      searchTerm,
+      subTab,
+      sortBy,
+      sortOrder,
+      guardedSetDataState,
+      null,
+      null,
+      {
+        ...statusFilters,
+        noShowState: noShowStateFilter || "",
+      },
+      undefined,
+      startDate || undefined,
+      endDate || undefined,
+      setterFilter || undefined,
+      closerFilter || undefined,
+      sortBy,
+    );
+  }, [
+    searchTerm,
+    subTab,
+    sortBy,
+    sortOrder,
+    statusFilters,
+    noShowStateFilter,
+    startDate,
+    endDate,
+    setterFilter,
+    closerFilter,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadSlots = async () => {
+      try {
+        const slots = await getDailySlotsTotal();
+        if (!cancelled && slots && typeof slots === "object" && !Array.isArray(slots)) {
+          setSlotsByDate(slots);
+        }
+      } catch (e) {
+        if (!cancelled) setSlotsByDate({});
+      }
+    };
+    loadSlots();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const safeLeads = dataState?.leads || [];
 
   const filteredLeads = useMemo(() => {
     const term = String(searchTerm || "")
@@ -84,21 +255,33 @@ export default function LeadsTable({ title = "Today's Leads" }) {
     });
   }, [safeLeads, searchTerm, subTab, noShowStateFilter]);
 
+  // Keep server order, but always push cancelled (red background) rows to end.
   const sortedLeads = useMemo(() => {
-    const isRejected = (l) => !!l?.cancelled;
-    const dir = sortOrder === "asc" ? 1 : -1;
-    return [...filteredLeads].sort((a, b) => {
-      const ra = Number(isRejected(a));
-      const rb = Number(isRejected(b));
-      if (ra !== rb) return ra - rb;
-      const ad = new Date(a?.call_date || a?.book_date || 0).getTime();
-      const bd = new Date(b?.call_date || b?.book_date || 0).getTime();
-      return (ad - bd) * dir;
-    });
-  }, [filteredLeads, sortOrder]);
+    const activeRows = [];
+    const cancelledRows = [];
+    for (const row of filteredLeads) {
+      if (row?.cancelled) cancelledRows.push(row);
+      else activeRows.push(row);
+    }
+    return [...activeRows, ...cancelledRows];
+  }, [filteredLeads]);
+
+  const hasTableLayout = dataState?.loading || sortedLeads.length > 0;
+  const isDayRangeTab = DAY_RANGE_TABS.has(subTab);
+  const hasFullFilters = isDayRangeTab || FULL_FILTER_TABS.has(subTab);
+  const isAllTab = subTab === "all";
+  const gridClass = isAllTab ? GRID_CLASS_ALL : GRID_CLASS_DEFAULT;
+  const tableMinWidthClass = isAllTab
+    ? "min-w-[1320px] [@media(min-width:1465px)]:min-w-0"
+    : "min-w-[1320px] [@media(min-width:1465px)]:min-w-0";
+  const selectedDateKey =
+    dataState?.currentDate || new Date().toISOString().split("T")[0];
+  const slots = Number(slotsByDate?.[selectedDateKey] || 0);
+  const booked = Number(dataState?.counts?.booked || 0);
+  const occupancy = slots > 0 ? Math.min(100, Math.round((booked / slots) * 100)) : 0;
 
   return (
-    <div className="w-full rounded-2xl bg-white  border-slate-200 shadow-sm overflow-visible relative pt-3">
+    <div className="w-full max-w-full rounded-2xl bg-white border-slate-200 shadow-sm relative pt-3">
       <div className="px-3 pb-2 flex items-center justify-between gap-3 flex-wrap">
         <SubTabs value={subTab} onChange={setSubTab} />
 
@@ -116,6 +299,33 @@ export default function LeadsTable({ title = "Today's Leads" }) {
           </span>
           <div className="text-[13px] text-slate-500 whitespace-nowrap">
             {sortOrder === "asc" ? "Earliest first" : "Latest first"}
+          </div>
+
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+            <button
+              type="button"
+              onClick={() => setSortBy("book_date")}
+              className={cx(
+                "px-2.5 py-1.5 text-[11px] font-semibold rounded-md",
+                sortBy === "book_date"
+                  ? "text-black !bg-[#edf6fb]"
+                  : "text-slate-600 hover:text-slate-900 !bg-white",
+              )}
+            >
+              Book Date
+            </button>
+            <button
+              type="button"
+              onClick={() => setSortBy("call_date")}
+              className={cx(
+                "px-2.5 py-1.5 text-[11px] font-semibold rounded-md",
+                sortBy === "call_date"
+                  ? "text-black !bg-[#edf6fb]"
+                  : "text-slate-600 hover:text-slate-900 !bg-white",
+              )}
+            >
+              Call Date
+            </button>
           </div>
 
           <button
@@ -197,9 +407,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
 
         {showFilterPanel ? (
           <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col gap-4">
-            {subTab === "all" ||
-            subTab === "follow ups" ||
-            subTab === "no shows" ? (
+            {!isDayRangeTab ? (
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="text-[13px] font-semibold text-slate-700">
                   Date range
@@ -225,58 +433,250 @@ export default function LeadsTable({ title = "Today's Leads" }) {
               </div>
             ) : null}
 
-            <div className="flex items-center gap-3 flex-wrap">
+            {hasFullFilters ? (
+              <div className="flex flex-col gap-3">
+                <div className="text-[13px] font-semibold text-slate-700">
+                  People
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[12px] text-slate-600 font-medium">
+                      Setter:
+                    </label>
+                    <select
+                      value={setterFilter}
+                      onChange={(e) => setSetterFilter(e.target.value)}
+                      className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
+                    >
+                      <option value="">All Setters</option>
+                      {Object.entries(dataState?.setterMap || {}).map(
+                        ([id, name]) => (
+                          <option key={id} value={id}>
+                            {name}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[12px] text-slate-600 font-medium">
+                      Closer:
+                    </label>
+                    <select
+                      value={closerFilter}
+                      onChange={(e) => setCloserFilter(e.target.value)}
+                      className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
+                    >
+                      <option value="">All Closers</option>
+                      {Object.entries(dataState?.closerMap || {}).map(
+                        ([id, name]) => (
+                          <option key={id} value={id}>
+                            {name}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2">
               <div className="text-[13px] font-semibold text-slate-700">
                 Status
               </div>
-              {[
-                { key: "noConversations", label: "No conversations" },
-                { key: "noManyChatId", label: "No ManyChat ID" },
-                { key: "lockIn", label: "Lock In" },
-              ].map((x) => {
-                const active = !!statusFilters?.[x.key];
-                return (
-                  <button
-                    key={x.key}
-                    type="button"
+              {hasFullFilters ? (
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip
+                    label="Confirmed"
+                    active={!!statusFilters.confirmed}
                     onClick={() =>
-                      setStatusFilters((p) => ({ ...p, [x.key]: !p[x.key] }))
+                      setStatusFilters((p) => ({
+                        ...p,
+                        confirmed: !p.confirmed,
+                      }))
                     }
-                    className={cx(
-                      "px-3 py-2 rounded-lg border text-[13px] font-medium transition !outline-none",
-                      active
-                        ? "bg-indigo-600 text-white border-indigo-700"
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
-                    )}
-                  >
-                    {active ? "✓ " : ""}
-                    {x.label}
-                  </button>
-                );
-              })}
+                  />
+                  <FilterChip
+                    label="Cancelled"
+                    active={!!statusFilters.cancelled}
+                    onClick={() =>
+                      setStatusFilters((p) => ({
+                        ...p,
+                        cancelled: !p.cancelled,
+                      }))
+                    }
+                  />
+                  <FilterChip
+                    label="No Show"
+                    active={!!statusFilters.noShow}
+                    onClick={() =>
+                      setStatusFilters((p) => ({ ...p, noShow: !p.noShow }))
+                    }
+                  />
+                  <FilterChip
+                    label="No Pick up"
+                    active={!!statusFilters.noPickUp}
+                    onClick={() =>
+                      setStatusFilters((p) => ({
+                        ...p,
+                        noPickUp: !p.noPickUp,
+                      }))
+                    }
+                  />
+                  <FilterChip
+                    label="Reschedule"
+                    active={!!statusFilters.rescheduled}
+                    onClick={() =>
+                      setStatusFilters((p) => ({
+                        ...p,
+                        rescheduled: !p.rescheduled,
+                      }))
+                    }
+                  />
+                  <FilterChip
+                    label="Transfered"
+                    active={!!statusFilters.transferred}
+                    onClick={() =>
+                      setStatusFilters((p) => ({
+                        ...p,
+                        transferred: !p.transferred,
+                      }))
+                    }
+                  />
+                  <FilterChip
+                    label="Purchased"
+                    active={!!statusFilters.purchased}
+                    onClick={() => {
+                      setStatusFilters((p) => {
+                        const nextPurchased = !p.purchased;
+                        setSortBy((s) =>
+                          nextPurchased
+                            ? "purchased_at"
+                            : s === "purchased_at"
+                              ? "call_date"
+                              : s,
+                        );
+                        return { ...p, purchased: nextPurchased };
+                      });
+                    }}
+                  />
+                  <FilterChip
+                    label="No conversions"
+                    active={!!statusFilters.noConversions}
+                    onClick={() =>
+                      setStatusFilters((p) => ({
+                        ...p,
+                        noConversions: !p.noConversions,
+                      }))
+                    }
+                  />
+                  <FilterChip
+                    label="Lock In"
+                    active={!!statusFilters.lockIn}
+                    onClick={() =>
+                      setStatusFilters((p) => ({ ...p, lockIn: !p.lockIn }))
+                    }
+                  />
+                  <FilterChip
+                    label="Recovered"
+                    active={!!statusFilters.recovered}
+                    onClick={() =>
+                      setStatusFilters((p) => ({
+                        ...p,
+                        recovered: !p.recovered,
+                      }))
+                    }
+                  />
+                  <FilterChip
+                    label="No ManyChat ID"
+                    active={!!statusFilters.noManychatId}
+                    onClick={() =>
+                      setStatusFilters((p) => ({
+                        ...p,
+                        noManychatId: !p.noManychatId,
+                      }))
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { key: "noConversions", label: "No conversions" },
+                    { key: "recovered", label: "Recovered" },
+                    { key: "transferred", label: "Transferred" },
+                    { key: "purchased", label: "Purchased" },
+                    { key: "lockIn", label: "Lock In" },
+                  ].map((x) => (
+                    <FilterChip
+                      key={x.key}
+                      label={x.label}
+                      active={!!statusFilters?.[x.key]}
+                      onClick={() =>
+                        x.key === "purchased"
+                          ? setStatusFilters((p) => {
+                              const nextPurchased = !p.purchased;
+                              setSortBy((s) =>
+                                nextPurchased
+                                  ? "purchased_at"
+                                  : s === "purchased_at"
+                                    ? "call_date"
+                                    : s,
+                              );
+                              return { ...p, purchased: nextPurchased };
+                            })
+                          : setStatusFilters((p) => ({
+                              ...p,
+                              [x.key]: !p[x.key],
+                            }))
+                      }
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ) : null}
       </div>
 
-      <LeadsStats />
+      {!isAllTab ? (
+        <LeadsStats
+          loading={!!dataState?.loading}
+          stats={{
+            booked,
+            confirmed: dataState?.counts?.confirmed || 0,
+            cancelled: dataState?.counts?.cancelled || 0,
+            noPickUp: dataState?.counts?.noPickup || 0,
+            noShows: dataState?.counts?.noShow || 0,
+          }}
+          details={{
+            slots,
+            occupancy,
+            booked,
+            confirmed: dataState?.counts?.confirmed || 0,
+            cancelled: dataState?.counts?.cancelled || 0,
+            noPickUp: dataState?.counts?.noPickup || 0,
+            noShows: dataState?.counts?.noShow || 0,
+          }}
+        />
+      ) : null}
 
       <div
         className={cx(
-          safeLeads.length
-            ? "overflow-x-auto [@media(min-width:1465px)]:overflow-x-visible"
+          hasTableLayout
+            ? "w-full max-w-full overflow-x-auto"
             : null,
         )}
       >
         <div
           className={cx(
-            safeLeads.length
-              ? "min-w-[980px] [@media(min-width:1465px)]:min-w-0"
+            hasTableLayout
+              ? cx("min-w-max", tableMinWidthClass)
               : null,
             "divide-y divide-slate-100",
           )}
         >
-          {sortedLeads.length === 0 ? (
+          {!dataState?.loading && sortedLeads.length === 0 ? (
             <div className="px-3 py-8 text-sm text-slate-500 text-center">
               No leads found.
             </div>
@@ -286,38 +686,39 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                 <div
                   className={cx(
                     "grid items-center gap-4 text-[11px] font-bold tracking-wide text-slate-500 uppercase",
-                    subTab === "all"
-                      ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
-                      : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
+                    gridClass,
                   )}
                 >
                   <div className="text-center"> </div>
-                  <div>Lead</div>
+                  <div>Name / Email</div>
                   <div className="text-center">Setter</div>
-                  <div className="text-center">Time</div>
+                  <div className="text-center">Closer</div>
+                  <div className="text-center">Book Date</div>
+                  <div className="text-center">Call Date</div>
                   <div className="text-center">Status</div>
-                  {subTab === "all" ? (
-                    <div className="text-center">Response</div>
-                  ) : null}
+                  <div className="text-center">Response</div>
                   <div className="text-center">Notes</div>
                   <div className="text-right"> </div>
                 </div>
               </div>
 
-              {sortedLeads.map((l) => (
-                <LeadRow
-                  key={l.id}
-                  lead={l}
-                  setterName={
-                    SETTER_MAP?.[String(l.setter_id)] || l?.setters?.name
-                  }
-                  actionsOpen={openActionsId === l.id}
-                  onToggleActions={() =>
-                    setOpenActionsId((prev) => (prev === l.id ? null : l.id))
-                  }
-                  useCompactStatusBadges={subTab === "all"}
-                />
-              ))}
+              {dataState?.loading ? (
+                <TableSkeletonRows subTab={subTab} count={8} />
+              ) : (
+                sortedLeads.map((l) => (
+                  <LeadRow
+                    key={l.id}
+                    lead={l}
+                    setterName={dataState?.setterMap?.[String(l.setter_id)] || l?.setters?.name}
+                    closerName={dataState?.closerMap?.[String(l.closer_id)] || l?.closers?.name}
+                    actionsOpen={openActionsId === l.id}
+                    onToggleActions={() =>
+                      setOpenActionsId((prev) => (prev === l.id ? null : l.id))
+                    }
+                    useCompactStatusBadges
+                  />
+                ))
+              )}
             </>
           )}
         </div>

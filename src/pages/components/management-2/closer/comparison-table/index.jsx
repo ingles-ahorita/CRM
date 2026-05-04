@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Sparkles } from "lucide-react";
-import { COMPARISON_ROWS } from "./dummy-data";
+import React, { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import SegmentedTabs from "../../segmented-tabs";
+import { supabase } from "../../../../../lib/supabaseClient";
+import { aocForOffer, fetchCompletionRatesInst2 } from "../../../../../lib/aoc";
+import * as DateHelpers from "../../../../../utils/dateHelpers";
 
 function cx(...p) {
   return p.filter(Boolean).join(" ");
@@ -22,7 +24,6 @@ const COLUMNS = [
   { key: "pifRate", label: "PIF %", align: "left", sortable: true },
   { key: "showUpRate", label: "Show-up %", align: "left", sortable: true },
   { key: "commission", label: "Commission", align: "left", sortable: true },
-  { key: "goal", label: "Goal %", align: "left", sortable: true },
   { key: "recovered", label: "Recovered", align: "left", sortable: true },
   { key: "open", label: "", align: "right", sortable: false },
 ];
@@ -56,12 +57,6 @@ function aovClass(v) {
   return "text-emerald-800";
 }
 
-function goalClass(v) {
-  if (v < 50) return "text-rose-500";
-  if (v < 80) return "text-amber-500";
-  return "text-emerald-600";
-}
-
 const fmtUSD = (n) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -76,6 +71,41 @@ const PERIOD_FILTER_ITEMS = [
   { id: "lastWeek", label: "Last week" },
   { id: "all", label: "All" },
 ];
+
+function shimmer(className = "") {
+  return <div className={cx("animate-pulse rounded-md bg-slate-200/70", className)} />;
+}
+
+function pct(num, den) {
+  const n = Number(num);
+  const d = Number(den);
+  if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) return 0;
+  return (n / d) * 100;
+}
+
+function getPeriodBounds(periodFilter) {
+  if (periodFilter === "thisWeek") {
+    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(new Date());
+    return { startISO: weekStart.toISOString(), endISO: weekEnd.toISOString() };
+  }
+  if (periodFilter === "lastWeek") {
+    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset(1);
+    return { startISO: weekStart.toISOString(), endISO: weekEnd.toISOString() };
+  }
+  return null;
+}
+
+async function fetchAllRows(buildQuery, pageSize = 1000, maxRows = 50000) {
+  const out = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    const rows = Array.isArray(data) ? data : [];
+    out.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+  return out;
+}
 
 function SortHeader({ col, sortKey, sortDir, onChange }) {
   const isActive = sortKey === col.key;
@@ -113,6 +143,168 @@ export default function CloserComparisonTable() {
   const [sortKey, setSortKey] = useState("commission");
   const [sortDir, setSortDir] = useState("desc");
   const [periodFilter, setPeriodFilter] = useState("thisWeek");
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [rows, setRows] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRows() {
+      setLoading(true);
+      setErrorMsg("");
+      try {
+        const bounds = getPeriodBounds(periodFilter);
+
+        const { data: closersData, error: closersErr } = await supabase
+          .from("closers")
+          .select("*")
+          .eq("active", true)
+          .order("name", { ascending: true });
+        if (closersErr) throw closersErr;
+
+        const completionRatesPromise = fetchCompletionRatesInst2();
+
+        const [callsRows, recoveredRows, salesRows, completionRates] = await Promise.all([
+          fetchAllRows(() => {
+            let q = supabase
+              .from("calls")
+              .select("closer_id, confirmed, showed_up, cancelled")
+              .not("closer_id", "is", null);
+            if (bounds) q = q.gte("call_date", bounds.startISO).lte("call_date", bounds.endISO);
+            return q;
+          }),
+          fetchAllRows(() => {
+            let q = supabase
+              .from("calls")
+              .select("closer_id, recovered, cancelled")
+              .not("closer_id", "is", null);
+            if (bounds) q = q.gte("book_date", bounds.startISO).lte("book_date", bounds.endISO);
+            return q;
+          }),
+          fetchAllRows(() => {
+            let q = supabase
+              .from("outcome_log")
+              .select(
+                "PIF, commission, discount, calls!inner!call_id(closer_id), offers!offer_id(kajabi_id, price, installments, base_commission, payoff_commission)",
+              )
+              .eq("outcome", "yes");
+            if (bounds) q = q.gte("purchase_date", bounds.startISO).lte("purchase_date", bounds.endISO);
+            return q;
+          }),
+          completionRatesPromise,
+        ]);
+
+        const byCloser = new Map();
+        for (const c of closersData || []) {
+          byCloser.set(String(c.id), {
+            id: c.id,
+            name: c.name || `Closer ${c.id}`,
+            confirmed: 0,
+            showed: 0,
+            sales: 0,
+            pifSales: 0,
+            commission: 0,
+            recovered: 0,
+            aovSum: 0,
+            aocSum: 0,
+            aocCount: 0,
+          });
+        }
+
+        for (const row of callsRows || []) {
+          if (row?.cancelled === true) continue;
+          const k = String(row?.closer_id || "");
+          const cur = byCloser.get(k);
+          if (!cur) continue;
+          if (row?.confirmed === true) cur.confirmed += 1;
+          if (row?.showed_up === true) cur.showed += 1;
+        }
+
+        for (const row of recoveredRows || []) {
+          if (row?.cancelled === true || row?.recovered !== true) continue;
+          const k = String(row?.closer_id || "");
+          const cur = byCloser.get(k);
+          if (!cur) continue;
+          cur.recovered += 1;
+        }
+
+        const adjustedBase = (offer, discount) => {
+          if (!offer || offer.base_commission == null) return null;
+          const base = Number(offer.base_commission);
+          if (!Number.isFinite(base)) return null;
+          if (discount == null || discount === "") return base;
+          const d = parseFloat(String(discount).replace(/%/g, "").trim());
+          if (!Number.isFinite(d)) return base;
+          return base - (base * d) / 100;
+        };
+        const commissionForSale = (sale) => {
+          const offer = sale?.offers || null;
+          const inst = Number(offer?.installments);
+          const isPifOffer = Number.isFinite(inst) && inst === 0;
+          const base = adjustedBase(offer, sale?.discount);
+          if (base == null) return Number(sale?.commission) || 0;
+          if (
+            (isPifOffer || (sale?.kajabi_payoff_id && !sale?.payoff_date)) &&
+            offer?.payoff_commission != null
+          ) {
+            const payoff = Number(offer.payoff_commission);
+            if (Number.isFinite(payoff)) return payoff;
+          }
+          return base * 2;
+        };
+
+        for (const sale of salesRows || []) {
+          const k = String(sale?.calls?.closer_id || "");
+          const cur = byCloser.get(k);
+          if (!cur) continue;
+          cur.sales += 1;
+          if (sale?.PIF === true) cur.pifSales += 1;
+          cur.commission += commissionForSale(sale);
+
+          const offerPrice = Number(sale?.offers?.price);
+          if (Number.isFinite(offerPrice) && offerPrice > 0) cur.aovSum += offerPrice;
+
+          const aoc = aocForOffer(sale?.offers, completionRates);
+          if (aoc != null && Number.isFinite(aoc)) {
+            cur.aocSum += aoc;
+            cur.aocCount += 1;
+          }
+        }
+
+        const nextRows = Array.from(byCloser.values()).map((r) => {
+          const showUpRate = pct(r.showed, r.confirmed);
+          const closingRate = pct(r.sales, r.showed);
+          const pifRate = pct(r.pifSales, r.sales);
+          return {
+            id: String(r.id),
+            name: r.name,
+            aov: r.sales > 0 ? r.aovSum / r.sales : 0,
+            aoc: r.aocCount > 0 ? r.aocSum / r.aocCount : 0,
+            sales: r.sales,
+            pifSales: r.pifSales,
+            closingRate,
+            pifRate,
+            showUpRate,
+            commission: r.commission,
+            recovered: r.recovered,
+          };
+        });
+
+        if (cancelled) return;
+        setRows(nextRows);
+      } catch (e) {
+        if (cancelled) return;
+        setRows([]);
+        setErrorMsg(e?.message || "Failed to load closer comparison");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadRows();
+    return () => {
+      cancelled = true;
+    };
+  }, [periodFilter]);
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -123,13 +315,8 @@ export default function CloserComparisonTable() {
     }
   };
 
-  const filteredRows = useMemo(() => {
-    if (periodFilter === "all") return COMPARISON_ROWS;
-    return COMPARISON_ROWS.filter((row) => row?.period === periodFilter);
-  }, [periodFilter]);
-
   const sorted = useMemo(() => {
-    const arr = [...filteredRows];
+    const arr = [...rows];
     const dir = sortDir === "asc" ? 1 : -1;
     arr.sort((a, b) => {
       const av = a?.[sortKey];
@@ -140,7 +327,7 @@ export default function CloserComparisonTable() {
       return String(av || "").localeCompare(String(bv || "")) * dir;
     });
     return arr;
-  }, [filteredRows, sortKey, sortDir]);
+  }, [rows, sortKey, sortDir]);
 
   return (
     // <div className="relative w-full max-w-[1400px]">
@@ -320,10 +507,10 @@ export default function CloserComparisonTable() {
           <h2 className="text-[20px] font-bold tracking-tight text-[#0f172a]">
             Closer comparison table
           </h2>
-          <span className="ml-0 mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-[2px] text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-200">
+          {/* <span className="ml-0 mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-[2px] text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 ring-1 ring-inset ring-emerald-200">
             <Sparkles size={11} className="text-emerald-600" />
             Core Feature
-          </span>
+          </span> */}
         </div>
         <SegmentedTabs
           items={PERIOD_FILTER_ITEMS}
@@ -334,7 +521,7 @@ export default function CloserComparisonTable() {
         />
         {/* <p className="text-[13px] font-medium text-slate-500">
          Same closer data in a sortable comparison table. Useful when
-           management wants to rank closers by any column. Toggle from the tabs
+           management wants to rank closers by any column. Toggle from t he tabs
            above.
   </p> */}
       </div>
@@ -354,7 +541,6 @@ export default function CloserComparisonTable() {
                 <col className="w-[8%]" />
                 <col className="w-[10%]" />
                 <col className="w-[10%]" />
-                <col className="w-[8%]" />
                 <col className="w-[10%]" />
                 <col className="w-[7%]" />
               </colgroup>
@@ -384,7 +570,17 @@ export default function CloserComparisonTable() {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((row) => (
+                {loading
+                  ? Array.from({ length: 5 }).map((_, idx) => (
+                      <tr key={`shimmer-${idx}`} className="border-b border-slate-200 last:border-b-0">
+                        {COLUMNS.map((c, cidx) => (
+                          <td key={`${idx}-${c.key}-${cidx}`} className="px-3 py-3.5">
+                            {shimmer(c.key === "open" ? "ml-auto h-7 w-16" : "h-4 w-full")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  : sorted.map((row) => (
                   <tr
                     key={row.id}
                     className="border-b border-slate-200 last:border-b-0 transition-colors hover:bg-slate-50/70"
@@ -407,7 +603,12 @@ export default function CloserComparisonTable() {
                     </td>
 
                     <td className="px-3 py-3.5 text-left">
-                      <span className="font-medium tabular-nums text-slate-700">
+                      <span
+                        className={cx(
+                          "font-bold tabular-nums",
+                          aovClass(row.aoc),
+                        )}
+                      >
                         {fmtUSD(row.aoc)}
                       </span>
                     </td>
@@ -424,6 +625,7 @@ export default function CloserComparisonTable() {
                           "font-bold tabular-nums",
                           closingRateClass(row.closingRate),
                         )}
+                        title={`${row.sales} / ${row.showed} showed up`}
                       >
                         {fmtPct(row.closingRate)}
                       </span>
@@ -435,6 +637,7 @@ export default function CloserComparisonTable() {
                           "font-bold tabular-nums",
                           pifRateClass(row.pifRate),
                         )}
+                        title={`${row.pifSales ?? 0} / ${row.sales} sales are PIF`}
                       >
                         {fmtPct(row.pifRate)}
                       </span>
@@ -446,6 +649,7 @@ export default function CloserComparisonTable() {
                           "font-bold tabular-nums",
                           showUpRateClass(row.showUpRate),
                         )}
+                        title={`${row.showed} / ${row.confirmed} confirmed`}
                       >
                         {fmtPct(row.showUpRate)}
                       </span>
@@ -457,17 +661,6 @@ export default function CloserComparisonTable() {
                       </span>
                     </td>
 
-                    <td className="px-3 py-3.5 text-left">
-                      <span
-                        className={cx(
-                          "font-bold tabular-nums",
-                          goalClass(row.goal),
-                        )}
-                      >
-                        {row.goal}%
-                      </span>
-                    </td>
-
                     <td className="px-8 py-3.5 text-left">
                       <span className="font-medium tabular-nums text-slate-500">
                         {row.recovered}
@@ -475,20 +668,32 @@ export default function CloserComparisonTable() {
                     </td>
 
                     <td className="px-3 py-3.5 text-right whitespace-nowrap">
-                      <button
-                        type="button"
+                      <a
+                        href={`/closer/${encodeURIComponent(row.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="text-[12.5px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors !outline-none border-b border-transparent bg-slate-100/70 !border-none hover:border-indigo-300"
                       >
                         Open →
-                      </button>
+                      </a>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {!loading && sorted.length === 0 ? (
+              <div className="px-3 py-8 text-center text-[13px] text-slate-500">
+                No closer comparison data found for this period.
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
+      {errorMsg ? (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">
+          {errorMsg}
+        </div>
+      ) : null}
     </div>
   );
 }
