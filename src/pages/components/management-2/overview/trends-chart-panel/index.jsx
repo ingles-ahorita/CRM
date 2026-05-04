@@ -1,248 +1,117 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
   Tooltip,
-  Filler,
-} from "chart.js";
-import { Line } from "react-chartjs-2";
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
 
 function cx(...p) {
   return p.filter(Boolean).join(" ");
-}
-
-function PillBadge({ children, className }) {
-  return (
-    <span className={cx("inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ring-1 ring-inset", className)}>
-      {children}
-    </span>
-  );
-}
-
-const ACTIVE = "bg-sky-100 text-blue-700 ring-sky-200";
-const INACTIVE = "bg-white text-slate-500 ring-slate-200/90 hover:bg-slate-50";
-
-const PERIOD_FILTERS = [
-  { id: "7d", label: "Last 7 days" },
-  { id: "30d", label: "Last 30 days" },
-  { id: "mtd", label: "MTD" },
-];
-const SPLIT_FILTERS = [
-  { id: "all", label: "Split: All" },
-  { id: "organic", label: "Split: Organic" },
-  { id: "ads", label: "Split: Ads" },
-];
-const METRIC_FILTERS = [
-  { id: "showup", label: "Show up %", color: "#28a745", legend: "Show-up %" },
-  { id: "conversion", label: "Conversion %", color: "#6f42c1", legend: "Conversion %" },
-  { id: "pif", label: "PIF %", color: "#fd7e14", legend: "PIF %" },
-  { id: "pickup", label: "Pick-up %", color: "#0d9488", legend: "Pick-up %" },
-];
-
-function ToggleRow({ items, activeId, onChange }) {
-  return (
-    <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          onClick={() => onChange(item.id)}
-          className={cx("rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none", item.id === activeId ? ACTIVE : INACTIVE)}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function MetricToggleRow({ activeSet, onToggle }) {
-  return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
-      {METRIC_FILTERS.map((item) => {
-        const on = activeSet.has(item.id);
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onToggle(item.id)}
-            className={cx("rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none", on ? ACTIVE : INACTIVE)}
-          >
-            {item.label}
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 function shimmer(className = "") {
   return <div className={cx("animate-pulse rounded-md bg-slate-200/70", className)} />;
 }
 
-function clampPct(v) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, n));
-}
-
-function dayLabel(iso, period) {
-  const d = new Date(`${iso}T00:00:00Z`);
-  if (period === "7d") {
-    return d.toLocaleDateString("en-US", { weekday: "short" });
-  }
-  return d.toLocaleDateString("en-US", { month: "numeric", day: "numeric" });
-}
-
+/**
+ * Mirrors `/management` dashboard chart: same API, metrics, targets, split, tooltips, and styling.
+ */
 export default function TrendsChartPanel() {
-  const [period, setPeriod] = useState("7d");
-  const [splitBy, setSplitBy] = useState("all");
-  const [loading, setLoading] = useState(true);
+  const [chartSeries, setChartSeries] = useState([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [chartMetric, setChartMetric] = useState("showUpRate");
+  const [chartSplitBySource, setChartSplitBySource] = useState(false);
+  const [chartDays, setChartDays] = useState(90);
   const [errorMsg, setErrorMsg] = useState("");
-  const [seriesRows, setSeriesRows] = useState([]);
-  const [metricsOn, setMetricsOn] = useState(() => new Set(["showup", "conversion", "pif"]));
 
   useEffect(() => {
     let cancelled = false;
-    async function loadSeries() {
-      setLoading(true);
+    async function load() {
+      setChartLoading(true);
       setErrorMsg("");
       try {
-        const now = new Date();
-        const days = period === "30d" ? 30 : period === "mtd" ? now.getUTCDate() : 7;
-        const res = await fetch(`/api/management-series?days=${days}`);
+        const res = await fetch(`/api/management-series?days=${chartDays}`);
         if (!res.ok) throw new Error(`API failed (${res.status})`);
-        const json = await res.json();
+        const data = await res.json();
         if (cancelled) return;
-        setSeriesRows(Array.isArray(json?.series) ? json.series : []);
+        setChartSeries(Array.isArray(data.series) ? data.series : []);
       } catch (e) {
-        if (cancelled) return;
-        setSeriesRows([]);
-        setErrorMsg(e?.message || "Failed to load trends");
+        if (!cancelled) {
+          setChartSeries([]);
+          setErrorMsg(e?.message || "Failed to load trends");
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setChartLoading(false);
       }
     }
-    loadSeries();
+    load();
     return () => {
       cancelled = true;
     };
-  }, [period]);
+  }, [chartDays]);
 
-  const toggleMetric = (id) => {
-    setMetricsOn((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        if (next.size <= 1) return prev;
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
+  const chartData = useMemo(
+    () =>
+      chartSeries.map((d) => {
+        const bookings = d.bookings ?? 0;
+        const purchased = d.totalPurchased ?? 0;
+        const showed = d.totalShowedUp ?? 0;
+        const purchaseRate = bookings > 0 ? (purchased / bookings) * 100 : 0;
+        const conversionRateClosers = showed > 0 ? (purchased / showed) * 100 : 0;
+        const value =
+          chartMetric === "showUpRate"
+            ? d.showUpRate ?? 0
+            : chartMetric === "purchaseRate"
+              ? purchaseRate
+              : chartMetric === "conversionRate"
+                ? conversionRateClosers
+                : chartMetric === "bookings"
+                  ? d.bookings
+                  : d.totalShowedUp ?? 0;
+        const target =
+          chartMetric === "showUpRate" ? 55 : chartMetric === "purchaseRate" ? 10 : chartMetric === "conversionRate" ? 30 : null;
+        const isPercentMetricWithTarget =
+          target != null && (chartMetric === "showUpRate" || chartMetric === "purchaseRate" || chartMetric === "conversionRate");
+        const numValue = typeof value === "number" ? value : 0;
+        const belowTarget = isPercentMetricWithTarget && numValue < target;
+        return {
+          ...d,
+          label: d.date?.slice(5) ?? d.date,
+          value,
+          belowTarget,
+          valueOrganic: typeof d.showUpRateOrganic === "number" ? d.showUpRateOrganic : 0,
+          valueAds: typeof d.showUpRateAds === "number" ? d.showUpRateAds : 0,
+        };
+      }),
+    [chartSeries, chartMetric],
+  );
 
-  const chartRows = useMemo(() => {
-    return (seriesRows || []).map((r) => {
-      const showRaw = splitBy === "organic"
-        ? Number(r?.showUpRateOrganic ?? 0)
-        : splitBy === "ads"
-          ? Number(r?.showUpRateAds ?? 0)
-          : Number(r?.showUpRate ?? 0);
-      const conversionRaw = Number(r?.totalShowedUp || 0) > 0
-        ? (Number(r?.totalPurchased || 0) / Number(r.totalShowedUp)) * 100
-        : 0;
-      const pifRaw = Number(r?.calls || 0) > 0
-        ? (Number(r?.totalPurchasedByCallDate || 0) / Number(r.calls)) * 100
-        : 0;
-      const pickupRaw = Number(r?.bookings || 0) > 0
-        ? (Number(r?.totalConfirmed || 0) / Number(r.bookings)) * 100
-        : 0;
-      return {
-        label: dayLabel(r?.date || "", period),
-        showup: clampPct(showRaw),
-        conversion: clampPct(conversionRaw),
-        pif: clampPct(pifRaw),
-        pickup: clampPct(pickupRaw),
-      };
-    });
-  }, [seriesRows, splitBy, period]);
+  const yDomain = useMemo(() => {
+    if (chartMetric === "showUpRate" || chartMetric === "conversionRate") return [0, 100];
+    if (chartMetric === "purchaseRate") return [0, 30];
+    return [0, "auto"];
+  }, [chartMetric]);
 
-  const chartData = useMemo(() => {
-    const datasets = METRIC_FILTERS.map((m) => ({
-      label: m.legend,
-      data: chartRows.map((r) => Number(r?.[m.id] || 0)),
-      borderColor: m.color,
-      backgroundColor: "transparent",
-      // Small tension + extra y-axis headroom avoids curves/markers clipping off the top.
-      tension: 0.2,
-      borderWidth: 2,
-      pointRadius: 3.5,
-      pointHoverRadius: 5,
-      pointBackgroundColor: m.color,
-      pointBorderColor: "#ffffff",
-      pointBorderWidth: 1.2,
-      clip: false,
-      hidden: !metricsOn.has(m.id),
-    }));
-    return { labels: chartRows.map((r) => r.label), datasets };
-  }, [chartRows, metricsOn]);
+  const PERIOD_OPTIONS = [
+    { id: 7, label: "Last 7 days" },
+    { id: 14, label: "Last 14 days" },
+    { id: 30, label: "Last 30 days" },
+    { id: 90, label: "Last 90 days" },
+  ];
 
-  /** Room above the peak so point markers and splines are not cropped (scale was ending exactly at max). */
-  const yMax = useMemo(() => {
-    let mx = 0;
-    const keys = METRIC_FILTERS.filter((m) => metricsOn.has(m.id)).map((m) => m.id);
-    if (keys.length === 0) return 100;
-    for (const row of chartRows) {
-      for (const k of keys) {
-        mx = Math.max(mx, Number(row?.[k]) || 0);
-      }
-    }
-    const headroomPct = Math.max(10, Math.ceil(mx * 0.08));
-    let cap = mx + headroomPct;
-    cap = Math.ceil(cap / 5) * 5;
-    return Math.max(25, cap);
-  }, [chartRows, metricsOn]);
-
-  const chartOptions = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    clip: false,
-    layout: { padding: { top: 18, right: 10, bottom: 6, left: 8 } },
-    interaction: { mode: "index", intersect: false },
-    plugins: { legend: { display: false }, tooltip: { backgroundColor: "rgba(17,24,39,0.92)" } },
-    scales: {
-      x: {
-        offset: true,
-        grid: { display: false },
-        ticks: { color: "#777777", font: { size: 11, weight: "500" } },
-        border: { display: false },
-      },
-      y: {
-        min: 0,
-        max: yMax,
-        border: { display: false },
-        grid: { color: "#e9ecef", drawTicks: false, lineWidth: 1 },
-        ticks: {
-          color: "#777777",
-          font: { size: 11, weight: "500" },
-          callback: (tickValue) => {
-            const v = Number(tickValue);
-            if (!Number.isFinite(v)) return "";
-            const n = Number.isInteger(v) ? v : Math.round(v);
-            return `${n}%`;
-          },
-        },
-      },
-    },
-  }), [yMax]);
-
-  const visibleLegend = METRIC_FILTERS.filter((m) => metricsOn.has(m.id));
+  const METRIC_OPTIONS = [
+    { id: "showUpRate", label: "Show up rate (%)" },
+    { id: "purchaseRate", label: "Success rate (%)" },
+    { id: "conversionRate", label: "Conversion rate (%)" },
+    { id: "bookings", label: "Bookings" },
+    { id: "calls", label: "Show ups" },
+  ];
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
@@ -253,31 +122,266 @@ export default function TrendsChartPanel() {
       </div>
 
       <div className="rounded-xl border-[2px] border-dashed border-slate-300 bg-slate-50/35 p-4">
-        <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex flex-col gap-2">
-            <ToggleRow items={PERIOD_FILTERS} activeId={period} onChange={setPeriod} />
-            <ToggleRow items={SPLIT_FILTERS} activeId={splitBy} onChange={setSplitBy} />
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
+            {PERIOD_OPTIONS.map((opt) => {
+              const active = Number(chartDays) === Number(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setChartDays(opt.id)}
+                  className={cx(
+                    "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none",
+                    active
+                      ? "bg-sky-100 text-blue-700 ring-sky-200"
+                      : "bg-white text-slate-500 ring-slate-200/90 hover:bg-slate-50",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
-          <MetricToggleRow activeSet={metricsOn} onToggle={toggleMetric} />
+
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:gap-3">
+            {chartMetric === "showUpRate" && (
+              <button
+                type="button"
+                onClick={() => setChartSplitBySource((v) => !v)}
+                className={cx(
+                  "h-9 shrink-0 rounded-md border px-3 text-[12px] font-medium transition-colors",
+                  chartSplitBySource
+                    ? "border-indigo-500 bg-indigo-500 text-white"
+                    : "border-slate-200 bg-[#f9fafb] text-slate-700 hover:bg-slate-100",
+                )}
+              >
+                Split by organic/ads
+              </button>
+            )}
+            <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
+              {METRIC_OPTIONS.map((opt) => {
+                const active = chartMetric === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setChartMetric(opt.id)}
+                    className={cx(
+                      "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none",
+                      active
+                        ? "bg-sky-100 text-blue-700 ring-sky-200"
+                        : "bg-white text-slate-500 ring-slate-200/90 hover:bg-slate-50",
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {errorMsg ? (
-          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800">
             {errorMsg}
           </div>
         ) : null}
 
-        <div className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 px-1">
-          {visibleLegend.map((m) => (
-            <span key={m.id} className="inline-flex items-center gap-2 text-[12px] font-semibold text-[#333333]">
-              <span className="h-3 w-3 shrink-0 rounded-[2px] shadow-sm ring-1 ring-black/10" style={{ backgroundColor: m.color }} aria-hidden />
-              {m.legend}
-            </span>
-          ))}
-        </div>
-
-        <div className="relative w-full" style={{ height: "clamp(260px, 36vw, 340px)", minHeight: 260 }}>
-          {loading ? shimmer("h-full w-full") : <Line data={chartData} options={chartOptions} />}
+        <div className="relative w-full overflow-hidden rounded-xl border border-slate-200/80 bg-white" style={{ height: 280, minHeight: 260 }}>
+          {chartLoading ? (
+            <div className="flex h-full flex-col gap-3 p-4">
+              {shimmer("h-4 w-3/4 max-w-md")}
+              {shimmer("h-full w-full flex-1 rounded-lg")}
+            </div>
+          ) : !chartSeries.length ? (
+            <div className="flex h-full items-center justify-center text-[13px] font-medium text-slate-400">No data</div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 12, right: 20, left: 4, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                {chartMetric === "showUpRate" && (
+                  <ReferenceLine
+                    y={55}
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
+                    label={{ value: "Target 55%", position: "right", fill: "#22c55e", fontSize: 11 }}
+                  />
+                )}
+                {chartMetric === "purchaseRate" && (
+                  <ReferenceLine
+                    y={10}
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
+                    label={{ value: "Target 10%", position: "right", fill: "#22c55e", fontSize: 11 }}
+                  />
+                )}
+                {chartMetric === "conversionRate" && (
+                  <ReferenceLine
+                    y={30}
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
+                    label={{ value: "Target 30%", position: "right", fill: "#22c55e", fontSize: 11 }}
+                  />
+                )}
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={{ stroke: "#e5e7eb" }} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#6b7280" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={
+                    chartMetric === "showUpRate" || chartMetric === "purchaseRate" || chartMetric === "conversionRate"
+                      ? (v) => `${v}%`
+                      : (v) => v
+                  }
+                  domain={yDomain}
+                />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const raw = payload[0]?.payload;
+                    const isBookings = chartMetric === "bookings";
+                    const isShowUpSplit = chartMetric === "showUpRate" && chartSplitBySource;
+                    const isPurchaseRate = chartMetric === "purchaseRate";
+                    const isConversionRate = chartMetric === "conversionRate";
+                    const isShowUps = chartMetric === "calls";
+                    const v =
+                      chartMetric === "showUpRate"
+                        ? raw?.showUpRate != null
+                          ? `${Number(raw.showUpRate).toFixed(1)}%`
+                          : "—"
+                        : isPurchaseRate || isConversionRate
+                          ? raw?.value != null
+                            ? `${Number(raw.value).toFixed(1)}%`
+                            : "—"
+                          : isBookings
+                            ? raw?.bookings
+                            : isShowUps
+                              ? raw?.totalShowedUp ?? 0
+                              : raw?.calls;
+                    return (
+                      <div className="rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] shadow-lg">
+                        <div className="mb-1.5 text-slate-500">{raw?.date ?? raw?.label}</div>
+                        {isBookings ? (
+                          <>
+                            <div className="flex flex-col gap-0.5 text-[13px]">
+                              <div className="text-orange-500">Organic: {raw?.bookingsOrganic ?? 0}</div>
+                              <div className="text-blue-500">Ads: {raw?.bookingsAds ?? 0}</div>
+                              <div className="text-amber-500">Rescheduled: {raw?.bookingsRescheduled ?? 0}</div>
+                            </div>
+                            <div className="mt-1.5 border-t border-slate-200 pt-1.5 font-semibold text-slate-900">Total: {v}</div>
+                          </>
+                        ) : isShowUpSplit ? (
+                          <>
+                            <div className="text-orange-500">
+                              Organic: {raw?.valueOrganic != null ? `${Number(raw.valueOrganic).toFixed(1)}%` : "—"}
+                            </div>
+                            <div className="text-blue-500">
+                              Ads: {raw?.valueAds != null ? `${Number(raw.valueAds).toFixed(1)}%` : "—"}
+                            </div>
+                            <div className="mt-1 border-t border-slate-200 pt-1 font-semibold text-slate-900">Total: {v}</div>
+                            <div className="mt-1 text-[12px] text-slate-500">
+                              {raw?.totalShowedUp ?? 0} / {raw?.totalConfirmed ?? 0} confirmed
+                            </div>
+                          </>
+                        ) : isPurchaseRate ? (
+                          <>
+                            <div className="font-semibold text-slate-900">{v}</div>
+                            <div className="mt-1 text-[12px] text-slate-500">
+                              {raw?.totalPurchased ?? 0} / {raw?.bookings ?? 0} booked
+                            </div>
+                          </>
+                        ) : isConversionRate ? (
+                          <>
+                            <div className="font-semibold text-slate-900">{v}</div>
+                            <div className="mt-1 text-[12px] text-slate-500">
+                              {raw?.totalPurchased ?? 0} / {raw?.totalShowedUp ?? 0} showed up
+                            </div>
+                          </>
+                        ) : chartMetric === "showUpRate" ? (
+                          <>
+                            <div className="font-semibold text-slate-900">{v}</div>
+                            <div className="mt-1 text-[12px] text-slate-500">
+                              {raw?.totalShowedUp ?? 0} / {raw?.totalConfirmed ?? 0} confirmed
+                            </div>
+                          </>
+                        ) : isShowUps ? (
+                          <>
+                            <div className="font-semibold text-slate-900">{v}</div>
+                            <div className="mt-1 text-[12px] text-slate-500">
+                              {raw?.totalShowedUp ?? 0} / {raw?.totalConfirmed ?? 0} confirmed
+                            </div>
+                          </>
+                        ) : (
+                          <div className="font-semibold text-slate-900">{v}</div>
+                        )}
+                      </div>
+                    );
+                  }}
+                />
+                {chartMetric === "showUpRate" && chartSplitBySource ? (
+                  <>
+                    <Line
+                      type="linear"
+                      dataKey="valueOrganic"
+                      name="Organic"
+                      stroke="#f97316"
+                      strokeWidth={2}
+                      dot={{ fill: "#f97316", r: 4 }}
+                      activeDot={{ r: 6 }}
+                      connectNulls
+                      isAnimationActive
+                    />
+                    <Line
+                      type="linear"
+                      dataKey="valueAds"
+                      name="Ads"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={{ fill: "#3b82f6", r: 4 }}
+                      activeDot={{ r: 6 }}
+                      connectNulls
+                      isAnimationActive
+                    />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                  </>
+                ) : chartMetric === "showUpRate" || chartMetric === "purchaseRate" || chartMetric === "conversionRate" ? (
+                  <Line
+                    type="linear"
+                    dataKey="value"
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                    dot={(props) => {
+                      const { cx, cy, payload } = props;
+                      const fill = payload?.belowTarget ? "#ef4444" : "#6366f1";
+                      return <circle cx={cx} cy={cy} r={4} fill={fill} />;
+                    }}
+                    activeDot={(props) => {
+                      const { cx, cy, payload } = props;
+                      const fill = payload?.belowTarget ? "#ef4444" : "#818cf8";
+                      return <circle cx={cx} cy={cy} r={6} fill={fill} stroke="#fff" strokeWidth={2} />;
+                    }}
+                    connectNulls={false}
+                    isAnimationActive
+                  />
+                ) : (
+                  <Line
+                    type="linear"
+                    dataKey="value"
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                    dot={{ fill: "#6366f1", strokeWidth: 0, r: 4 }}
+                    activeDot={{ r: 6, fill: "#818cf8", stroke: "#fff", strokeWidth: 2 }}
+                    connectNulls={false}
+                    isAnimationActive
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
     </div>

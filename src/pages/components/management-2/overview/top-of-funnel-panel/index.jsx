@@ -137,7 +137,7 @@ function MiniBarChart({ color, values, labels, tooltipLabel, shouldAnimate = fal
   );
 }
 
-const ATTENDANCE_DONUT_OPTS = {
+const ATTENDANCE_DONUT_BASE_OPTS = {
   responsive: true,
   maintainAspectRatio: true,
   rotation: -90,
@@ -151,14 +151,7 @@ const ATTENDANCE_DONUT_OPTS = {
   },
   plugins: {
     legend: { display: false },
-    tooltip: {
-      enabled: true,
-      displayColors: false,
-      backgroundColor: "rgba(17,24,39,0.92)",
-      callbacks: {
-        label: (ctx) => `${ctx.raw}%`,
-      },
-    },
+    tooltip: { enabled: false },
   },
 };
 
@@ -205,7 +198,7 @@ function AttendanceRing({ percent }) {
 
   return (
     <div className="relative h-[84px] w-[84px] shrink-0">
-      <Doughnut data={data} options={ATTENDANCE_DONUT_OPTS} />
+      <Doughnut data={data} options={ATTENDANCE_DONUT_BASE_OPTS} />
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <span className="text-[17px] font-extrabold tabular-nums tracking-tight text-slate-900">
           {pct}%

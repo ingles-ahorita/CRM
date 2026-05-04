@@ -8,8 +8,7 @@ import {
   Tooltip,
 } from "recharts";
 
-// UI-only summary band shown between the table tabs and the lead rows.
-// Values are static dummy numbers for now — wire to real stats later.
+// Default stats when parent does not pass `stats` (e.g. Storybook).
 const STATS = {
   booked: 12,
   confirmed: 7,
@@ -28,6 +27,47 @@ const PALETTE = {
 
 function cx(...p) {
   return p.filter(Boolean).join(" ");
+}
+
+function shimmer(className = "") {
+  return (
+    <div
+      className={cx("animate-pulse rounded-md bg-slate-200/70", className)}
+      aria-hidden
+    />
+  );
+}
+
+function LeadsStatsShimmer() {
+  return (
+    <div className="px-3 pb-3 pt-2">
+      <div
+        className="
+          relative rounded-2xl border border-slate-200/80
+          bg-gradient-to-br from-white via-slate-50/60 to-white
+          px-2 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]
+        "
+      >
+        <div className="flex items-center gap-5">
+          <div className="relative h-[120px] w-[120px] flex-shrink-0 flex items-center justify-center">
+            {shimmer("h-[104px] w-[104px] rounded-full")}
+          </div>
+          <div className="hidden h-[68px] w-px flex-shrink-0 bg-slate-200/80 sm:block" />
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-y-1 divide-x divide-slate-200/70 lg:grid-cols-4 xl:grid-cols-7">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex min-w-[100px] flex-col justify-center gap-2 px-3 py-1 sm:px-4"
+              >
+                {shimmer("h-3 w-24")}
+                {shimmer("h-8 w-14")}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function pct(value, total) {
@@ -92,80 +132,42 @@ function ChartTooltip({ active, payload }) {
   );
 }
 
-function StatTile({
-  label,
-  value,
-  color,
-  total,
-  isActive,
-  onMouseEnter,
-  onMouseLeave,
-}) {
-  const percent = pct(value, total);
-  const isMuted = value === 0;
-
+function MetricItem({ label, value, subValue, tone = "text-slate-900" }) {
   return (
-    <div
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      className={cx(
-        "group relative flex flex-1 min-w-[120px] flex-col justify-center gap-1.5 px-4",
-        "first:pl-3 transition-colors duration-200 cursor-default",
-        isActive ? "bg-slate-50/80" : "",
-      )}
-    >
-      <div
-        className={cx(
-          "absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full transition-all duration-300",
-          isActive ? "opacity-100 scale-y-100" : "opacity-0 scale-y-50",
-        )}
-        style={{ backgroundColor: color }}
-        aria-hidden
-      />
-      <div className="flex items-center gap-1.5">
-        <span
-          className={cx(
-            "h-[7px] w-[7px] rounded-full flex-shrink-0",
-            "transition-all duration-200",
-            isActive ? "scale-[1.6]" : "scale-100",
-          )}
-          style={{
-            backgroundColor: color,
-            opacity: isMuted ? 0.45 : 1,
-            boxShadow: isActive ? `0 0 0 3px ${color}33` : "none",
-          }}
-        />
-        <span
-          className={cx(
-            "text-[10.5px] font-bold uppercase tracking-[0.06em]",
-            isMuted ? "text-slate-400" : "text-slate-500",
-          )}
-        >
-          {label}
-        </span>
-      </div>
+    <div className="flex min-w-[130px] flex-col justify-center gap-0.5 px-3 py-1.5 sm:px-4">
+      <span className="text-[10.5px] font-bold uppercase tracking-[0.06em] text-slate-500">
+        {label}
+      </span>
       <div className="flex items-baseline gap-2">
-        <span
-          className={cx(
-            "text-[22px] font-black leading-none tabular-nums",
-            "transition-colors duration-200",
-            isMuted ? "text-slate-400" : "text-slate-900",
-          )}
-        >
+        <span className={cx("text-[26px] font-black leading-none tabular-nums", tone)}>
           {value}
         </span>
-        <span className="text-[10.5px] font-semibold text-slate-400 tabular-nums">
-          {total ? `${percent}%` : "—"}
-        </span>
+        {subValue != null ? (
+          <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+            {subValue}
+          </span>
+        ) : null}
       </div>
     </div>
   );
 }
 
-export default function LeadsStats({ stats = STATS }) {
+export default function LeadsStats({ stats = STATS, loading = false, details }) {
   const series = buildSeries(stats);
   const totalBooked = stats.booked || 0;
   const [activeIdx, setActiveIdx] = useState(null);
+  const safeDetails = details || {};
+  const slots = Number(safeDetails.slots || 0);
+  const occupancy = Number(safeDetails.occupancy || 0);
+  const booked = Number(safeDetails.booked || stats.booked || 0);
+  const confirmed = Number(safeDetails.confirmed || stats.confirmed || 0);
+  const cancelled = Number(safeDetails.cancelled || stats.cancelled || 0);
+  const noPickUp = Number(safeDetails.noPickUp || stats.noPickUp || 0);
+  const noShows = Number(safeDetails.noShows || stats.noShows || 0);
+
+  if (loading) {
+    return <LeadsStatsShimmer />;
+  }
 
   return (
     <div className="px-3 pb-3 pt-2">
@@ -225,19 +227,31 @@ export default function LeadsStats({ stats = STATS }) {
 
           <div className="hidden h-[68px] w-px bg-slate-200/80 sm:block" />
 
-          <div className="flex items-stretch divide-x divide-slate-200/70 flex-1">
-            {series.slice(0, 4).map((s, i) => (
-              <StatTile
-                key={s.name}
-                label={s.name}
-                value={s.value}
-                color={s.color}
-                total={totalBooked}
-                isActive={activeIdx === i}
-                onMouseEnter={() => setActiveIdx(i)}
-                onMouseLeave={() => setActiveIdx(null)}
-              />
-            ))}
+          <div className="grid flex-1 grid-cols-2 gap-y-1 divide-x divide-slate-200/70 lg:grid-cols-4 xl:grid-cols-7">
+            <MetricItem label="Slots" value={slots} />
+            <MetricItem label="Occupancy" value={`${occupancy}%`} />
+            <MetricItem label="Booked" value={booked} />
+            <MetricItem
+              label="Confirmed"
+              value={confirmed}
+              subValue={`${pct(confirmed, booked)}%`}
+            />
+            <MetricItem
+              label="Cancelled"
+              value={cancelled}
+              subValue={`${pct(cancelled, booked)}%`}
+            />
+            <MetricItem
+              label="No Pick up"
+              value={noPickUp}
+              subValue={`${pct(noPickUp, booked)}%`}
+            />
+            <MetricItem
+              label="No Shows"
+              value={noShows}
+              subValue={`${pct(noShows, booked)}%`}
+              tone={noShows > 0 ? "text-slate-900" : "text-slate-400"}
+            />
           </div>
         </div>
       </div>

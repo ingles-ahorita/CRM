@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Clock,
   MoreVertical,
   StickyNote,
   UserRound,
 } from "lucide-react";
-import StatusDropdown from "../status-dropdown";
 import {
   getCountryFlagFromPhone,
   getCountryFromPhone,
@@ -189,25 +187,41 @@ function ActionMenu({ open, onToggle, canReschedule }) {
   );
 }
 
-// Compact PCSP status badges for the "All" tab — solid colour per label,
-// matching the brand palette (P=amber, C=indigo, S=emerald, $=rose).
-const STATUS_BADGE_COLOURS = {
-  P: "bg-amber-500",
-  C: "bg-indigo-600",
-  S: "bg-emerald-500",
-  $: "bg-rose-500",
-};
+const GRID_CLASS_ALL =
+  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
+const GRID_CLASS_DEFAULT =
+  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
 
-function StatusBadge({ value, label, title }) {
-  const isUnset = value === null || value === undefined;
-  const baseColour = STATUS_BADGE_COLOURS[label] || "bg-slate-400";
+function StatusBadge({ value, label, title, outcomeLog }) {
+  const getColor = () => {
+    const isDontQualify = Array.isArray(outcomeLog)
+      ? outcomeLog.some((ol) => ol?.outcome === "dont_qualify")
+      : outcomeLog?.outcome === "dont_qualify";
+    if (isDontQualify && label === "$") return "#000000";
+
+    if (label === "$") {
+      const isLockIn = Array.isArray(outcomeLog)
+        ? outcomeLog.some((ol) => ol?.outcome === "lock_in")
+        : outcomeLog?.outcome === "lock_in";
+      const isFollowUp = Array.isArray(outcomeLog)
+        ? outcomeLog.some((ol) => ol?.outcome === "follow_up")
+        : outcomeLog?.outcome === "follow_up";
+      if (isLockIn || isFollowUp) return "#9333ea";
+    }
+
+    if (value) return "#10b981";
+    if (value === false || value === "false") return "#ef4444";
+    return "#f59e0b";
+  };
+
+  const isPurchasedTBD = label === "$" && (value == null || value === "null");
+  const displayTitle = isPurchasedTBD ? "Purchased: TBD" : title;
+
   return (
     <span
-      title={title}
-      className={cx(
-        "inline-flex h-[25px] w-[25px] items-center justify-center rounded-md text-[12px] font-extrabold text-white shadow-[0_1px_2px_rgba(15,23,42,0.18)]",
-        isUnset ? "bg-slate-300" : baseColour,
-      )}
+      title={displayTitle}
+      className="inline-flex h-[25px] w-[25px] items-center justify-center rounded-md text-[12px] font-extrabold text-white shadow-[0_1px_2px_rgba(15,23,42,0.18)]"
+      style={{ backgroundColor: getColor() }}
     >
       {label}
     </span>
@@ -217,10 +231,12 @@ function StatusBadge({ value, label, title }) {
 export default function LeadRow({
   lead,
   setterName,
+  closerName,
   actionsOpen,
   onToggleActions,
-  useCompactStatusBadges = false,
+  useCompactStatusBadges = true,
 }) {
+  const isAllLayout = true;
   const profile = lead?.leads || {};
   const name = profile?.name || "—";
   const email = profile?.email || "—";
@@ -266,26 +282,18 @@ export default function LeadRow({
     );
   })();
 
-  const timeIso = lead?.call_date || lead?.book_date;
-  const timeLabel = timeIso
-    ? new Date(timeIso).toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
-
-  const [pickUpValue, setPickUpValue] = useState(() =>
-    formatStatusValue(lead?.picked_up),
-  );
-  const [confirmedValue, setConfirmedValue] = useState(() =>
-    formatStatusValue(lead?.confirmed),
-  );
-  const [showUpValue, setShowUpValue] = useState(() =>
-    formatStatusValue(lead?.showed_up),
-  );
-  const [purchaseValue, setPurchaseValue] = useState(() =>
-    formatStatusValue(lead?.purchased),
-  );
+  const formatDateTime = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return `${d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}, ${d.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })}`;
+  };
+  const bookDateLabel = formatDateTime(lead?.book_date);
+  const callDateLabel = formatDateTime(lead?.call_date);
 
   return (
     <div
@@ -297,9 +305,7 @@ export default function LeadRow({
       <div
         className={cx(
           "grid items-center gap-4 py-2",
-          useCompactStatusBadges
-            ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
-            : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
+          isAllLayout ? GRID_CLASS_ALL : GRID_CLASS_DEFAULT,
         )}
       >
         <div className="flex flex-col items-center justify-center gap-1">
@@ -351,65 +357,89 @@ export default function LeadRow({
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 bg-slate-100/80 rounded-full px-2 py-1 text-[11px] text-slate-600 w-auto">
-          <UserRound size={14} className="text-slate-400 flex-shrink-0" />
-          <span className="truncate">
-            <span className="font-semibold text-slate-700">
-              {setterName || "—"}
+        {lead?.setter_id ? (
+          <a
+            href={`/setter/${lead.setter_id}`}
+            className="flex items-center justify-center gap-1.5 bg-slate-100/80 rounded-full px-2 py-1 text-[11px] text-slate-600 w-auto hover:bg-slate-200/90 transition-colors max-w-[90px] ml-4 whitespace-pre-wrap"
+            title="Open setter profile"
+          >
+            <UserRound size={14} className="text-slate-400 flex-shrink-0" />
+            <span className="truncate">
+              <span className="font-semibold text-slate-700">
+                {setterName || "—"}
+              </span>
             </span>
-          </span>
+          </a>
+        ) : (
+          <div className="flex items-center justify-center gap-1.5 bg-slate-100/80 rounded-full px-2 py-1 text-[11px] text-slate-600 w-auto max-w-[90px] ml-5 whitespace-pre-wrap">
+            <UserRound size={14} className="text-slate-400 flex-shrink-0" />
+            <span className="truncate">
+              <span className="font-semibold text-slate-700">
+                {setterName || "—"}
+              </span>
+            </span>
+          </div>
+        )}
+
+        {lead?.closer_id ? (
+          <a
+            href={`/closer/${lead.closer_id}`}
+            className="flex items-center justify-center gap-1.5 bg-slate-100/80 rounded-full px-2 py-1 text-[11px] text-slate-600 w-auto hover:bg-slate-200/90 transition-colors max-w-[90px] ml-5 whitespace-pre-wrap"
+            title="Open closer profile"
+          >
+            <UserRound size={14} className="text-slate-400 flex-shrink-0" />
+            <span className="truncate">
+              <span className="font-semibold text-slate-700">
+                {closerName || lead?.closers?.name || "—"}
+              </span>
+            </span>
+          </a>
+        ) : (
+          <div className="flex items-center justify-center gap-1.5 bg-slate-100/80 rounded-full px-2 py-1 text-[11px] text-slate-600 w-auto max-w-[90px] ml-5 whitespace-pre-wrap">
+            <UserRound size={14} className="text-slate-400 flex-shrink-0" />
+            <span className="truncate">
+              <span className="font-semibold text-slate-700">
+                {closerName || lead?.closers?.name || "—"}
+              </span>
+            </span>
+          </div>
+        )}
+
+        <div className="text-center text-[11px] font-semibold text-slate-700 truncate">
+          {bookDateLabel}
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-600">
-          <Clock size={14} className="text-slate-400" />
-          <span className="font-semibold text-slate-700">{timeLabel}</span>
+        <div className="text-center text-[11px] font-semibold text-slate-700 truncate">
+          {callDateLabel}
         </div>
 
         <div className="flex items-center justify-center">
-          {useCompactStatusBadges ? (
-            <div className="flex items-center gap-1.5">
-              <StatusBadge value={lead?.picked_up} label="P" title="Picked Up" />
-              <StatusBadge value={lead?.confirmed} label="C" title="Confirmed" />
-              <StatusBadge
-                value={lead?.showed_up}
-                label="S"
-                title="Showed Up"
-              />
-              <StatusBadge
-                value={lead?.purchased}
-                label="$"
-                title="Purchased"
-              />
-            </div>
-          ) : (
-            <div className="flex items-end gap-2">
-              <StatusDropdown
-                value={pickUpValue}
-                onChange={setPickUpValue}
-                label="PICK UP"
-                disabled
-              />
-              <StatusDropdown
-                value={confirmedValue}
-                onChange={setConfirmedValue}
-                label="CONFIRMED"
-                disabled
-              />
-              <StatusDropdown
-                value={showUpValue}
-                onChange={setShowUpValue}
-                label="SHOW UP"
-                outcomeLog={lead?.outcome_log}
-              />
-              <StatusDropdown
-                value={purchaseValue}
-                outcomeLog={lead?.outcome_log}
-                label="PURCHASED"
-                disabled={lead?.showed_up === false}
-                onChange={setPurchaseValue}
-              />
-            </div>
-          )}
+          <div className="flex items-center gap-1.5">
+            <StatusBadge
+              value={lead?.picked_up}
+              label="P"
+              title="Picked Up"
+              outcomeLog={lead?.outcome_log}
+            />
+            <StatusBadge
+              value={lead?.confirmed}
+              label="C"
+              title="Confirmed"
+              outcomeLog={lead?.outcome_log}
+            />
+            <StatusBadge
+              value={lead?.showed_up}
+              label="S"
+              title="Showed Up"
+              outcomeLog={lead?.outcome_log}
+            />
+            <StatusBadge
+              value={lead?.purchased}
+              label="$"
+              title="Purchased"
+              outcomeLog={lead?.outcome_log}
+            />
+          </div>
         </div>
 
         {useCompactStatusBadges ? (
@@ -442,11 +472,4 @@ export default function LeadRow({
       </div>
     </div>
   );
-}
-
-function formatStatusValue(value) {
-  if (value === true) return "true";
-  if (value === false) return "false";
-  if (value === null || value === undefined) return "null";
-  return value;
 }

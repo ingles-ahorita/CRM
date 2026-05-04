@@ -209,7 +209,7 @@ if (searchTerm) {
     confirmed: leadsData?.filter(lead => lead.cancelled ? false : lead.confirmed).length || 0,
     cancelled: leadsData?.filter(lead => lead.confirmed === false || lead.cancelled === true ).length || 0,
         noPickup: leadsData?.filter(lead => lead.picked_up === false).length || 0,
-    noShow: leadsData?.filter(lead => lead.showed_up).length || 0
+    noShow: leadsData?.filter(lead => lead.confirmed === true && lead.showed_up === false).length || 0
 
   };
 
@@ -280,7 +280,7 @@ if (searchTerm) {
     confirmed: leadsWithCallTime?.filter(lead => lead.cancelled ? false : lead.confirmed).length || 0,
     cancelled: leadsWithCallTime?.filter(lead => lead.confirmed === false || lead.cancelled === true ).length || 0,
     noPickup: leadsWithCallTime?.filter(lead => lead.picked_up === false).length || 0,
-    noShow: leadsWithCallTime?.filter(lead => lead.showed_up).length || 0
+    noShow: leadsWithCallTime?.filter(lead => lead.confirmed === true && lead.showed_up === false).length || 0
   };
 
     updateDataState({ leads: leadsWithCallTime || [], counts: finalCounts});
