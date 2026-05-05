@@ -5,16 +5,10 @@ import { getWeekBoundsUTC } from "../../../../../utils/dateHelpers";
 
 ChartJS.register(ArcElement);
 
+import { getConfirmationColor, getShowUpColor, getConversionColor, getSuccessColor } from "../../../../../utils/performanceBenchmarks";
+
 const FUNNEL_TRACK_GRAY = "#e8ecf1";
 const FUNNEL_NEUTRAL = "#cbd5e1";
-
-/** Threshold colors: red / yellow / green / dark green */
-const FC = {
-  bad: "#ef4444",
-  ok: "#eab308",
-  good: "#22c55e",
-  great: "#15803d",
-};
 
 /**
  * @param {"confirmation"|"showup"|"conversion"|"success"} metricKey
@@ -28,22 +22,13 @@ function funnelArcColor(metricKey, pct, subtext) {
 
   switch (metricKey) {
     case "confirmation":
-      return p < 65 ? FC.bad : FC.good;
+      return getConfirmationColor(p);
     case "showup":
-      if (p < 45) return FC.bad;
-      if (p < 55) return FC.ok;
-      if (p < 65) return FC.good;
-      return FC.great;
+      return getShowUpColor(p);
     case "conversion":
-      if (p < 25) return FC.bad;
-      if (p < 30) return FC.ok;
-      if (p < 35) return FC.good;
-      return FC.great;
+      return getConversionColor(p);
     case "success":
-      if (p < 9) return FC.bad;
-      if (p < 12) return FC.ok;
-      if (p < 15) return FC.good;
-      return FC.great;
+      return getSuccessColor(p);
     default:
       return FUNNEL_NEUTRAL;
   }

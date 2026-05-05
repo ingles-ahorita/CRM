@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { BENCHMARKS, getShowUpColor, getSuccessColor, getConversionColor } from "../../../../../utils/performanceBenchmarks";
 import {
   LineChart,
   Line,
@@ -81,11 +82,11 @@ export default function TrendsChartPanel() {
                   : (d.totalShowedUp ?? 0);
         const target =
           chartMetric === "showUpRate"
-            ? 55
+            ? BENCHMARKS.SHOW_UP
             : chartMetric === "purchaseRate"
-              ? 10
+              ? BENCHMARKS.SUCCESS
               : chartMetric === "conversionRate"
-                ? 30
+                ? BENCHMARKS.CONVERSION
                 : null;
         const isPercentMetricWithTarget =
           target != null &&
@@ -93,12 +94,16 @@ export default function TrendsChartPanel() {
             chartMetric === "purchaseRate" ||
             chartMetric === "conversionRate");
         const numValue = typeof value === "number" ? value : 0;
-        const belowTarget = isPercentMetricWithTarget && numValue < target;
+        const color = 
+          chartMetric === "showUpRate" ? getShowUpColor(numValue) :
+          chartMetric === "purchaseRate" ? getSuccessColor(numValue) :
+          chartMetric === "conversionRate" ? getConversionColor(numValue) :
+          "#6366f1";
         return {
           ...d,
           label: d.date?.slice(5) ?? d.date,
           value,
-          belowTarget,
+          color,
           valueOrganic:
             typeof d.showUpRateOrganic === "number" ? d.showUpRateOrganic : 0,
           valueAds: typeof d.showUpRateAds === "number" ? d.showUpRateAds : 0,
@@ -234,12 +239,12 @@ export default function TrendsChartPanel() {
               />
               {chartMetric === "showUpRate" && (
                 <ReferenceLine
-                  y={55}
+                  y={BENCHMARKS.SHOW_UP}
                   stroke="#22c55e"
                   strokeWidth={2}
                   strokeDasharray="4 4"
                   label={{
-                    value: "Target 55%",
+                    value: `Target ${BENCHMARKS.SHOW_UP}%`,
                     position: "right",
                     fill: "#22c55e",
                     fontSize: 11,
@@ -248,12 +253,12 @@ export default function TrendsChartPanel() {
               )}
               {chartMetric === "purchaseRate" && (
                 <ReferenceLine
-                  y={10}
+                  y={BENCHMARKS.SUCCESS}
                   stroke="#22c55e"
                   strokeWidth={2}
                   strokeDasharray="4 4"
                   label={{
-                    value: "Target 10%",
+                    value: `Target ${BENCHMARKS.SUCCESS}%`,
                     position: "right",
                     fill: "#22c55e",
                     fontSize: 11,
@@ -262,12 +267,12 @@ export default function TrendsChartPanel() {
               )}
               {chartMetric === "conversionRate" && (
                 <ReferenceLine
-                  y={30}
+                  y={BENCHMARKS.CONVERSION}
                   stroke="#22c55e"
                   strokeWidth={2}
                   strokeDasharray="4 4"
                   label={{
-                    value: "Target 30%",
+                    value: `Target ${BENCHMARKS.CONVERSION}%`,
                     position: "right",
                     fill: "#22c55e",
                     fontSize: 11,
@@ -444,18 +449,16 @@ export default function TrendsChartPanel() {
                   strokeWidth={2}
                   dot={(props) => {
                     const { cx, cy, payload } = props;
-                    const fill = payload?.belowTarget ? "#ef4444" : "#6366f1";
-                    return <circle cx={cx} cy={cy} r={4} fill={fill} />;
+                    return <circle cx={cx} cy={cy} r={4} fill={payload?.color || "#6366f1"} />;
                   }}
                   activeDot={(props) => {
                     const { cx, cy, payload } = props;
-                    const fill = payload?.belowTarget ? "#ef4444" : "#818cf8";
                     return (
                       <circle
                         cx={cx}
                         cy={cy}
                         r={6}
-                        fill={fill}
+                        fill={payload?.color || "#818cf8"}
                         stroke="#fff"
                         strokeWidth={2}
                       />

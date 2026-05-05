@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { getShowUpColor } from "../../../../../utils/performanceBenchmarks";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -170,6 +171,7 @@ const ATTENDANCE_DONUT_BASE_OPTS = {
 
 function AttendanceRing({ percent }) {
   const pct = Math.min(100, Math.max(0, Number(percent) || 0));
+  const color = getShowUpColor(pct);
 
   const data = useMemo(() => {
     if (pct <= 0) {
@@ -189,7 +191,7 @@ function AttendanceRing({ percent }) {
         datasets: [
           {
             data: [100],
-            backgroundColor: ["#10b981"],
+            backgroundColor: [color],
             borderWidth: 0,
             hoverOffset: 0,
           },
@@ -200,14 +202,14 @@ function AttendanceRing({ percent }) {
       datasets: [
         {
           data: [pct, 100 - pct],
-          backgroundColor: ["#10b981", "#e8ecf1"],
+          backgroundColor: [color, "#e8ecf1"],
           borderWidth: 0,
           spacing: 0,
           hoverOffset: 0,
         },
       ],
     };
-  }, [pct]);
+  }, [pct, color]);
 
   return (
     <div className="relative h-[84px] w-[84px] shrink-0">

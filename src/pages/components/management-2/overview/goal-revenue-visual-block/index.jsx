@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useId, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -150,6 +150,8 @@ function shimmer(className = "") {
   );
 }
 
+import { PERFORMANCE_COLORS } from "../../../../../utils/performanceBenchmarks";
+
 export default function GoalRevenueVisualBlock() {
   const trendGradId = useId().replace(/:/g, "");
   const [loading, setLoading] = useState(true);
@@ -292,6 +294,13 @@ export default function GoalRevenueVisualBlock() {
         ? "bg-amber-100 text-amber-700 ring-amber-200/80"
         : "bg-rose-100 text-rose-700 ring-rose-200/80";
 
+  const paceColor =
+    mtdRevenue >= expectedTarget
+      ? PERFORMANCE_COLORS.GOOD
+      : nearPace
+        ? PERFORMANCE_COLORS.OK
+        : PERFORMANCE_COLORS.BAD;
+
   const trendDelta = (trendPoints?.[3]?.v || 0) - (trendPoints?.[2]?.v || 0);
 
   return (
@@ -323,7 +332,7 @@ export default function GoalRevenueVisualBlock() {
               ) : (
                 <SemiCircleGauge
                   percent={progressPct}
-                  strokeColor="#22c55e"
+                  strokeColor={paceColor}
                   labelMain={`${progressPct}%`}
                   labelSub={`of ${formatUsd(monthlyGoal)} goal`}
                 />
@@ -339,7 +348,10 @@ export default function GoalRevenueVisualBlock() {
                 </>
               ) : (
                 <>
-                  <div className="text-base font-bold tabular-nums leading-tight text-slate-900">
+                  <div 
+                    className="text-base font-bold tabular-nums leading-tight"
+                    style={{ color: paceColor }}
+                  >
                     {formatUsd(mtdRevenue)} / {formatUsd(monthlyGoal)}
                   </div>
                   <div className="text-[10px] font-medium text-slate-500">
@@ -391,12 +403,12 @@ export default function GoalRevenueVisualBlock() {
                     >
                       <stop
                         offset="0%"
-                        stopColor="#22c55e"
+                        stopColor={paceColor}
                         stopOpacity={0.22}
                       />
                       <stop
                         offset="100%"
-                        stopColor="#22c55e"
+                        stopColor={paceColor}
                         stopOpacity={0.02}
                       />
                     </linearGradient>
@@ -430,7 +442,7 @@ export default function GoalRevenueVisualBlock() {
                   <Area
                     type="monotone"
                     dataKey="v"
-                    stroke="#16a34a"
+                    stroke={paceColor}
                     strokeWidth={2.5}
                     fill={`url(#${trendGradId})`}
                     dot={false}
@@ -438,7 +450,7 @@ export default function GoalRevenueVisualBlock() {
                       r: 5,
                       strokeWidth: 2,
                       stroke: "#fff",
-                      fill: "#16a34a",
+                      fill: paceColor,
                     }}
                     isAnimationActive
                     animationBegin={120}
