@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import SegmentedTabs from "../../segmented-tabs";
 import { supabase } from "../../../../../lib/supabaseClient";
 import { aocForOffer, fetchCompletionRatesInst2 } from "../../../../../lib/aoc";
@@ -67,13 +68,22 @@ const fmtUSD = (n) =>
 const fmtPct = (n) => `${(Number(n) || 0).toFixed(1)}%`;
 
 const PERIOD_FILTER_ITEMS = [
-  { id: "thisWeek", label: "This week" },
-  { id: "lastWeek", label: "Last week" },
-  { id: "all", label: "All" },
+  { id: "thisWeek", label: "This week", title: "This week (month-aligned early in month, through today)" },
+  { id: "lastWeek", label: "Last week", title: "Last week" },
+  {
+    id: "thisMonth",
+    label: "This month",
+    title: "Month to date (start of month → today, app timezone)",
+  },
+  { id: "all", label: "All", title: "All time (no date filter)" },
 ];
 
 function shimmer(className = "") {
-  return <div className={cx("animate-pulse rounded-md bg-slate-200/70", className)} />;
+  return (
+    <div
+      className={cx("animate-pulse rounded-md bg-slate-200/70", className)}
+    />
+  );
 }
 
 function pct(num, den) {
@@ -83,14 +93,73 @@ function pct(num, den) {
   return (n / d) * 100;
 }
 
+/** End of today in app timezone (matches commission / month helpers). */
+function endOfTodayApp(now = new Date()) {
+  const tz = DateHelpers.DEFAULT_TIMEZONE;
+  if (tz === "UTC") {
+    const y = now.getUTCFullYear();
+    const m = now.getUTCMonth();
+    const d = now.getUTCDate();
+    return new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
+  }
+  const z = toZonedTime(now, tz);
+  const endNaive = new Date(
+    z.getFullYear(),
+    z.getMonth(),
+    z.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+  return fromZonedTime(endNaive, tz);
+}
+
+/**
+ * Closer table "This week": Monday–Sunday UTC, but if that week would skip the
+ * first days of the calendar month (e.g. Monday is the 4th → May 1–3 missing),
+ * start at the 1st instead so early-month stats match expectations. Capped at
+ * end of today so it lines up with "This month" (MTD).
+ */
+function getCloserThisWeekBounds(now = new Date()) {
+  const tz = DateHelpers.DEFAULT_TIMEZONE;
+  const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(now);
+  const { startDate: monthStart } = DateHelpers.getMonthRangeInTimezone(now, tz);
+  const todayEnd = endOfTodayApp(now);
+
+  let start = weekStart;
+  if (weekStart.getTime() < monthStart.getTime()) {
+    start = monthStart;
+  } else if (weekStart.getTime() > monthStart.getTime()) {
+    const weekStartsOn = weekStart.getUTCDate();
+    if (weekStartsOn <= 7) {
+      start = monthStart;
+    }
+  }
+
+  const end =
+    weekEnd.getTime() < todayEnd.getTime() ? weekEnd : todayEnd;
+  return { startISO: start.toISOString(), endISO: end.toISOString() };
+}
+
 function getPeriodBounds(periodFilter) {
+  const tz = DateHelpers.DEFAULT_TIMEZONE;
+  const now = new Date();
+
   if (periodFilter === "thisWeek") {
-    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(new Date());
-    return { startISO: weekStart.toISOString(), endISO: weekEnd.toISOString() };
+    return getCloserThisWeekBounds(now);
   }
   if (periodFilter === "lastWeek") {
     const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset(1);
     return { startISO: weekStart.toISOString(), endISO: weekEnd.toISOString() };
+  }
+  if (periodFilter === "thisMonth") {
+    const { startDate: monthStart, endDate: monthEnd } =
+      DateHelpers.getMonthRangeInTimezone(now, tz);
+    const todayEnd = endOfTodayApp(now);
+    const end =
+      monthEnd.getTime() < todayEnd.getTime() ? monthEnd : todayEnd;
+    return { startISO: monthStart.toISOString(), endISO: end.toISOString() };
   }
   return null;
 }
@@ -98,7 +167,10 @@ function getPeriodBounds(periodFilter) {
 async function fetchAllRows(buildQuery, pageSize = 1000, maxRows = 50000) {
   const out = [];
   for (let offset = 0; offset < maxRows; offset += pageSize) {
-    const { data, error } = await buildQuery().range(offset, offset + pageSize - 1);
+    const { data, error } = await buildQuery().range(
+      offset,
+      offset + pageSize - 1,
+    );
     if (error) throw error;
     const rows = Array.isArray(data) ? data : [];
     out.push(...rows);
@@ -164,35 +236,45 @@ export default function CloserComparisonTable() {
 
         const completionRatesPromise = fetchCompletionRatesInst2();
 
-        const [callsRows, recoveredRows, salesRows, completionRates] = await Promise.all([
-          fetchAllRows(() => {
-            let q = supabase
-              .from("calls")
-              .select("closer_id, confirmed, showed_up, cancelled")
-              .not("closer_id", "is", null);
-            if (bounds) q = q.gte("call_date", bounds.startISO).lte("call_date", bounds.endISO);
-            return q;
-          }),
-          fetchAllRows(() => {
-            let q = supabase
-              .from("calls")
-              .select("closer_id, recovered, cancelled")
-              .not("closer_id", "is", null);
-            if (bounds) q = q.gte("book_date", bounds.startISO).lte("book_date", bounds.endISO);
-            return q;
-          }),
-          fetchAllRows(() => {
-            let q = supabase
-              .from("outcome_log")
-              .select(
-                "PIF, commission, discount, calls!inner!call_id(closer_id), offers!offer_id(kajabi_id, price, installments, base_commission, payoff_commission)",
-              )
-              .eq("outcome", "yes");
-            if (bounds) q = q.gte("purchase_date", bounds.startISO).lte("purchase_date", bounds.endISO);
-            return q;
-          }),
-          completionRatesPromise,
-        ]);
+        const [callsRows, recoveredRows, salesRows, completionRates] =
+          await Promise.all([
+            fetchAllRows(() => {
+              let q = supabase
+                .from("calls")
+                .select("closer_id, confirmed, showed_up, cancelled")
+                .not("closer_id", "is", null);
+              if (bounds)
+                q = q
+                  .gte("call_date", bounds.startISO)
+                  .lte("call_date", bounds.endISO);
+              return q;
+            }),
+            fetchAllRows(() => {
+              let q = supabase
+                .from("calls")
+                .select("closer_id, recovered, cancelled")
+                .not("closer_id", "is", null);
+              if (bounds)
+                q = q
+                  .gte("book_date", bounds.startISO)
+                  .lte("book_date", bounds.endISO);
+              return q;
+            }),
+            fetchAllRows(() => {
+              let q = supabase
+                .from("outcome_log")
+                .select(
+                  "PIF, commission, discount, calls!inner!call_id(closer_id), offers!offer_id(kajabi_id, price, installments, base_commission, payoff_commission)",
+                )
+                .eq("outcome", "yes");
+              if (bounds)
+                q = q
+                  .gte("purchase_date", bounds.startISO)
+                  .lte("purchase_date", bounds.endISO);
+              return q;
+            }),
+            completionRatesPromise,
+          ]);
 
         const byCloser = new Map();
         for (const c of closersData || []) {
@@ -262,7 +344,8 @@ export default function CloserComparisonTable() {
           cur.commission += commissionForSale(sale);
 
           const offerPrice = Number(sale?.offers?.price);
-          if (Number.isFinite(offerPrice) && offerPrice > 0) cur.aovSum += offerPrice;
+          if (Number.isFinite(offerPrice) && offerPrice > 0)
+            cur.aovSum += offerPrice;
 
           const aoc = aocForOffer(sale?.offers, completionRates);
           if (aoc != null && Number.isFinite(aoc)) {
@@ -512,13 +595,15 @@ export default function CloserComparisonTable() {
             Core Feature
           </span> */}
         </div>
-        <SegmentedTabs
-          items={PERIOD_FILTER_ITEMS}
-          activeId={periodFilter}
-          onChange={setPeriodFilter}
-          size="sm"
-          className="self-center"
-        />
+        <div className="flex justify-end">
+          <SegmentedTabs
+            items={PERIOD_FILTER_ITEMS}
+            activeId={periodFilter}
+            onChange={setPeriodFilter}
+            size="sm"
+            className="self-center"
+          />
+        </div>
         {/* <p className="text-[13px] font-medium text-slate-500">
          Same closer data in a sortable comparison table. Useful when
            management wants to rank closers by any column. Toggle from t he tabs
@@ -572,113 +657,123 @@ export default function CloserComparisonTable() {
               <tbody>
                 {loading
                   ? Array.from({ length: 5 }).map((_, idx) => (
-                      <tr key={`shimmer-${idx}`} className="border-b border-slate-200 last:border-b-0">
+                      <tr
+                        key={`shimmer-${idx}`}
+                        className="border-b border-slate-200 last:border-b-0"
+                      >
                         {COLUMNS.map((c, cidx) => (
-                          <td key={`${idx}-${c.key}-${cidx}`} className="px-3 py-3.5">
-                            {shimmer(c.key === "open" ? "ml-auto h-7 w-16" : "h-4 w-full")}
+                          <td
+                            key={`${idx}-${c.key}-${cidx}`}
+                            className="px-3 py-3.5"
+                          >
+                            {shimmer(
+                              c.key === "open"
+                                ? "ml-auto h-7 w-16"
+                                : "h-4 w-full",
+                            )}
                           </td>
                         ))}
                       </tr>
                     ))
                   : sorted.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-slate-200 last:border-b-0 transition-colors hover:bg-slate-50/70"
-                  >
-                    <td className="px-3 py-3.5 text-left">
-                      <span className="text-[13.5px] font-bold text-slate-900">
-                        {row.name}
-                      </span>
-                    </td>
-
-                    <td className="px-3 py-3.5 text-left">
-                      <span
-                        className={cx(
-                          "font-bold tabular-nums",
-                          aovClass(row.aov),
-                        )}
+                      <tr
+                        key={row.id}
+                        className="border-b border-slate-200 last:border-b-0 transition-colors hover:bg-slate-50/70"
                       >
-                        {fmtUSD(row.aov)}
-                      </span>
-                    </td>
+                        <td className="px-3 py-3.5 text-left">
+                          <span className="text-[13.5px] font-bold text-slate-900">
+                            {row.name}
+                          </span>
+                        </td>
 
-                    <td className="px-3 py-3.5 text-left">
-                      <span
-                        className={cx(
-                          "font-bold tabular-nums",
-                          aovClass(row.aoc),
-                        )}
-                      >
-                        {fmtUSD(row.aoc)}
-                      </span>
-                    </td>
+                        <td className="px-3 py-3.5 text-left">
+                          <span
+                            className={cx(
+                              "font-bold tabular-nums",
+                              aovClass(row.aov),
+                            )}
+                          >
+                            {fmtUSD(row.aov)}
+                          </span>
+                        </td>
 
-                    <td className="px-5 py-3.5 text-left">
-                      <span className="font-bold tabular-nums text-slate-800">
-                        {row.sales}
-                      </span>
-                    </td>
+                        <td className="px-3 py-3.5 text-left">
+                          <span
+                            className={cx(
+                              "font-bold tabular-nums",
+                              aovClass(row.aoc),
+                            )}
+                          >
+                            {fmtUSD(row.aoc)}
+                          </span>
+                        </td>
 
-                    <td className="px-4 py-3.5 text-left">
-                      <span
-                        className={cx(
-                          "font-bold tabular-nums",
-                          closingRateClass(row.closingRate),
-                        )}
-                        title={`${row.sales} / ${row.showed} showed up`}
-                      >
-                        {fmtPct(row.closingRate)}
-                      </span>
-                    </td>
+                        <td className="px-5 py-3.5 text-left">
+                          <span className="font-bold tabular-nums text-slate-800">
+                            {row.sales}
+                          </span>
+                        </td>
 
-                    <td className="px-3 py-3.5 text-left">
-                      <span
-                        className={cx(
-                          "font-bold tabular-nums",
-                          pifRateClass(row.pifRate),
-                        )}
-                        title={`${row.pifSales ?? 0} / ${row.sales} sales are PIF`}
-                      >
-                        {fmtPct(row.pifRate)}
-                      </span>
-                    </td>
+                        <td className="px-4 py-3.5 text-left">
+                          <span
+                            className={cx(
+                              "font-bold tabular-nums",
+                              closingRateClass(row.closingRate),
+                            )}
+                            title={`${row.sales} / ${row.showed} showed up`}
+                          >
+                            {fmtPct(row.closingRate)}
+                          </span>
+                        </td>
 
-                    <td className="px-5 py-3.5 text-left">
-                      <span
-                        className={cx(
-                          "font-bold tabular-nums",
-                          showUpRateClass(row.showUpRate),
-                        )}
-                        title={`${row.showed} / ${row.confirmed} confirmed`}
-                      >
-                        {fmtPct(row.showUpRate)}
-                      </span>
-                    </td>
+                        <td className="px-3 py-3.5 text-left">
+                          <span
+                            className={cx(
+                              "font-bold tabular-nums",
+                              pifRateClass(row.pifRate),
+                            )}
+                            title={`${row.pifSales ?? 0} / ${row.sales} sales are PIF`}
+                          >
+                            {fmtPct(row.pifRate)}
+                          </span>
+                        </td>
 
-                    <td className="px-6 py-3.5 text-left">
-                      <span className="font-extrabold tabular-nums text-slate-900">
-                        {fmtUSD(row.commission)}
-                      </span>
-                    </td>
+                        <td className="px-5 py-3.5 text-left">
+                          <span
+                            className={cx(
+                              "font-bold tabular-nums",
+                              showUpRateClass(row.showUpRate),
+                            )}
+                            title={`${row.showed} / ${row.confirmed} confirmed`}
+                          >
+                            {fmtPct(row.showUpRate)}
+                          </span>
+                        </td>
 
-                    <td className="px-8 py-3.5 text-left">
-                      <span className="font-medium tabular-nums text-slate-500">
-                        {row.recovered}
-                      </span>
-                    </td>
+                        <td className="px-6 py-3.5 text-left">
+                          <span className="font-extrabold tabular-nums text-slate-900">
+                            {fmtUSD(row.commission)}
+                          </span>
+                        </td>
 
-                    <td className="px-3 py-3.5 text-right whitespace-nowrap">
-                      <a
-                        href={`/closer/${encodeURIComponent(row.id)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[12.5px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors !outline-none border-b border-transparent bg-slate-100/70 !border-none hover:border-indigo-300"
-                      >
-                        Open →
-                      </a>
-                    </td>
-                  </tr>
-                ))}
+                        <td className="px-8 py-3.5 text-left">
+                          <span className="font-medium tabular-nums text-slate-500">
+                            {row.recovered}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3.5 text-right whitespace-nowrap">
+                          <a
+                            href={`/closer/${encodeURIComponent(row.id)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[12.5px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors !outline-none border-b border-transparent bg-slate-100/70 !border-none hover:border-indigo-300"
+                          >
+                            View →
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
               </tbody>
             </table>
             {!loading && sorted.length === 0 ? (

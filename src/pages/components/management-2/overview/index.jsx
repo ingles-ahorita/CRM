@@ -9,13 +9,22 @@ import CommissionOverviewSnapshot from "./commission-overview-snapshot";
 export default function Overview() {
   return (
     <div className="flex flex-col gap-8">
-      <ManagementDashboard />
-      <GoalRevenueVisualBlock />
-      <TrendsChartPanel />
-      <FunnelSnapshots />
-      <TopOfFunnelPanel />
-      <RecoveredLeadsFunnel />
-      <CommissionOverviewSnapshot />
+      <div className="grid grid-cols-8 gap-2">
+        <div className="col-span-2 flex flex-col gap-3">
+          <ManagementDashboard />
+          <CommissionOverviewSnapshot />
+        </div>
+        <div className="col-span-4 flex flex-col gap-3">
+          <TrendsChartPanel />
+          <FunnelSnapshots />
+          <RecoveredLeadsFunnel stackPanels />
+        </div>
+        <div className="col-span-2 flex flex-col gap-3">
+          <GoalRevenueVisualBlock />
+          <TopOfFunnelPanel />
+        </div>
+      </div>
+  
     </div>
   );
 }

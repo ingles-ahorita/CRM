@@ -52,7 +52,9 @@ const BAR_H = "min-h-[20px]";
 const BAR_INNER_PAD = "pr-2 sm:pr-2.5";
 
 function shimmer(className = "") {
-  return <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />;
+  return (
+    <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />
+  );
 }
 
 function FunnelBarsShimmer() {
@@ -131,7 +133,15 @@ async function fetchClosedFromRecoveryCounts(start, end) {
   return counts;
 }
 
-function FunnelBarRow({ label, count, pctLabel, color, widthPct, animate, tooltip }) {
+function FunnelBarRow({
+  label,
+  count,
+  pctLabel,
+  color,
+  widthPct,
+  animate,
+  tooltip,
+}) {
   return (
     <div className="flex items-stretch">
       <div className={LABEL_COL} title={tooltip}>
@@ -141,7 +151,10 @@ function FunnelBarRow({ label, count, pctLabel, color, widthPct, animate, toolti
         className={`relative ${BAR_H} min-w-0 flex-1 cursor-help self-center`}
         title={`${tooltip}\n\nCount: ${count}`}
       >
-        <div className="absolute inset-0 rounded-md" style={{ backgroundColor: TRACK }} />
+        <div
+          className="absolute inset-0 rounded-md"
+          style={{ backgroundColor: TRACK }}
+        />
         <div
           className="absolute inset-y-0 left-0 overflow-hidden rounded-md transition-[width] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
           style={{
@@ -154,7 +167,9 @@ function FunnelBarRow({ label, count, pctLabel, color, widthPct, animate, toolti
             className={`flex h-full min-w-0 items-center justify-end ${BAR_INNER_PAD} text-white`}
             style={{ textShadow: "0 1px 2px rgba(0,0,0,0.22)" }}
           >
-            <span className="text-[12px] font-bold tabular-nums leading-none">{count}</span>
+            <span className="text-[12px] font-bold tabular-nums leading-none">
+              {count}
+            </span>
           </div>
         </div>
       </div>
@@ -181,7 +196,10 @@ function CloserRow({ name, count, maxCount, animate, tooltip }) {
         className="relative h-[12px] min-w-0 flex-1 cursor-help self-center"
         title={tooltip ? `${tooltip}\nClosed: ${count}` : undefined}
       >
-        <div className="absolute inset-0 rounded-md" style={{ backgroundColor: TRACK }} />
+        <div
+          className="absolute inset-0 rounded-md"
+          style={{ backgroundColor: TRACK }}
+        />
         {hasSale ? (
           <div
             className="absolute inset-y-0 left-0 overflow-hidden rounded-md bg-[#10b981] transition-[width] duration-[900ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
@@ -189,23 +207,30 @@ function CloserRow({ name, count, maxCount, animate, tooltip }) {
           />
         ) : null}
       </div>
-      <div className={`${METRICS_COL} self-center pt-0.5 text-[#374151]`} title={tooltip}>
+      <div
+        className={`${METRICS_COL} self-center pt-0.5 text-[#374151]`}
+        title={tooltip}
+      >
         {hasSale ? (
           <>
-            <span className="text-[12px] font-bold tabular-nums leading-none">{count}</span>
+            <span className="text-[12px] font-bold tabular-nums leading-none">
+              {count}
+            </span>
             <span className="mt-0.5 text-[10px] font-bold uppercase leading-none tracking-wide text-black">
               closed
             </span>
           </>
         ) : (
-          <span className="text-[12px] font-bold tabular-nums leading-none text-[#6b7280]">0</span>
+          <span className="text-[12px] font-bold tabular-nums leading-none text-[#6b7280]">
+            0
+          </span>
         )}
       </div>
     </div>
   );
 }
 
-export default function RecoveredLeadsFunnel() {
+export default function RecoveredLeadsFunnel({ stackPanels = false }) {
   const [range, setRange] = useState("last_week");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -280,7 +305,10 @@ export default function RecoveredLeadsFunnel() {
 
         if (cancelled) return;
 
-        const closedTotal = Object.values(closedByCloser).reduce((a, n) => a + n, 0);
+        const closedTotal = Object.values(closedByCloser).reduce(
+          (a, n) => a + n,
+          0,
+        );
 
         setFunnelCounts({
           noshow: noShowsRes.count ?? 0,
@@ -303,9 +331,14 @@ export default function RecoveredLeadsFunnel() {
             name: `Closer ${id}`,
             count,
           }));
-          rows.sort((a, b) => b.count - a.count || String(a.name).localeCompare(String(b.name)));
+          rows.sort(
+            (a, b) =>
+              b.count - a.count || String(a.name).localeCompare(String(b.name)),
+          );
         } else {
-          rows.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+          rows.sort(
+            (a, b) => b.count - a.count || a.name.localeCompare(b.name),
+          );
         }
 
         setCloserRows(rows);
@@ -359,10 +392,10 @@ export default function RecoveredLeadsFunnel() {
     "Purchases in this period where the linked call is marked recovered (team-wide).";
 
   return (
-    <div className="rounded-xl border border-slate-200/90 bg-white p-6 pt-7 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ring-1 ring-slate-100">
-      <div className="mb-6">
+    <div className="w-full min-w-0 border border-slate-200 rounded-2xl bg-white p-3">
+      <div className="mb-4">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-          <h2 className="text-xl font-bold leading-tight tracking-tight text-neutral-900">
+          <h2 className="text-[18px] font-bold tracking-tight text-[#374151]">
             Recovered leads funnel
           </h2>
         </div>
@@ -374,87 +407,92 @@ export default function RecoveredLeadsFunnel() {
         </div>
       ) : null}
 
-      <div className="rounded-xl border-2 border-dashed border-slate-300 bg-white p-4">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <section className="min-w-0 rounded-xl border bg-white p-4">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <h3 className="text-[14px] font-bold uppercase tracking-[0.14em] text-[#374151]">
-                Recovery funnel
-              </h3>
-              <div className="relative shrink-0">
-                <select
-                  value={range}
-                  onChange={(e) => setRange(e.target.value)}
-                  aria-label="Funnel period"
-                  aria-busy={loading}
-                  className="h-7 cursor-pointer appearance-none rounded-full border border-slate-200/90 bg-[#f3f4f6] py-1 pl-3 pr-7 text-[10px] font-bold uppercase tracking-wide text-[#4b5563] !outline-none transition-colors hover:bg-[#eceff2]"
-                >
-                  <option value="last_week">LAST WEEK</option>
-                  <option value="this_week">THIS WEEK</option>
-                  <option value="mtd">MTD</option>
-                </select>
-                <ChevronDown
-                  size={12}
-                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
-                  aria-hidden
-                />
-              </div>
-            </div>
-            {loading ? (
-              <FunnelBarsShimmer />
-            ) : (
-              <div className="flex flex-col gap-[8px]">
-                {funnelSteps.map((step) => {
-                  const pct = base > 0 ? Math.round((step.count / base) * 100) : 0;
-                  const widthPct = base > 0 ? (step.count / base) * 100 : 0;
-                  return (
-                    <FunnelBarRow
-                      key={step.key}
-                      label={step.label}
-                      count={step.count}
-                      pctLabel={`${pct}%`}
-                      color={step.color}
-                      widthPct={widthPct}
-                      animate={animateBars}
-                      tooltip={step.tooltip}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section className="min-w-0 rounded-xl border bg-white p-4">
-            <h3 className="mb-5 text-[14px] font-bold uppercase tracking-[0.12em] text-black">
-              Closed-from-recovery by closer
+      <div
+        className={
+          stackPanels
+            ? "grid grid-cols-1 gap-2"
+            : "grid grid-cols-1 gap-2 lg:grid-cols-2"
+        }
+      >
+        <section className="min-w-0 rounded-xl border bg-white p-3">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <h3 className="text-[14px] font-bold uppercase tracking-[0.14em] text-[#374151]">
+              Recovery funnel
             </h3>
-            {loading ? (
-              <CloserBarsShimmer />
-            ) : (
-              <div className="flex flex-col gap-[8px]">
-                {closerRows.length === 0 ? (
-                  <p className="text-center text-[13px] text-slate-500">
-                    No closed-from-recovery sales in this period.
-                  </p>
-                ) : (
-                  closerRows.map((c) => (
-                    <CloserRow
-                      key={String(c.id)}
-                      name={c.name}
-                      count={c.count}
-                      maxCount={closerMax}
-                      animate={animateBars}
-                      tooltip={closerTooltip}
-                    />
-                  ))
-                )}
-              </div>
-            )}
-            <p className="mt-4 text-[11px] font-normal leading-relaxed tracking-tight text-[#9ca3af]">
-              Recovered = no-shows that converted to a closed deal.
-            </p>
-          </section>
-        </div>
+            <div className="relative shrink-0">
+              <select
+                value={range}
+                onChange={(e) => setRange(e.target.value)}
+                aria-label="Funnel period"
+                aria-busy={loading}
+                className="h-7 cursor-pointer appearance-none rounded-full border border-slate-200/90 bg-[#f3f4f6] py-1 pl-3 pr-7 text-[10px] font-bold uppercase tracking-wide text-[#4b5563] !outline-none transition-colors hover:bg-[#eceff2]"
+              >
+                <option value="last_week">LAST WEEK</option>
+                <option value="this_week">THIS WEEK</option>
+                <option value="mtd">MTD</option>
+              </select>
+              <ChevronDown
+                size={12}
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+                aria-hidden
+              />
+            </div>
+          </div>
+          {loading ? (
+            <FunnelBarsShimmer />
+          ) : (
+            <div className="flex flex-col gap-[8px]">
+              {funnelSteps.map((step) => {
+                const pct =
+                  base > 0 ? Math.round((step.count / base) * 100) : 0;
+                const widthPct = base > 0 ? (step.count / base) * 100 : 0;
+                return (
+                  <FunnelBarRow
+                    key={step.key}
+                    label={step.label}
+                    count={step.count}
+                    pctLabel={`${pct}%`}
+                    color={step.color}
+                    widthPct={widthPct}
+                    animate={animateBars}
+                    tooltip={step.tooltip}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="min-w-0 rounded-xl border bg-white p-3">
+          <h3 className="mb-5 text-[14px] font-bold uppercase tracking-[0.12em] text-black">
+            Closed-from-recovery by closer
+          </h3>
+          {loading ? (
+            <CloserBarsShimmer />
+          ) : (
+            <div className="flex flex-col gap-[8px]">
+              {closerRows.length === 0 ? (
+                <p className="text-center text-[13px] text-slate-500">
+                  No closed-from-recovery sales in this period.
+                </p>
+              ) : (
+                closerRows.map((c) => (
+                  <CloserRow
+                    key={String(c.id)}
+                    name={c.name}
+                    count={c.count}
+                    maxCount={closerMax}
+                    animate={animateBars}
+                    tooltip={closerTooltip}
+                  />
+                ))
+              )}
+            </div>
+          )}
+          <p className="mt-4 text-[11px] font-normal leading-relaxed tracking-tight text-[#9ca3af]">
+            Recovered = no-shows that converted to a closed deal.
+          </p>
+        </section>
       </div>
     </div>
   );
