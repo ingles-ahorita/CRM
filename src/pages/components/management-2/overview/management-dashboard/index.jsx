@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useState } from "react";
+import { PERFORMANCE_COLORS } from "../../../../../utils/performanceBenchmarks";
 import {
   Area,
   AreaChart,
@@ -30,6 +31,7 @@ const TIME_RANGE_ITEMS = [
 
 const EMPTY_METRICS = {
   netRevenue: 0,
+  mtdNetRevenue: 0,
   grossRevenue: 0,
   totalSales: 0,
   closerCommission: 0,
@@ -42,6 +44,16 @@ const EMPTY_METRICS = {
   grossRevenueBars: [{ d: "1", v: 0 }],
   avatars: [],
 };
+
+const MTD_GOAL_USD = 55000;
+const SUCCESS_STATES = [
+  "paid",
+  "successful",
+  "success",
+  "complete",
+  "completed",
+  "succeeded",
+];
 
 function formatUsd(value) {
   const safe = Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -183,9 +195,14 @@ export default function ManagementDashboard() {
       const startISO = start.toISOString();
       const endISO = end.toISOString();
 
+      const now = new Date();
+      const mtdRange = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
+      const mtdStartISO = mtdRange.startDate.toISOString();
+      const mtdEndISO = now.toISOString();
+
       try {
         const [
-          txRes,
+          netTxRes,
           salesRes,
           showUpsRes,
           activeCloserShiftsRes,
@@ -193,10 +210,8 @@ export default function ManagementDashboard() {
         ] = await Promise.all([
           supabase
             .from("kajabi_transactions")
-            .select("action, amount_in_cents, created_at_kajabi")
-            .not("created_at_kajabi", "is", null)
-            .gte("created_at_kajabi", startISO)
-            .lte("created_at_kajabi", endISO),
+            .select("action, amount_in_cents, state, effective_date, payment_resolved_at, created_at_kajabi")
+            .or(`and(effective_date.gte.${startISO},effective_date.lte.${endISO}),and(payment_resolved_at.gte.${startISO},payment_resolved_at.lte.${endISO})`),
           supabase
             .from("outcome_log")
             .select(
@@ -224,13 +239,13 @@ export default function ManagementDashboard() {
             .eq("status", "open"),
         ]);
 
-        if (txRes.error) throw txRes.error;
+        if (netTxRes.error) throw netTxRes.error;
         if (salesRes.error) throw salesRes.error;
         if (showUpsRes.error) throw showUpsRes.error;
         if (activeCloserShiftsRes.error) throw activeCloserShiftsRes.error;
         if (activeSetterShiftsRes.error) throw activeSetterShiftsRes.error;
 
-        const txRows = Array.isArray(txRes.data) ? txRes.data : [];
+        const netTxRows = Array.isArray(netTxRes.data) ? netTxRes.data : [];
         const salesRows = Array.isArray(salesRes.data) ? salesRes.data : [];
         const dayKeys = listDaysISO(start, end);
 
@@ -241,19 +256,39 @@ export default function ManagementDashboard() {
 
         let netRevenue = 0;
         let grossRevenue = 0;
-        for (const row of txRows) {
-          const day = String(row?.created_at_kajabi || "").slice(0, 10);
-          if (!daily[day]) continue;
+
+        // Combined Revenue calculation (uses effective_date/payment_resolved_at filtering)
+        for (const row of netTxRows) {
+          const resolvedInRange = row?.payment_resolved_at != null
+            && row.payment_resolved_at >= startISO
+            && row.payment_resolved_at <= endISO
+            && (row.effective_date == null || row.effective_date < startISO || row.effective_date > endISO);
+          
           const amount = Number(row?.amount_in_cents || 0) / 100;
-          const action = String(row?.action || "").toLowerCase();
-          if (action === "charge") {
-            daily[day].gross += amount;
-            daily[day].net += amount;
-            grossRevenue += amount;
-            netRevenue += amount;
-          } else if (action === "refund") {
-            daily[day].net -= Math.abs(amount);
+          const action = resolvedInRange ? 'charge' : (row?.action ?? (amount >= 0 ? "charge" : "refund"));
+          
+          const isRefund = action === "refund" || amount < 0;
+          const isDispute = action === "dispute";
+          const isFailed = !resolvedInRange && (isDispute || (row?.state != null && !SUCCESS_STATES.includes(String(row.state).toLowerCase())));
+          
+          if (isFailed) continue;
+
+          // Determine which day to bucket this into
+          let targetDateStr = resolvedInRange ? row.payment_resolved_at : (row.effective_date || row.created_at_kajabi);
+          const day = String(targetDateStr || "").slice(0, 10);
+          
+          if (isRefund) {
+            if (daily[day]) daily[day].net -= Math.abs(amount);
             netRevenue -= Math.abs(amount);
+            // Gross usually does NOT count refunds as deductions, 
+            // but if you want Gross to be "Total Successful Charges", we don't subtract here.
+          } else {
+            if (daily[day]) {
+              daily[day].net += Math.abs(amount);
+              daily[day].gross += Math.abs(amount);
+            }
+            netRevenue += Math.abs(amount);
+            grossRevenue += Math.abs(amount);
           }
         }
 
@@ -452,96 +487,6 @@ export default function ManagementDashboard() {
       <div className="grid gap-3 ">
         <MetricCard>
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-            Net revenue {rangeLabel(range)}
-          </div>
-          {loading ? (
-            cardShimmerLine("mt-2 h-9 w-36")
-          ) : (
-            <div className="mt-2 text-[28px] font-bold tabular-nums leading-none text-slate-900">
-              {formatUsd(metrics.netRevenue)}
-            </div>
-          )}
-          <div className="mt-2 flex-1 min-h-[55px] w-full [-webkit-tap-highlight-color:transparent]">
-            {loading ? (
-              cardShimmerLine("h-full w-full min-h-[55px]")
-            ) : (
-              <ResponsiveContainer width="100%" height="100%" minHeight={55}>
-                <AreaChart
-                  data={metrics.netRevenueSeries}
-                  margin={{ top: 6, right: 4, left: 0, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient
-                      id={netGradientId}
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor="#22c55e"
-                        stopOpacity={0.35}
-                      />
-                      <stop
-                        offset="100%"
-                        stopColor="#22c55e"
-                        stopOpacity={0.02}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="i" hide />
-                  <YAxis hide />
-                  <Tooltip
-                    cursor={false}
-                    offset={8}
-                    wrapperStyle={{ pointerEvents: "none" }}
-                    contentStyle={{
-                      borderRadius: 6,
-                      border: "1px solid #dcfce7",
-                      boxShadow: "0 2px 8px rgba(15,23,42,0.08)",
-                      fontSize: 11,
-                      padding: "6px 8px",
-                    }}
-                    labelFormatter={(_, payload) => {
-                      const raw = payload?.[0]?.payload?.isoDay;
-                      if (!raw) return "";
-                      return new Date(`${raw}T00:00:00Z`).toLocaleDateString(
-                        "en-US",
-                        {
-                          month: "short",
-                          day: "numeric",
-                        },
-                      );
-                    }}
-                    formatter={(value) => [
-                      formatUsd(Number(value) || 0),
-                      "Net revenue",
-                    ]}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="v"
-                    stroke="#16a34a"
-                    strokeWidth={2}
-                    fill={`url(#${netGradientId})`}
-                    dot={false}
-                    isAnimationActive
-                    animationBegin={100}
-                    animationDuration={900}
-                    animationEasing="ease-out"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-          <div className="mt-1 text-[10px] font-medium text-slate-500">
-            Kajabi charges - refunds
-          </div>
-        </MetricCard>
-
-        <MetricCard>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             Gross revenue {rangeLabel(range)}
           </div>
           {loading ? (
@@ -600,9 +545,98 @@ export default function ManagementDashboard() {
               </ResponsiveContainer>
             )}
           </div>
-          <div className="mt-1 text-[10px] font-medium text-slate-500">
+          <div className="mt-1 text-[10px] font-medium text-slate-400">
             Kajabi transactions
           </div>
+        </MetricCard>
+
+        <MetricCard>
+          {loading ? (
+            <div className="space-y-3">
+              {cardShimmerLine("h-3 w-40")}
+              {cardShimmerLine("h-8 w-32")}
+              {cardShimmerLine("h-5 w-full rounded-full")}
+              {cardShimmerLine("h-3 w-40")}
+            </div>
+          ) : (() => {
+            const now = new Date();
+            const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+            
+            let label = "Monthly goal";
+            let target = MTD_GOAL_USD;
+            let currentDay = now.getUTCDate();
+            let totalDays = daysInMonth;
+            let expectedPct = currentDay / totalDays;
+
+            if (range === "lastMonth") {
+              label = "Last month goal";
+              const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+              totalDays = new Date(Date.UTC(lastMonthDate.getUTCFullYear(), lastMonthDate.getUTCMonth() + 1, 0)).getUTCDate();
+              currentDay = totalDays;
+              expectedPct = 1;
+            } else if (range === "last7" || range === "lastWeek") {
+              label = range === "last7" ? "7 days goal" : "Weekly goal";
+              target = Math.round((7 / 30.4) * MTD_GOAL_USD);
+              totalDays = 7;
+              currentDay = 7;
+              expectedPct = 1;
+            } else if (range === "custom") {
+              label = "Custom goal";
+              const { start, end } = normalizeCustomBounds(customStart, customEnd);
+              totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+              currentDay = totalDays;
+              target = Math.round((totalDays / 30.4) * MTD_GOAL_USD);
+              expectedPct = 1;
+            }
+
+            const actualRevenue = metrics.netRevenue;
+            const expectedTarget = target * expectedPct;
+            const actualPct = Math.min((actualRevenue / target) * 100, 100);
+            const todayLinePct = Math.min(expectedPct * 100, 100);
+            
+            let barColor = PERFORMANCE_COLORS.BAD;
+            if (actualRevenue >= expectedTarget) barColor = PERFORMANCE_COLORS.GOOD;
+            else if (actualRevenue >= expectedTarget * 0.9) barColor = PERFORMANCE_COLORS.OK;
+
+            return (
+              <div className="flex flex-col justify-center flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                  {label} · Net revenue
+                </div>
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[28px] font-bold tabular-nums leading-none" style={{ color: barColor }}>
+                    {formatUsd(actualRevenue)}
+                  </span>
+                  <span className="text-[11px] font-medium text-slate-400">
+                    of {formatUsd(target)}
+                  </span>
+                </div>
+
+                <div className="relative mt-4 h-2.5 w-full rounded-full bg-slate-100">
+                  <div 
+                    className="absolute left-0 top-0 h-full rounded-full transition-all duration-700 ease-out"
+                    style={{ 
+                      width: `${Math.max(2, actualPct)}%`, 
+                      backgroundColor: barColor,
+                      boxShadow: `0 0 12px ${barColor}40`
+                    }}
+                  />
+                  {expectedPct < 1 && (
+                    <div 
+                      className="absolute top-0 h-full w-0.5 bg-slate-800 z-10"
+                      style={{ left: `${todayLinePct}%` }}
+                      title={`Target for this period: ${formatUsd(expectedTarget)}`}
+                    />
+                  )}
+                </div>
+
+                <div className="mt-3 flex items-center justify-between text-[10px] font-bold tracking-tight text-slate-500 uppercase">
+                  <span>{actualPct.toFixed(1)}% reached</span>
+                  <span>{range === "mtd" ? `Day ${currentDay}/${totalDays}` : `${totalDays} days`} · target {formatUsd(expectedTarget)}</span>
+                </div>
+              </div>
+            );
+          })()}
         </MetricCard>
 
         <MetricCard className="!min-h-[120px]">

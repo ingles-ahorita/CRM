@@ -29,33 +29,23 @@ const COLUMNS = [
   { key: "open", label: "", align: "right", sortable: false },
 ];
 
+import { getShowUpClass, getConversionClass, getPifClass, getAovClass } from "../../../../../utils/performanceBenchmarks";
+
 // Threshold helpers — mirror the rest of the app.
 function closingRateClass(v) {
-  if (v < 25) return "text-rose-600";
-  if (v < 30) return "text-amber-600";
-  if (v < 35) return "text-emerald-500";
-  return "text-emerald-800";
+  return getConversionClass(v);
 }
 
 function pifRateClass(v) {
-  if (v < 20) return "text-rose-600";
-  if (v < 25) return "text-amber-600";
-  if (v < 30) return "text-emerald-500";
-  return "text-emerald-800";
+  return getPifClass(v);
 }
 
 function showUpRateClass(v) {
-  if (v < 45) return "text-rose-600";
-  if (v < 55) return "text-amber-600";
-  if (v < 65) return "text-emerald-500";
-  return "text-emerald-800";
+  return getShowUpClass(v);
 }
 
 function aovClass(v) {
-  if (v < 750) return "text-rose-600";
-  if (v < 875) return "text-amber-600";
-  if (v < 1000) return "text-emerald-500";
-  return "text-emerald-800";
+  return getAovClass(v);
 }
 
 const fmtUSD = (n) =>

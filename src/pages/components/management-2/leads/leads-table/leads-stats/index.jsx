@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { getConfirmationClass } from "../../../../../../utils/performanceBenchmarks";
 import {
   Cell,
   Pie,
@@ -235,6 +236,7 @@ export default function LeadsStats({ stats = STATS, loading = false, details }) 
               label="Confirmed"
               value={confirmed}
               subValue={`${pct(confirmed, booked)}%`}
+              tone={getConfirmationClass(pct(confirmed, booked))}
             />
             <MetricItem
               label="Cancelled"

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Filter, Search } from "lucide-react";
 import LeadRow from "./lead-row";
 import LeadsStats from "./leads-stats";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchAll } from "../../../../../utils/fetchLeads";
 import { useRealtimeLeads } from "../../../../../hooks/useRealtimeLeads";
 import { getDailySlotsTotal } from "../../../../../utils/ocuppancy";
@@ -135,30 +136,34 @@ function SubTabs({ value, onChange }) {
 }
 
 export default function LeadsTable({ title = "Today's Leads" }) {
-  const [subTab, setSubTab] = useState("today");
-  const [sortOrder, setSortOrder] = useState("desc"); 
-  const [sortBy, setSortBy] = useState("call_date");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
+  const [subTab, setSubTab] = useState(searchParams.get("subTab") || "today");
+  const [sortOrder, setSortOrder] = useState(searchParams.get("sortOrder") || "desc"); 
+  const [sortBy, setSortBy] = useState(searchParams.get("sortBy") || "call_date");
   const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [setterFilter, setSetterFilter] = useState("");
-  const [closerFilter, setCloserFilter] = useState("");
+  const [showSearch, setShowSearch] = useState(!!searchParams.get("search"));
+  const [searchInput, setSearchInput] = useState(searchParams.get("search") || "");
+  const [searchTerm, setSearchTerm] = useState(searchParams.get("search") || "");
+  const [startDate, setStartDate] = useState(searchParams.get("start") || "");
+  const [endDate, setEndDate] = useState(searchParams.get("end") || "");
+  const [setterFilter, setSetterFilter] = useState(searchParams.get("setter") || "");
+  const [closerFilter, setCloserFilter] = useState(searchParams.get("closer") || "");
   const [statusFilters, setStatusFilters] = useState({
-    confirmed: false,
-    cancelled: false,
-    noShow: false,
-    noPickUp: false,
-    rescheduled: false,
-    transferred: false,
-    purchased: false,
-    noConversions: false,
-    lockIn: false,
-    recovered: false,
-    noManychatId: false,
+    confirmed: searchParams.get("confirmed") === "true",
+    cancelled: searchParams.get("cancelled") === "true",
+    noShow: searchParams.get("noShow") === "true",
+    noPickUp: searchParams.get("noPickUp") === "true",
+    rescheduled: searchParams.get("rescheduled") === "true",
+    transferred: searchParams.get("transferred") === "true",
+    purchased: searchParams.get("purchased") === "true",
+    noConversions: searchParams.get("noConversions") === "true",
+    lockIn: searchParams.get("lockIn") === "true",
+    recovered: searchParams.get("recovered") === "true",
+    noManychatId: searchParams.get("noManychatId") === "true",
   });
-  const [noShowStateFilter, setNoShowStateFilter] = useState("");
+  const [noShowStateFilter, setNoShowStateFilter] = useState(searchParams.get("noShowState") || "");
   const [slotsByDate, setSlotsByDate] = useState({});
   const requestSeqRef = useRef(0);
   const [dataState, setDataState] = useState({
@@ -169,6 +174,11 @@ export default function LeadsTable({ title = "Today's Leads" }) {
     currentDate: new Date().toISOString().split("T")[0],
     counts: { booked: 0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0 },
   });
+
+  const handleSearch = (val) => {
+    setSubTab("all");
+    setSearchTerm(val);
+  };
 
   useRealtimeLeads(dataState, setDataState, subTab, null, null, sortBy);
 
@@ -211,6 +221,65 @@ export default function LeadsTable({ title = "Today's Leads" }) {
     closerFilter,
   ]);
 
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchTerm(searchInput);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Sync state to URL params
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams); // Preserve existing params (like main tab=leads)
+    
+    if (searchTerm) params.set("search", searchTerm);
+    else params.delete("search");
+
+    if (subTab !== "today") params.set("subTab", subTab);
+    else params.delete("subTab");
+
+    if (sortBy !== "call_date") params.set("sortBy", sortBy);
+    else params.delete("sortBy");
+
+    if (sortOrder !== "desc") params.set("sortOrder", sortOrder);
+    else params.delete("sortOrder");
+
+    if (startDate) params.set("start", startDate);
+    else params.delete("start");
+
+    if (endDate) params.set("end", endDate);
+    else params.delete("end");
+
+    if (setterFilter) params.set("setter", setterFilter);
+    else params.delete("setter");
+
+    if (closerFilter) params.set("closer", closerFilter);
+    else params.delete("closer");
+
+    if (noShowStateFilter) params.set("noShowState", noShowStateFilter);
+    else params.delete("noShowState");
+
+    Object.entries(statusFilters).forEach(([key, value]) => {
+      if (value) params.set(key, "true");
+      else params.delete(key);
+    });
+
+    setSearchParams(params, { replace: true });
+  }, [
+    searchTerm,
+    subTab,
+    sortBy,
+    sortOrder,
+    startDate,
+    endDate,
+    setterFilter,
+    closerFilter,
+    noShowStateFilter,
+    statusFilters,
+    setSearchParams,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
     const loadSlots = async () => {
@@ -232,17 +301,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
   const safeLeads = dataState?.leads || [];
 
   const filteredLeads = useMemo(() => {
-    const term = String(searchTerm || "")
-      .trim()
-      .toLowerCase();
-    const hasTerm = term.length > 0;
     return safeLeads.filter((l) => {
-      const profile = l?.leads || {};
-      const name = String(profile?.name || "").toLowerCase();
-      const email = String(profile?.email || "").toLowerCase();
-      const phone = String(profile?.phone || "").toLowerCase();
-      if (hasTerm && !`${name} ${email} ${phone}`.includes(term)) return false;
-
       if (
         subTab === "no shows" &&
         noShowStateFilter &&
@@ -252,7 +311,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
       }
       return true;
     });
-  }, [safeLeads, searchTerm, subTab, noShowStateFilter]);
+  }, [safeLeads, subTab, noShowStateFilter]);
 
   // Keep server order, but always push cancelled (red background) rows to end.
   const sortedLeads = useMemo(() => {
@@ -348,8 +407,13 @@ export default function LeadsTable({ title = "Today's Leads" }) {
             <input
               type="text"
               placeholder="Search lead..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleSearch(searchInput);
+                }
+              }}
               className={cx(
                 "h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none transition",
                 showSearch
@@ -359,7 +423,12 @@ export default function LeadsTable({ title = "Today's Leads" }) {
               style={{ pointerEvents: showSearch ? "auto" : "none" }}
             />
             <span
-              onClick={() => setShowSearch((s) => !s)}
+              onClick={() => {
+                if (showSearch) {
+                  handleSearch(searchInput);
+                }
+                setShowSearch((s) => !s);
+              }}
               className="h-9 w-9 rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center cursor-pointer"
               title="Search"
             >

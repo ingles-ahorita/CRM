@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
 import * as DateHelpers from "../../../../utils/dateHelpers";
+import { getConfirmationColor, getShowUpColor } from "../../../../utils/performanceBenchmarks";
 
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
@@ -34,7 +35,7 @@ function SetterBarsShimmer() {
   );
 }
 
-function BarChartRow({ name, value, colorClass, delayMs, animate, tooltip }) {
+function BarChartRow({ name, value, colorClass, customStyle, delayMs, animate, tooltip }) {
   const [width, setWidth] = useState(0);
 
   useEffect(() => {
@@ -48,6 +49,9 @@ function BarChartRow({ name, value, colorClass, delayMs, animate, tooltip }) {
     return () => clearTimeout(timer);
   }, [value, delayMs, animate]);
 
+  const finalColorClass = typeof colorClass === 'function' ? colorClass(value) : colorClass;
+  const finalStyle = typeof customStyle === 'function' ? customStyle(value) : (customStyle || {});
+
   return (
     <div className="group relative -mx-2 flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50/50">
       <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-[10px] font-semibold whitespace-nowrap text-white opacity-0 shadow-[0_10px_24px_rgba(2,6,23,0.35)] transition-opacity duration-150 group-hover:opacity-100">
@@ -56,8 +60,8 @@ function BarChartRow({ name, value, colorClass, delayMs, animate, tooltip }) {
       <div className="w-[70px] text-[13px] font-semibold text-slate-700">{name}</div>
       <div className="relative h-[14px] flex-1 overflow-hidden rounded-full bg-slate-100 shadow-inner">
         <div
-          className={`absolute top-0 left-0 h-full rounded-full transition-all duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${colorClass}`}
-          style={{ width: `${width}%` }}
+          className={cx(`absolute top-0 left-0 h-full rounded-full transition-all duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)]`, finalColorClass)}
+          style={{ width: `${width}%`, ...finalStyle }}
         />
       </div>
       <div className="w-[48px] text-right text-[13.5px] font-bold tabular-nums text-slate-800">
@@ -67,7 +71,7 @@ function BarChartRow({ name, value, colorClass, delayMs, animate, tooltip }) {
   );
 }
 
-function BarChartCard({ title, data, colorClass, kind, animate }) {
+function BarChartCard({ title, data, colorClass, customStyle, kind, animate }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-[0_2px_10px_rgba(15,23,42,0.04)]">
       <h3 className="mb-3 text-[11px] font-extrabold uppercase tracking-widest text-slate-600/90">{title}</h3>
@@ -81,6 +85,7 @@ function BarChartCard({ title, data, colorClass, kind, animate }) {
               name={item.name}
               value={item.value}
               colorClass={colorClass}
+              customStyle={customStyle}
               delayMs={100 + idx * 100}
               animate={animate}
               tooltip={item.tooltip}
@@ -233,14 +238,22 @@ export default function Setter() {
                   data={pickupData}
                   kind="pickup"
                   animate={animateBars}
-                  colorClass="bg-[#3b82f6] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1),0_2px_8px_rgba(59,130,246,0.4)]"
+                  colorClass={(val) => {
+                    const color = getConfirmationColor(val);
+                    return `shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1),0_2px_8px_${color}40]`;
+                  }}
+                  customStyle={(val) => ({ backgroundColor: getConfirmationColor(val) })}
                 />
                 <BarChartCard
                   title="Show-up rate by setter"
                   data={showupData}
                   kind="showup"
                   animate={animateBars}
-                  colorClass="bg-[#22c55e] shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1),0_2px_8px_rgba(34,197,94,0.4)]"
+                  colorClass={(val) => {
+                    const color = getShowUpColor(val);
+                    return `shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1),0_2px_8px_${color}40]`;
+                  }}
+                  customStyle={(val) => ({ backgroundColor: getShowUpColor(val) })}
                 />
               </>
             )}
