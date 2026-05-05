@@ -26,7 +26,8 @@ function formatPct(v) {
 
 function gaDateToISO(s) {
   const raw = String(s || "");
-  if (/^\d{8}$/.test(raw)) return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+  if (/^\d{8}$/.test(raw))
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
   return null;
 }
@@ -54,10 +55,18 @@ function mergeSeriesByDate(rows, field) {
 }
 
 function shimmer(className = "") {
-  return <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />;
+  return (
+    <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />
+  );
 }
 
-function MiniBarChart({ color, values, labels, tooltipLabel, shouldAnimate = false }) {
+function MiniBarChart({
+  color,
+  values,
+  labels,
+  tooltipLabel,
+  shouldAnimate = false,
+}) {
   const max = Math.max(...values, 1);
 
   const data = useMemo(
@@ -132,7 +141,11 @@ function MiniBarChart({ color, values, labels, tooltipLabel, shouldAnimate = fal
 
   return (
     <div className="relative h-[68px] w-full">
-      <Bar key={shouldAnimate ? "bars-animated" : "bars-static"} data={data} options={options} />
+      <Bar
+        key={shouldAnimate ? "bars-animated" : "bars-static"}
+        data={data}
+        options={options}
+      />
     </div>
   );
 }
@@ -247,7 +260,10 @@ export default function TopOfFunnelPanel() {
   const dayLabels = useMemo(
     () =>
       dayKeys.map((d) =>
-        new Date(`${d}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        new Date(`${d}T00:00:00Z`).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
       ),
     [dayKeys],
   );
@@ -273,29 +289,43 @@ export default function TopOfFunnelPanel() {
           resAdsViews,
           resOrgViews,
         ] = await Promise.all([
-          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_VSL_PATH }).toString()}`),
-          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_OPT_IN_PATH }).toString()}`),
-          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ORGANIC_VSL_PATH }).toString()}`),
-          fetch(`/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePaths: ORGANIC_OPT_IN_PATHS }).toString()}`),
-          fetch(`/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ADS_VSL_PATH }).toString()}`),
-          fetch(`/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ORGANIC_VSL_PATH }).toString()}`),
+          fetch(
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_VSL_PATH }).toString()}`,
+          ),
+          fetch(
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_OPT_IN_PATH }).toString()}`,
+          ),
+          fetch(
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ORGANIC_VSL_PATH }).toString()}`,
+          ),
+          fetch(
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePaths: ORGANIC_OPT_IN_PATHS }).toString()}`,
+          ),
+          fetch(
+            `/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ADS_VSL_PATH }).toString()}`,
+          ),
+          fetch(
+            `/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ORGANIC_VSL_PATH }).toString()}`,
+          ),
         ]);
 
         const parse = async (res) => {
           const json = await res.json().catch(() => ({}));
           return res.ok ? json : null;
         };
-        const [adsVsl, adsOptIn, orgVsl, orgOptIn, adsViews, orgViews] = await Promise.all([
-          parse(resAdsVsl),
-          parse(resAdsOptIn),
-          parse(resOrgVsl),
-          parse(resOrgOptIn),
-          parse(resAdsViews),
-          parse(resOrgViews),
-        ]);
+        const [adsVsl, adsOptIn, orgVsl, orgOptIn, adsViews, orgViews] =
+          await Promise.all([
+            parse(resAdsVsl),
+            parse(resAdsOptIn),
+            parse(resOrgVsl),
+            parse(resOrgOptIn),
+            parse(resAdsViews),
+            parse(resOrgViews),
+          ]);
 
         if (cancelled) return;
-        const sum = (rows, field) => (rows || []).reduce((a, r) => a + (Number(r?.[field]) || 0), 0);
+        const sum = (rows, field) =>
+          (rows || []).reduce((a, r) => a + (Number(r?.[field]) || 0), 0);
 
         const sessAdsVsl = sum(adsVsl?.rows, "sessions");
         const sessAdsOptIn = sum(adsOptIn?.rows, "sessions");
@@ -306,10 +336,14 @@ export default function TopOfFunnelPanel() {
         const orgViewsTotal = sum(orgViews?.rows, "views");
         const orgEventsTotal = sum(orgViews?.rows, "eventCount");
 
-        const optInAds = sessAdsOptIn > 0 ? (sessAdsVsl / sessAdsOptIn) * 100 : null;
-        const optInOrganic = sessOrgOptIn > 0 ? (sessOrgVsl / sessOrgOptIn) * 100 : null;
-        const bookingAds = adsViewsTotal > 0 ? (adsEventsTotal / adsViewsTotal) * 100 : null;
-        const bookingOrganic = orgViewsTotal > 0 ? (orgEventsTotal / orgViewsTotal) * 100 : null;
+        const optInAds =
+          sessAdsOptIn > 0 ? (sessAdsVsl / sessAdsOptIn) * 100 : null;
+        const optInOrganic =
+          sessOrgOptIn > 0 ? (sessOrgVsl / sessOrgOptIn) * 100 : null;
+        const bookingAds =
+          adsViewsTotal > 0 ? (adsEventsTotal / adsViewsTotal) * 100 : null;
+        const bookingOrganic =
+          orgViewsTotal > 0 ? (orgEventsTotal / orgViewsTotal) * 100 : null;
 
         const adsVslByDay = mergeSeriesByDate(adsVsl?.rows, "sessions");
         const adsOptByDay = mergeSeriesByDate(adsOptIn?.rows, "sessions");
@@ -423,17 +457,25 @@ export default function TopOfFunnelPanel() {
         const next3Dates = [refToday];
         for (let i = 1; i < 3; i += 1) {
           refD.setDate(refD.getDate() + 1);
-          next3Dates.push(refD.toLocaleDateString("en-CA", { timeZone: refTz }));
+          next3Dates.push(
+            refD.toLocaleDateString("en-CA", { timeZone: refTz }),
+          );
         }
         const next3Set = new Set(next3Dates);
-        const refHour = parseInt(
-          now.toLocaleString("en-US", { timeZone: refTz, hour: "numeric", hour12: false }),
-          10,
-        ) || 0;
-        const refMinute = parseInt(
-          now.toLocaleString("en-US", { timeZone: refTz, minute: "numeric" }),
-          10,
-        ) || 0;
+        const refHour =
+          parseInt(
+            now.toLocaleString("en-US", {
+              timeZone: refTz,
+              hour: "numeric",
+              hour12: false,
+            }),
+            10,
+          ) || 0;
+        const refMinute =
+          parseInt(
+            now.toLocaleString("en-US", { timeZone: refTz, minute: "numeric" }),
+            10,
+          ) || 0;
         const refMinsIntoDay = refHour * 60 + refMinute;
         const firstCountableBlockHour = Math.ceil((refMinsIntoDay + 60) / 60);
 
@@ -452,7 +494,10 @@ export default function TopOfFunnelPanel() {
                 busy = 0;
               } else if (isToday) {
                 const lastBlockHour = 20;
-                const countableBlocks = Math.max(0, lastBlockHour - firstCountableBlockHour + 1);
+                const countableBlocks = Math.max(
+                  0,
+                  lastBlockHour - firstCountableBlockHour + 1,
+                );
                 avail = Math.min(availableSlots, countableBlocks);
                 busy = Math.min(busySlots, countableBlocks);
               } else {
@@ -467,7 +512,9 @@ export default function TopOfFunnelPanel() {
 
         const freeSlots = Math.max(0, totalAvailableSlots - totalBusySlots);
         const occupancyPct =
-          totalAvailableSlots > 0 ? Math.round((totalBusySlots / totalAvailableSlots) * 100) : null;
+          totalAvailableSlots > 0
+            ? Math.round((totalBusySlots / totalAvailableSlots) * 100)
+            : null;
         setOccupancyState({
           loading: false,
           availableSlots: freeSlots,
@@ -543,11 +590,11 @@ export default function TopOfFunnelPanel() {
   return (
     <div
       ref={panelRef}
-      className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]"
+      className="border border-slate-200 rounded-2xl p-2 bg-white"
     >
       <div className="mb-5">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-xl font-bold tracking-tight text-[#374151]">
+          <h2 className="text-[18px] font-bold tracking-tight text-[#374151]">
             Top of funnel
           </h2>
           {/* <span className="inline-flex rounded-full bg-[#ede9fe] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#8b5cf6] ring-1 ring-violet-200/80">
@@ -560,130 +607,140 @@ export default function TopOfFunnelPanel() {
         </p> */}
       </div>
 
-      <div className="rounded-xl border-[2px] border-dashed border-slate-300 bg-slate-50/35 p-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {/* Card 1 */}
-          <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="text-[14px] font-bold uppercase tracking-wide text-black">
-              OPT-IN CONVERSION
-            </div>
-            {gaState.loading ? (
-              <>
-                {shimmer("mt-3 h-5 w-full")}
-                {shimmer("mt-3 h-[68px] w-full")}
-              </>
-            ) : (
-              <>
-                <div className="mt-3 flex items-baseline justify-between gap-2 text-[13px] font-bold">
-                  <span className="text-[#3b82f6]">Ads {formatPct(gaState.optInAds)}</span>
-                  <span className="text-[#f59e0b]">Organic {formatPct(gaState.optInOrganic)}</span>
-                </div>
-                <MiniBarChart
-                  color="#3b82f6"
-                  values={gaState.optInBars}
-                  labels={dayLabels}
-                  tooltipLabel="Opt-in rate"
-                  shouldAnimate={shouldAnimateBars}
-                />
-              </>
-            )}
-            <p className="mt-1 text-[11px] font-medium text-[#9ca3af]">
-              VSL sessions → opt-ins
-            </p>
+      <div className="grid grid-cols-1 gap-4">
+        {/* Card 1 */}
+        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+            OPT-IN CONVERSION
           </div>
-
-          {/* Card 2 */}
-          <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="text-[14px] font-bold uppercase tracking-wide text-black">
-              BOOKING RATE
-            </div>
-            {gaState.loading ? (
-              <>
-                {shimmer("mt-3 h-5 w-full")}
-                {shimmer("mt-3 h-[68px] w-full")}
-              </>
-            ) : (
-              <>
-                <div className="mt-3 flex items-baseline justify-between gap-2 text-[13px] font-bold">
-                  <span className="text-[#3b82f6]">Ads {formatPct(gaState.bookingAds)}</span>
-                  <span className="text-[#f59e0b]">Organic {formatPct(gaState.bookingOrganic)}</span>
-                </div>
-                <MiniBarChart
-                  color="#f59e0b"
-                  values={gaState.bookingBars}
-                  labels={dayLabels}
-                  tooltipLabel="Booking rate"
-                  shouldAnimate={shouldAnimateBars}
-                />
-              </>
-            )}
-            <p className="mt-1 text-[11px] font-medium text-[#9ca3af]">
-              Opt-ins → bookings
-            </p>
-          </div>
-
-          {/* Card 3 */}
-          <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="text-[14px] font-bold uppercase tracking-wide text-black">
-              YESTERDAY&apos;S ATTENDANCE
-            </div>
-            {attendanceState.loading ? (
-              <div className="mt-3 flex flex-1 items-center gap-5">
-                {shimmer("h-[84px] w-[84px] rounded-full")}
-                <div className="min-w-0 flex-1">
-                  {shimmer("h-8 w-24")}
-                  {shimmer("mt-2 h-4 w-28")}
-                </div>
+          {gaState.loading ? (
+            <>
+              {shimmer("mt-3 h-5 w-full")}
+              {shimmer("mt-3 h-[68px] w-full")}
+            </>
+          ) : (
+            <>
+              <div className="mt-3 flex items-baseline justify-between gap-2 text-[13px] font-bold">
+                <span className="text-[#3b82f6]">
+                  Ads {formatPct(gaState.optInAds)}
+                </span>
+                <span className="text-[#f59e0b]">
+                  Organic {formatPct(gaState.optInOrganic)}
+                </span>
               </div>
-            ) : (
-              <div className="mt-3 flex flex-1 items-center gap-5">
-                <AttendanceRing percent={attendancePct} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[28px] font-bold tabular-nums leading-none tracking-tight text-[#111827]">
-                    {attendanceMainLabel}
-                  </div>
-                  <p className="mt-2 text-[12px] font-medium text-[#9ca3af]">
-                    {attendanceState.error ? "Academic app unavailable" : "From academic app"}
-                  </p>
-                </div>
+              <MiniBarChart
+                color="#3b82f6"
+                values={gaState.optInBars}
+                labels={dayLabels}
+                tooltipLabel="Opt-in rate"
+                shouldAnimate={shouldAnimateBars}
+              />
+            </>
+          )}
+          <p className="mt-1 text-[11px] font-medium text-[#9ca3af]">
+            VSL sessions → opt-ins
+          </p>
+        </div>
+
+        {/* Card 2 */}
+        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+            BOOKING RATE
+          </div>
+          {gaState.loading ? (
+            <>
+              {shimmer("mt-3 h-5 w-full")}
+              {shimmer("mt-3 h-[68px] w-full")}
+            </>
+          ) : (
+            <>
+              <div className="mt-3 flex items-baseline justify-between gap-2 text-[13px] font-bold">
+                <span className="text-[#3b82f6]">
+                  Ads {formatPct(gaState.bookingAds)}
+                </span>
+                <span className="text-[#f59e0b]">
+                  Organic {formatPct(gaState.bookingOrganic)}
+                </span>
               </div>
+              <MiniBarChart
+                color="#f59e0b"
+                values={gaState.bookingBars}
+                labels={dayLabels}
+                tooltipLabel="Booking rate"
+                shouldAnimate={shouldAnimateBars}
+              />
+            </>
+          )}
+          <p className="mt-1 text-[11px] font-medium text-[#9ca3af]">
+            Opt-ins → bookings
+          </p>
+        </div>
+
+        {/* Card 3 */}
+        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+            YESTERDAY&apos;S ATTENDANCE
+          </div>
+          {attendanceState.loading ? (
+            <div className="mt-3 flex flex-1 items-center gap-5">
+              {shimmer("h-[84px] w-[84px] rounded-full")}
+              <div className="min-w-0 flex-1">
+                {shimmer("h-8 w-24")}
+                {shimmer("mt-2 h-4 w-28")}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-1 items-center gap-5">
+              <AttendanceRing percent={attendancePct} />
+              <div className="min-w-0 flex-1">
+                <div className="text-[28px] font-bold tabular-nums leading-none tracking-tight text-[#111827]">
+                  {attendanceMainLabel}
+                </div>
+                <p className="mt-2 text-[12px] font-medium text-[#9ca3af]">
+                  {attendanceState.error
+                    ? "Academic app unavailable"
+                    : "From academic app"}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Card 4 */}
+        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
+          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+            OCCUPANCY (NEXT 3 DAYS)
+          </div>
+          <div className="mt-8 flex flex-1 flex-col justify-center">
+            {occupancyState.loading ? (
+              <>
+                {shimmer("h-5 w-full rounded-full")}
+                {shimmer("mt-2.5 h-4 w-24")}
+              </>
+            ) : (
+              <>
+                <div className="h-5 w-full overflow-hidden rounded-full bg-[#e8ecf1]">
+                  <div
+                    className="h-full rounded-full bg-[#3b82f6] transition-all duration-[900ms] ease-out"
+                    style={{ width: `${animatedOccupancyPct}%` }}
+                    title={formatPct(occupancyState.occupancyPct)}
+                  />
+                </div>
+                <p className="mt-2.5 text-[14px] font-medium text-[#9ca3af]">
+                  {occupancyState.occupancyPct != null
+                    ? `${occupancyState.occupancyPct}% occupied`
+                    : "—"}
+                </p>
+              </>
             )}
           </div>
-
-          {/* Card 4 */}
-          <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-            <div className="text-[14px] font-bold uppercase tracking-wide text-black">
-              OCCUPANCY (NEXT 3 DAYS)
-            </div>
-            <div className="mt-8 flex flex-1 flex-col justify-center">
-              {occupancyState.loading ? (
-                <>
-                  {shimmer("h-5 w-full rounded-full")}
-                  {shimmer("mt-2.5 h-4 w-24")}
-                </>
-              ) : (
-                <>
-                  <div className="h-5 w-full overflow-hidden rounded-full bg-[#e8ecf1]">
-                    <div
-                      className="h-full rounded-full bg-[#3b82f6] transition-all duration-[900ms] ease-out"
-                      style={{ width: `${animatedOccupancyPct}%` }}
-                      title={formatPct(occupancyState.occupancyPct)}
-                    />
-                  </div>
-                  <p className="mt-2.5 text-[14px] font-medium text-[#9ca3af]">
-                    {occupancyState.occupancyPct != null ? `${occupancyState.occupancyPct}% occupied` : "—"}
-                  </p>
-                </>
-              )}
-            </div>
-            <p className="mt-auto pt-4 text-[11px] font-medium leading-relaxed text-[#9ca3af]">
-              {occupancyState.loading
-                ? "Loading availability..."
-                : occupancyState.availableSlots != null
-                  ? `${occupancyState.availableSlots} free slots • 45-min blocks`
-                  : "—"}
-            </p>
-          </div>
+          <p className="mt-auto pt-4 text-[11px] font-medium leading-relaxed text-[#9ca3af]">
+            {occupancyState.loading
+              ? "Loading availability..."
+              : occupancyState.availableSlots != null
+                ? `${occupancyState.availableSlots} free slots • 45-min blocks`
+                : "—"}
+          </p>
         </div>
       </div>
     </div>

@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  MoreVertical,
-  StickyNote,
-  UserRound,
-} from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { StickyNote, UserRound } from "lucide-react";
+import { useParams } from "react-router-dom";
+import { NotesModal, ViewNotesModal } from "../../../../Modal";
+import { TransferSetterModal } from "../../../../TransferSetterModal";
+import RecoverLeadModal from "../../../../RecoverLeadModal";
+import { ThreeDotsMenu, deleteCallWithDependencies } from "../../../../LeadItem";
 import {
   getCountryFlagFromPhone,
   getCountryFromPhone,
@@ -40,150 +41,6 @@ function ResponsePill({ lead }) {
     >
       {lead?.called ? `${lead?.responseTimeMinutes}m` : "Not called"}
     </span>
-  );
-}
-
-function ActionMenu({ open, onToggle, canReschedule }) {
-  const anchorRef = useRef(null);
-  const menuRef = useRef(null);
-  const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
-
-  useEffect(() => {
-    if (!open) return;
-    const anchor = anchorRef.current;
-    if (!anchor) return;
-
-    const gap = 8;
-    const computeAndSetPos = () => {
-      const rect = anchor.getBoundingClientRect();
-      const menuEl = menuRef.current;
-      const menuRect = menuEl?.getBoundingClientRect?.();
-      if (!menuRect) {
-        setMenuPos({ left: rect.right, top: rect.bottom + gap });
-        return;
-      }
-
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const openUp = spaceBelow < menuRect.height + gap;
-      const top = openUp
-        ? Math.max(gap, rect.top - menuRect.height - gap)
-        : rect.bottom + gap;
-      const left = Math.min(
-        window.innerWidth - gap,
-        Math.max(gap, rect.right - menuRect.width),
-      );
-      setMenuPos({ left, top });
-    };
-
-    computeAndSetPos();
-    const raf = requestAnimationFrame(computeAndSetPos);
-    window.addEventListener("resize", computeAndSetPos);
-    window.addEventListener("scroll", computeAndSetPos, true);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", computeAndSetPos);
-      window.removeEventListener("scroll", computeAndSetPos, true);
-    };
-  }, [open]);
-
-  const noop = (e) => {
-    e?.stopPropagation?.();
-    onToggle?.();
-  };
-
-  return (
-    <div className="relative">
-      <span
-        onClick={onToggle}
-        className="cursor-pointer"
-        aria-label="Actions"
-        ref={anchorRef}
-      >
-        <MoreVertical size={20} color="#000" />
-      </span>
-      {open ? (
-        <>
-          <div
-            ref={menuRef}
-            className="fixed w-56 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-[10000]"
-            style={{ left: menuPos.left, top: menuPos.top }}
-          >
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-slate-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Copy call id
-            </button>
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-slate-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Transfer
-            </button>
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-slate-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Recover lead
-            </button>
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-slate-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Setter Notes
-            </button>
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-slate-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Closer Notes
-            </button>
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-blue-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Send to ManyChat
-            </button>
-            {canReschedule ? (
-              <button
-                type="button"
-                onClick={noop}
-                className="w-full px-3 py-2 text-left text-[12px] font-medium text-blue-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-              >
-                Reschedule Call
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-red-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Delete call
-            </button>
-            <button
-              type="button"
-              onClick={noop}
-              className="w-full px-3 py-2 text-left text-[12px] font-medium text-red-600 cursor-pointer bg-white hover:bg-slate-50 active:bg-slate-100"
-            >
-              Report
-            </button>
-          </div>
-          <div
-            className="fixed inset-0 z-[9999]"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle?.();
-            }}
-          />
-        </>
-      ) : null}
-    </div>
   );
 }
 
@@ -232,10 +89,40 @@ export default function LeadRow({
   lead,
   setterName,
   closerName,
-  actionsOpen,
-  onToggleActions,
+  setterMap = {},
+  closerList = [],
   useCompactStatusBadges = true,
+  mode = "full",
 }) {
+  const { setter: routeSetterId } = useParams();
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [modeState, setModeState] = useState(mode);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showRecoverModal, setShowRecoverModal] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+  const [, setSetter] = useState(
+    lead?.setter_id != null ? String(lead.setter_id) : "",
+  );
+
+  useEffect(() => {
+    setModeState(mode);
+  }, [mode]);
+
+  useEffect(() => {
+    setSetter(lead?.setter_id != null ? String(lead.setter_id) : "");
+  }, [lead?.setter_id]);
+
+  const showToast = (message, type = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3000);
+  };
+
+  const setterOptions = useMemo(
+    () => Object.entries(setterMap || {}).map(([id, name]) => ({ id, name })),
+    [setterMap],
+  );
+
   const isAllLayout = true;
   const profile = lead?.leads || {};
   const name = profile?.name || "—";
@@ -449,27 +336,95 @@ export default function LeadRow({
         ) : null}
 
         <div className="flex items-center justify-center gap-1">
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center w-full">
             <button
               type="button"
               className="h-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1.5 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
               aria-label="Add note"
               title="Add note"
+              onClick={() => setViewModalOpen(true)}
             >
               <StickyNote size={14} className="text-slate-500" />
               Note
             </button>
           </div>
 
-          <div className="flex items-center justify-end">
-            <ActionMenu
-              open={actionsOpen}
-              onToggle={onToggleActions}
-              canReschedule={!!lead?.reschedule_link}
+          <div className="flex items-center justify-end [&_button]:leading-none">
+            <ThreeDotsMenu
+              onEdit={() => setIsModalOpen(true)}
+              onDelete={() => console.log("Delete")}
+              onDeleteCall={async () => {
+                try {
+                  await deleteCallWithDependencies(lead.id);
+                  showToast("Call deleted", "success");
+                } catch (err) {
+                  console.error("Error deleting call:", err);
+                  showToast(err?.message || "Failed to delete call", "error");
+                }
+              }}
+              mode={mode}
+              setMode={setModeState}
+              modalSetter={setShowNoteModal}
+              lead={lead}
+              showToast={showToast}
+              closerList={closerList}
+              onRecoverLead={() => setShowRecoverModal(true)}
             />
           </div>
         </div>
       </div>
+
+      <NotesModal
+        isOpen={showNoteModal}
+        onClose={() => setShowNoteModal(false)}
+        lead={lead}
+        callId={lead.id}
+        mode={modeState}
+      />
+
+      <ViewNotesModal
+        isOpen={viewModalOpen}
+        onClose={() => setViewModalOpen(false)}
+        lead={lead}
+        callId={lead?.id}
+      />
+
+      <TransferSetterModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        lead={lead}
+        setterOptions={setterOptions}
+        currentUserId={routeSetterId ?? null}
+        onTransfer={(newSetterId) => setSetter(newSetterId)}
+      />
+
+      <RecoverLeadModal
+        isOpen={showRecoverModal}
+        onClose={() => setShowRecoverModal(false)}
+        lead={lead}
+        closerList={closerList}
+        mode={mode}
+        onSuccess={(msg) => showToast(msg || "Calendar event created", "success")}
+      />
+
+      {toast.show ? (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            right: "24px",
+            backgroundColor: toast.type === "success" ? "#10b981" : "#ef4444",
+            color: "white",
+            padding: "12px 20px",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            zIndex: 10000,
+            fontSize: "14px",
+          }}
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </div>
   );
 }

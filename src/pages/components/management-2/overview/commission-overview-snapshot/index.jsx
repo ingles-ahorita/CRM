@@ -6,7 +6,16 @@ import { getAllSettersMonthlyCommission } from "../../../../../lib/setterCommiss
 
 const SETTERS_COLOR = "#F59E0B";
 
-const CLOSER_PALETTE = ["#2563EB", "#16A34A", "#DB2777", "#7C3AED", "#0EA5E9", "#EA580C", "#059669", "#BE185D"];
+const CLOSER_PALETTE = [
+  "#2563EB",
+  "#16A34A",
+  "#DB2777",
+  "#7C3AED",
+  "#0EA5E9",
+  "#EA580C",
+  "#059669",
+  "#BE185D",
+];
 
 function formatUsd(n) {
   return new Intl.NumberFormat("en-US", {
@@ -27,26 +36,26 @@ function formatUsdFull(n) {
 }
 
 function shimmer(className = "") {
-  return <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />;
+  return (
+    <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />
+  );
 }
 
 function CommissionSnapshotShimmer() {
   return (
-    <div className="rounded-xl border-2 border-dashed border-slate-300 bg-white p-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {shimmer("h-4 w-48")}
-          {shimmer("h-8 w-32 rounded-full")}
-        </div>
-        {shimmer("h-11 w-full rounded-lg sm:h-[46px]")}
-        <div className="mt-5 flex flex-wrap gap-x-5 gap-y-3 sm:gap-x-8">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex items-center gap-2">
-              {shimmer("h-3 w-3 rounded-[3px]")}
-              {shimmer("h-4 w-28")}
-            </div>
-          ))}
-        </div>
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ">
+        {shimmer("h-4 w-48")}
+        {shimmer("h-8 w-32 rounded-full")}
+      </div>
+      {shimmer("h-11 w-full rounded-lg sm:h-[46px]")}
+      <div className="mt-5 flex gap-x-3 gap-y-2">
+        {[1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-2"> 
+            {shimmer("h-3 w-3 rounded-[3px]")}
+            {shimmer("h-4 w-28")}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -63,8 +72,14 @@ function closerTooltip(name, b) {
 
 export default function CommissionOverviewSnapshot() {
   const monthKey = useMemo(() => {
-    const ym = DateHelpers.getYearMonthInTimezone(new Date(), DateHelpers.DEFAULT_TIMEZONE);
-    return ym?.monthKey ?? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+    const ym = DateHelpers.getYearMonthInTimezone(
+      new Date(),
+      DateHelpers.DEFAULT_TIMEZONE,
+    );
+    return (
+      ym?.monthKey ??
+      `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`
+    );
   }, []);
 
   const [loading, setLoading] = useState(true);
@@ -101,7 +116,10 @@ export default function CommissionOverviewSnapshot() {
 
         if (cancelled) return;
 
-        const setterGrandTotal = (setterRows || []).reduce((s, r) => s + (Number(r.total) || 0), 0);
+        const setterGrandTotal = (setterRows || []).reduce(
+          (s, r) => s + (Number(r.total) || 0),
+          0,
+        );
 
         const closerWithAmount = closerBreakdowns
           .map((row, idx) => ({
@@ -157,20 +175,27 @@ export default function CommissionOverviewSnapshot() {
     return () => cancelAnimationFrame(id);
   }, [loading, dataTick]);
 
-  const total = useMemo(() => segments.reduce((acc, s) => acc + s.amount, 0), [segments]);
+  const total = useMemo(
+    () => segments.reduce((acc, s) => acc + s.amount, 0),
+    [segments],
+  );
 
   const monthLabel = useMemo(() => {
     const [y, m] = monthKey.split("-").map(Number);
     if (!Number.isFinite(y) || !Number.isFinite(m)) return monthKey;
     const d = new Date(Date.UTC(y, m - 1, 1));
-    return d.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: DateHelpers.DEFAULT_TIMEZONE });
+    return d.toLocaleString("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: DateHelpers.DEFAULT_TIMEZONE,
+    });
   }, [monthKey]);
 
   return (
-    <div className="rounded-xl border border-slate-200/90 bg-white p-6 pt-7 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ring-1 ring-slate-100">
-      <div className="mb-6">
+    <div className="border border-slate-200 rounded-2xl p-3 bg-white">
+      <div className="mb-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-          <h2 className="text-xl font-bold leading-tight tracking-tight text-neutral-900">
+          <h2 className="text-[18px] font-bold tracking-tight text-[#374151]">
             Commission overview snapshot
           </h2>
         </div>
@@ -188,86 +213,87 @@ export default function CommissionOverviewSnapshot() {
       {loading ? (
         <CommissionSnapshotShimmer />
       ) : (
-        <div className="rounded-xl border-2 border-dashed border-slate-300 bg-white p-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-[13px] font-bold uppercase tracking-[0.14em] text-black">
-                Commission split this month
-              </h3>
-              <span className="inline-flex w-fit shrink-0 rounded-full border border-[#e5e7eb] bg-[#f3f4f6] px-3 py-1 text-[11px] font-bold tabular-nums tracking-tight text-[#374151]">
-                TOTAL {formatUsd(total)}
-              </span>
-            </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-[10px] font-semibold uppercase text-black">
+              Commission split this month
+            </h3>
+            <span className="inline-flex w-fit shrink-0 rounded-full border border-[#e5e7eb] bg-[#f3f4f6] px-3 py-1 text-[11px] font-bold tabular-nums tracking-tight text-[#374151]">
+              TOTAL {formatUsd(total)}
+            </span>
+          </div>
 
-            {segments.length === 0 ? (
-              <p className="py-6 text-center text-[13px] text-slate-500">
-                No commission recorded for this month yet.
-              </p>
-            ) : (
-              <>
-                <div className="flex h-11 w-full overflow-hidden rounded-lg sm:h-[46px]">
-                  {segments.map((s) => {
-                    const pct = total > 0 ? (s.amount / total) * 100 : 0;
-                    const barLabel = Math.round(s.amount);
-                    const tooltipText =
+          {segments.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-slate-500">
+              No commission recorded for this month yet.
+            </p>
+          ) : (
+            <>
+              <div className="flex h-11 w-full overflow-hidden rounded-lg sm:h-[46px]">
+                {segments.map((s) => {
+                  const pct = total > 0 ? (s.amount / total) * 100 : 0;
+                  const barLabel = Math.round(s.amount);
+                  const tooltipText =
+                    s.kind === "setters"
+                      ? [
+                          `Setters — ${formatUsdFull(s.amount)}`,
+                          `All active setters: $${String(4)}/show-up + $${String(25)}/purchase (${DateHelpers.DEFAULT_TIMEZONE})`,
+                          `${(s.setterRows || []).length} setter(s) in rollup`,
+                        ].join("\n")
+                      : closerTooltip(s.name, s.breakdown);
+
+                  return (
+                    <div
+                      key={s.key}
+                      className="flex min-w-0 shrink-0 cursor-help items-center justify-center overflow-hidden px-0.5 text-[11px] font-bold tabular-nums text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] sm:text-[12px]"
+                      style={{
+                        width: animate ? `${pct}%` : "0%",
+                        backgroundColor: s.color,
+                        transition:
+                          "width 1.05s cubic-bezier(0.22, 1, 0.36, 1)",
+                      }}
+                      title={tooltipText}
+                    >
+                      {pct >= 7 ? (
+                        <span className="whitespace-nowrap drop-shadow-[0_1px_1px_rgba(0,0,0,0.28)]">
+                          {barLabel}
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <ul className="mt-3 flex list-none flex-wrap gap-x-3 gap-y-2">
+                {segments.map((s) => (
+                  <li
+                    key={s.key}
+                    className="flex cursor-help items-center gap-1 text-[12px] text-[#374151]"
+                    title={
                       s.kind === "setters"
                         ? [
                             `Setters — ${formatUsdFull(s.amount)}`,
-                            `All active setters: $${String(4)}/show-up + $${String(25)}/purchase (${DateHelpers.DEFAULT_TIMEZONE})`,
-                            `${(s.setterRows || []).length} setter(s) in rollup`,
+                            `Roll-up of all active setters for ${monthKey}`,
                           ].join("\n")
-                        : closerTooltip(s.name, s.breakdown);
-
-                    return (
-                      <div
-                        key={s.key}
-                        className="flex min-w-0 shrink-0 cursor-help items-center justify-center overflow-hidden px-0.5 text-[11px] font-bold tabular-nums text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] sm:text-[12px]"
-                        style={{
-                          width: animate ? `${pct}%` : "0%",
-                          backgroundColor: s.color,
-                          transition: "width 1.05s cubic-bezier(0.22, 1, 0.36, 1)",
-                        }}
-                        title={tooltipText}
-                      >
-                        {pct >= 7 ? (
-                          <span className="whitespace-nowrap drop-shadow-[0_1px_1px_rgba(0,0,0,0.28)]">
-                            {barLabel}
-                          </span>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <ul className="mt-5 flex list-none flex-wrap gap-x-5 gap-y-3 sm:gap-x-8">
-                  {segments.map((s) => (
-                    <li
-                      key={s.key}
-                      className="flex cursor-help items-center gap-2 text-[12px] text-[#374151]"
-                      title={
-                        s.kind === "setters"
-                          ? [
-                              `Setters — ${formatUsdFull(s.amount)}`,
-                              `Roll-up of all active setters for ${monthKey}`,
-                            ].join("\n")
-                          : closerTooltip(s.name, s.breakdown)
-                      }
-                    >
-                      <span
-                        className="h-3 w-3 shrink-0 rounded-[3px]"
-                        style={{ backgroundColor: s.color }}
-                        aria-hidden
-                      />
-                      <span className="font-semibold whitespace-nowrap">
-                        {s.name}{" "}
-                        <span className="font-bold tabular-nums text-neutral-900">{formatUsd(s.amount)}</span>
+                        : closerTooltip(s.name, s.breakdown)
+                    }
+                  >
+                    <span
+                      className="h-3 w-3 shrink-0 rounded-[3px]"
+                      style={{ backgroundColor: s.color }}
+                      aria-hidden
+                    />
+                    <span className="font-semibold whitespace-nowrap">
+                      {s.name}{" "}
+                      <span className="font-bold tabular-nums text-neutral-900">
+                        {formatUsd(s.amount)}
                       </span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </div>

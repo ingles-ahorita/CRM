@@ -4,6 +4,9 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,11 +21,11 @@ function cx(...p) {
 }
 
 const TIME_RANGE_ITEMS = [
-  { id: "mtd", label: "This month (MTD)" },
-  { id: "lastMonth", label: "Last month" },
-  { id: "last7", label: "Last 7 days" },
-  { id: "lastWeek", label: "Last week" },
-  { id: "custom", label: "Custom" },
+  { id: "mtd", label: "MTD", title: "This month (MTD)" },
+  { id: "lastMonth", label: "Last mo", title: "Last month" },
+  { id: "last7", label: "7 days", title: "Last 7 days" },
+  { id: "lastWeek", label: "Last wk", title: "Last week" },
+  { id: "custom", label: "Custom", title: "Custom date range" },
 ];
 
 const EMPTY_METRICS = {
@@ -58,11 +61,23 @@ function rangeLabel(range) {
 }
 
 function startOfUTCDate(d) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0),
+  );
 }
 
 function endOfUTCDate(d) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+  return new Date(
+    Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      d.getUTCDate(),
+      23,
+      59,
+      59,
+      999,
+    ),
+  );
 }
 
 function listDaysISO(start, end) {
@@ -88,8 +103,13 @@ function getRangeBounds(range) {
     return { start: startOfUTCDate(start), end };
   }
   if (range === "lastMonth") {
-    const prevMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
-    const monthRange = DateHelpers.getMonthRangeInTimezone(prevMonthDate, DateHelpers.DEFAULT_TIMEZONE);
+    const prevMonthDate = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15),
+    );
+    const monthRange = DateHelpers.getMonthRangeInTimezone(
+      prevMonthDate,
+      DateHelpers.DEFAULT_TIMEZONE,
+    );
     return { start: monthRange.startDate, end: monthRange.endDate };
   }
   if (range === "custom") {
@@ -97,7 +117,10 @@ function getRangeBounds(range) {
     const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
     return { start: startOfUTCDate(start), end };
   }
-  const currentRange = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
+  const currentRange = DateHelpers.getMonthRangeInTimezone(
+    now,
+    DateHelpers.DEFAULT_TIMEZONE,
+  );
   return { start: currentRange.startDate, end: currentRange.endDate };
 }
 
@@ -106,13 +129,18 @@ function normalizeCustomBounds(startDateText, endDateText) {
   if (!startDateText || !endDateText) return fallback;
   const start = new Date(`${startDateText}T00:00:00.000Z`);
   const end = new Date(`${endDateText}T23:59:59.999Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return fallback;
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()))
+    return fallback;
   if (start > end) return fallback;
   return { start, end };
 }
 
 function cardShimmerLine(className = "") {
-  return <div className={cx("animate-pulse rounded-md bg-slate-200/70", className)} />;
+  return (
+    <div
+      className={cx("animate-pulse rounded-md bg-slate-200/70", className)}
+    />
+  );
 }
 
 function MetricCard({ className = "", children }) {
@@ -130,10 +158,15 @@ function MetricCard({ className = "", children }) {
 
 export default function ManagementDashboard() {
   const netGradientId = useId().replace(/:/g, "");
+  const commissionChartId = useId().replace(/:/g, "");
   const [range, setRange] = useState("mtd");
   const customFallback = useMemo(() => getRangeBounds("custom"), []);
-  const [customStart, setCustomStart] = useState(customFallback.start.toISOString().slice(0, 10));
-  const [customEnd, setCustomEnd] = useState(customFallback.end.toISOString().slice(0, 10));
+  const [customStart, setCustomStart] = useState(
+    customFallback.start.toISOString().slice(0, 10),
+  );
+  const [customEnd, setCustomEnd] = useState(
+    customFallback.end.toISOString().slice(0, 10),
+  );
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [metrics, setMetrics] = useState(EMPTY_METRICS);
@@ -166,7 +199,9 @@ export default function ManagementDashboard() {
             .lte("created_at_kajabi", endISO),
           supabase
             .from("outcome_log")
-            .select("commission, outcome, purchase_date, closers(name), calls!inner!call_id(setter_id)")
+            .select(
+              "commission, outcome, purchase_date, closers(name), calls!inner!call_id(setter_id)",
+            )
             .not("purchase_date", "is", null)
             .gte("purchase_date", startISO)
             .lte("purchase_date", endISO),
@@ -239,7 +274,9 @@ export default function ManagementDashboard() {
           v: daily[day]?.gross || 0,
         }));
 
-        const yesSalesRows = salesRows.filter((r) => String(r?.outcome || "").toLowerCase() === "yes");
+        const yesSalesRows = salesRows.filter(
+          (r) => String(r?.outcome || "").toLowerCase() === "yes",
+        );
         const totalSales = yesSalesRows.length;
         const closerSalesMap = {};
         for (const row of yesSalesRows) {
@@ -295,7 +332,11 @@ export default function ManagementDashboard() {
         const avatars = uniqueActiveClosers.slice(0, 6).map((c, idx) => ({
           key: c.id || c.name || String(idx),
           name: c.name || "?",
-          initial: String(c?.name || "?").trim().charAt(0).toUpperCase() || "?",
+          initial:
+            String(c?.name || "?")
+              .trim()
+              .charAt(0)
+              .toUpperCase() || "?",
           avatarUrl: c?.avatarUrl || null,
         }));
 
@@ -310,8 +351,12 @@ export default function ManagementDashboard() {
           activeClosers,
           activeSetters,
           salesBreakdown,
-          netRevenueSeries: netRevenueSeries.length ? netRevenueSeries : [{ i: 0, v: 0 }],
-          grossRevenueBars: grossRevenueBars.length ? grossRevenueBars : [{ d: "1", v: 0 }],
+          netRevenueSeries: netRevenueSeries.length
+            ? netRevenueSeries
+            : [{ i: 0, v: 0 }],
+          grossRevenueBars: grossRevenueBars.length
+            ? grossRevenueBars
+            : [{ d: "1", v: 0 }],
           avatars,
         });
       } catch (err) {
@@ -329,69 +374,98 @@ export default function ManagementDashboard() {
     };
   }, [range, customStart, customEnd]);
 
-  const commissionedPct = useMemo(() => {
-    const total = Number(metrics.totalCommission || 0);
-    const closers = Number(metrics.closerCommission || 0);
-    if (!total) return 0;
-    return Math.round((closers / total) * 1000) / 10;
-  }, [metrics.closerCommission, metrics.totalCommission]);
+  const commissionSplitPie = useMemo(() => {
+    const gid = commissionChartId;
+    const closers = Math.max(0, Number(metrics.closerCommission || 0));
+    const setters = Math.max(0, Number(metrics.setterCommission || 0));
+    const rows = [];
+    if (closers > 0) {
+      rows.push({
+        name: "Closers",
+        value: closers,
+        fill: `url(#${gid}-closer)`,
+        legendColor: "#0d9488",
+      });
+    }
+    if (setters > 0) {
+      rows.push({
+        name: "Setters",
+        value: setters,
+        fill: `url(#${gid}-setter)`,
+        legendColor: "#4f46e5",
+      });
+    }
+    return rows;
+  }, [metrics.closerCommission, metrics.setterCommission, commissionChartId]);
+
+  const commissionPieTotal = useMemo(() => {
+    return commissionSplitPie.reduce((s, d) => s + d.value, 0);
+  }, [commissionSplitPie]);
 
   return (
-    <div className="border border-slate-200 rounded-2xl p-4 bg-white">
-      <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/60 p-4 shadow-sm">
-        {/* Header */}
-        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] py-2 px-4 rounded-lg  border border-slate-200">
-          <div className="text-[20px] font-bold tracking-wide text-black">
-            Performance Overview
-          </div>
+    <div className="border border-slate-200 rounded-2xl p-2 bg-white">
+      {/* Header */}
+      <div className="mb-4 flex flex-col gap-2 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] py-1.5 px-2 sm:px-3 rounded-lg border border-slate-200">
+        <div className="shrink-0 text-[18px] font-bold tracking-wide text-black">
+          Performance Overview
+        </div>
 
-          <div className="flex flex-wrap items-center gap-2 lg:ml-auto lg:justify-end">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
             <SegmentedTabs
               items={TIME_RANGE_ITEMS}
               activeId={range}
               onChange={setRange}
-              size="sm"
-              className="max-w-full flex-wrap justify-center border-slate-200/90 bg-slate-100/80 p-1"
-              activeClassName="!bg-sky-100 !text-blue-700"
+              size="xs"
+              className="w-max border-slate-200/90 bg-slate-100/80"
+              activeClassName="!bg-sky-100 !text-blue-700 !ring-sky-200/80"
             />
-            {range === "custom" ? (
-              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="h-8 rounded-md border border-slate-200 px-2 text-[12px] font-medium text-slate-700 !outline-none"
-                />
-                <span className="text-[12px] font-semibold text-slate-500">to</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="h-8 rounded-md border border-slate-200 px-2 text-[12px] font-medium text-slate-700 !outline-none"
-                />
-              </div>
-            ) : null}
           </div>
-        </div>
-        {errorMsg ? (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">
-            Dashboard data load warning: {errorMsg}
-          </div>
-        ) : null}
-
-        {/* Metric cards */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <MetricCard>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Net revenue {rangeLabel(range)}
+          {range === "custom" ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+              />
+              <span className="text-[10px] font-semibold text-slate-500">
+                –
+              </span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+              />
             </div>
-            {loading ? cardShimmerLine("mt-2 h-9 w-36") : (
-              <div className="mt-2 text-[28px] font-bold tabular-nums leading-none text-slate-900">
-                {formatUsd(metrics.netRevenue)}
-              </div>
-            )}
-            <div className="mt-2 flex-1 min-h-[55px] w-full [-webkit-tap-highlight-color:transparent]">
-              {loading ? cardShimmerLine("h-full w-full min-h-[55px]") : <ResponsiveContainer width="100%" height="100%" minHeight={55}>
+          ) : null}
+        </div>
+      </div>
+      {errorMsg ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">
+          Dashboard data load warning: {errorMsg}
+        </div>
+      ) : null}
+
+      {/* Metric cards */}
+      <div className="grid gap-3 ">
+        <MetricCard>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Net revenue {rangeLabel(range)}
+          </div>
+          {loading ? (
+            cardShimmerLine("mt-2 h-9 w-36")
+          ) : (
+            <div className="mt-2 text-[28px] font-bold tabular-nums leading-none text-slate-900">
+              {formatUsd(metrics.netRevenue)}
+            </div>
+          )}
+          <div className="mt-2 flex-1 min-h-[55px] w-full [-webkit-tap-highlight-color:transparent]">
+            {loading ? (
+              cardShimmerLine("h-full w-full min-h-[55px]")
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minHeight={55}>
                 <AreaChart
                   data={metrics.netRevenueSeries}
                   margin={{ top: 6, right: 4, left: 0, bottom: 0 }}
@@ -432,12 +506,18 @@ export default function ManagementDashboard() {
                     labelFormatter={(_, payload) => {
                       const raw = payload?.[0]?.payload?.isoDay;
                       if (!raw) return "";
-                      return new Date(`${raw}T00:00:00Z`).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      });
+                      return new Date(`${raw}T00:00:00Z`).toLocaleDateString(
+                        "en-US",
+                        {
+                          month: "short",
+                          day: "numeric",
+                        },
+                      );
                     }}
-                    formatter={(value) => [formatUsd(Number(value) || 0), "Net revenue"]}
+                    formatter={(value) => [
+                      formatUsd(Number(value) || 0),
+                      "Net revenue",
+                    ]}
                   />
                   <Area
                     type="monotone"
@@ -452,24 +532,30 @@ export default function ManagementDashboard() {
                     animationEasing="ease-out"
                   />
                 </AreaChart>
-              </ResponsiveContainer>}
-            </div>
-            <div className="mt-1 text-[10px] font-medium text-slate-500">
-              Kajabi charges - refunds
-            </div>
-          </MetricCard>
-
-          <MetricCard>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Gross revenue {rangeLabel(range)}
-            </div>
-            {loading ? cardShimmerLine("mt-2 h-9 w-36") : (
-              <div className="mt-2 text-[28px] font-bold tabular-nums leading-none text-emerald-600">
-                {formatUsd(metrics.grossRevenue)}
-              </div>
+              </ResponsiveContainer>
             )}
-            <div className="mt-3 flex-1 min-h-[55px] w-full">
-              {loading ? cardShimmerLine("h-full w-full min-h-[55px]") : <ResponsiveContainer width="100%" height="100%" minHeight={55}>
+          </div>
+          <div className="mt-1 text-[10px] font-medium text-slate-500">
+            Kajabi charges - refunds
+          </div>
+        </MetricCard>
+
+        <MetricCard>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Gross revenue {rangeLabel(range)}
+          </div>
+          {loading ? (
+            cardShimmerLine("mt-2 h-9 w-36")
+          ) : (
+            <div className="mt-2 text-[28px] font-bold tabular-nums leading-none text-emerald-600">
+              {formatUsd(metrics.grossRevenue)}
+            </div>
+          )}
+          <div className="mt-3 flex-1 min-h-[55px] w-full">
+            {loading ? (
+              cardShimmerLine("h-full w-full min-h-[55px]")
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minHeight={55}>
                 <BarChart
                   data={metrics.grossRevenueBars}
                   margin={{ top: 6, right: 4, left: 0, bottom: 0 }}
@@ -487,12 +573,18 @@ export default function ManagementDashboard() {
                     labelFormatter={(_, payload) => {
                       const raw = payload?.[0]?.payload?.isoDay;
                       if (!raw) return "";
-                      return new Date(`${raw}T00:00:00Z`).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      });
+                      return new Date(`${raw}T00:00:00Z`).toLocaleDateString(
+                        "en-US",
+                        {
+                          month: "short",
+                          day: "numeric",
+                        },
+                      );
                     }}
-                    formatter={(value) => [formatUsd(Number(value) || 0), "Gross revenue"]}
+                    formatter={(value) => [
+                      formatUsd(Number(value) || 0),
+                      "Gross revenue",
+                    ]}
                   />
                   <Bar
                     dataKey="v"
@@ -505,119 +597,235 @@ export default function ManagementDashboard() {
                     animationEasing="ease-out"
                   />
                 </BarChart>
-              </ResponsiveContainer>}
-            </div>
-            <div className="mt-1 text-[10px] font-medium text-slate-500">
-              Kajabi transactions
-            </div>
-          </MetricCard>
+              </ResponsiveContainer>
+            )}
+          </div>
+          <div className="mt-1 text-[10px] font-medium text-slate-500">
+            Kajabi transactions
+          </div>
+        </MetricCard>
 
-          <MetricCard>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Total sales {rangeLabel(range)}
+        <MetricCard className="!min-h-[120px]">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Total sales {rangeLabel(range)}
+          </div>
+          {loading ? (
+            cardShimmerLine("mt-2 h-9 w-20")
+          ) : (
+            <div className="mt-2 text-[28px] font-bold tabular-nums leading-none text-slate-900">
+              {metrics.totalSales}
             </div>
-            {loading ? cardShimmerLine("mt-2 h-9 w-20") : (
-              <div className="mt-2 text-[28px] font-bold tabular-nums leading-none text-slate-900">
-                {metrics.totalSales}
-              </div>
-            )}
-            {loading ? cardShimmerLine("mt-auto h-4 w-full") : (
-              <div className="mt-auto pt-1 text-[11px] font-medium leading-relaxed text-slate-500">
-                {metrics.salesBreakdown || "No sales in selected range"}
-              </div>
-            )}
-          </MetricCard>
+          )}
+          {loading ? (
+            cardShimmerLine("mt-auto h-4 w-full")
+          ) : (
+            <div className="mt-auto pt-1 text-[11px] font-medium leading-relaxed text-slate-500">
+              {metrics.salesBreakdown || "No sales in selected range"}
+            </div>
+          )}
+        </MetricCard>
 
-          <MetricCard>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Total commission {rangeLabel(range)}
+        <MetricCard>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Total commission {rangeLabel(range)}
+          </div>
+          {loading ? (
+            cardShimmerLine("mt-4 h-9 w-36")
+          ) : (
+            <div className="mt-4 text-[28px] font-bold tabular-nums leading-none text-slate-900">
+              {formatUsd(metrics.totalCommission)}
             </div>
-            {loading ? cardShimmerLine("mt-4 h-9 w-36") : (
-              <div className="mt-4 text-[28px] font-bold tabular-nums leading-none text-slate-900">
-                {formatUsd(metrics.totalCommission)}
+          )}
+          <div className="mt-3 flex-1 flex flex-col justify-center min-h-[96px]">
+            {loading ? (
+              cardShimmerLine("h-[96px] w-full rounded-xl")
+            ) : commissionSplitPie.length === 0 ? (
+              <div className="flex h-[96px] items-center justify-center rounded-xl border border-dashed border-slate-200/90 bg-gradient-to-b from-slate-50 to-slate-50/30 text-[11px] font-medium text-slate-400">
+                No commission in selected range
               </div>
-            )}
-            <div className="mt-8 flex-1 flex flex-col justify-center">
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 animate-pulse">
+            ) : (
+              <div className="flex min-h-[96px] items-center gap-1 rounded-xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50/40 to-slate-50/70 p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(15,23,42,0.04)]">
                 <div
-                  className="h-full rounded-full bg-emerald-500"
-                  style={{ width: `${commissionedPct}%` }}
-                />
-              </div>
-            </div>
-            {loading ? cardShimmerLine("mt-auto h-4 w-full") : (
-              <div className="mt-auto pt-2 text-[11px] font-medium text-slate-500">
-                Closers {formatUsd(metrics.closerCommission)} + Setters {formatUsd(metrics.setterCommission)}
+                  className="relative flex h-[70px] w-[70px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-100/90 to-slate-50 p-[3px] shadow-[0_2px_8px_rgba(15,23,42,0.06)] ring-1 ring-white/80"
+                  aria-hidden
+                >
+                  <div className="h-full w-full overflow-hidden rounded-full bg-white shadow-[inset_0_1px_3px_rgba(15,23,42,0.06)]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart
+                        margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+                      >
+                        <defs>
+                          <linearGradient
+                            id={`${commissionChartId}-closer`}
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="1"
+                          >
+                            <stop offset="0%" stopColor="#2dd4bf" />
+                            <stop offset="100%" stopColor="#0f766e" />
+                          </linearGradient>
+                          <linearGradient
+                            id={`${commissionChartId}-setter`}
+                            x1="0"
+                            y1="0"
+                            x2="1"
+                            y2="1"
+                          >
+                            <stop offset="0%" stopColor="#a5b4fc" />
+                            <stop offset="100%" stopColor="#4338ca" />
+                          </linearGradient>
+                        </defs>
+                        <Pie
+                          data={commissionSplitPie}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="58%"
+                          outerRadius="92%"
+                          paddingAngle={commissionSplitPie.length > 1 ? 2.5 : 0}
+                          cornerRadius={5}
+                          stroke="#fff"
+                          strokeWidth={2}
+                          isAnimationActive
+                          animationBegin={80}
+                          animationDuration={640}
+                          animationEasing="ease-out"
+                        >
+                          {commissionSplitPie.map((entry, i) => (
+                            <Cell
+                              key={`${entry.name}-${i}`}
+                              fill={entry.fill}
+                            />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col justify-center gap-2.5 py-0.5">
+                  {commissionSplitPie.map((row) => {
+                    const pct =
+                      commissionPieTotal > 0
+                        ? Math.round((row.value / commissionPieTotal) * 1000) /
+                          10
+                        : 0;
+                    return (
+                      <div
+                        key={row.name}
+                        className="flex items-center gap-2.5 text-left"
+                      >
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full shadow-sm ring-2 ring-white"
+                          style={{
+                            background: `linear-gradient(135deg, ${row.legendColor}, ${row.legendColor}dd)`,
+                            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.35)`,
+                          }}
+                          title={row.name}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                              {row.name}
+                            </span>
+                            <span className="text-[10px] font-bold tabular-nums text-slate-900">
+                              {formatUsd(row.value)}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-[9px] font-semibold tabular-nums text-slate-500">
+                            {pct}% of payout
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
-          </MetricCard>
+          </div>
+          {/* {loading ? cardShimmerLine("mt-auto h-4 w-full") : (
+              <div className="mt-auto pt-2 text-[10px] font-medium leading-relaxed text-slate-500">
+                <span className="text-slate-400">Breakdown · </span>
+                Closers {formatUsd(metrics.closerCommission)}
+                <span className="mx-1.5 text-slate-300">+</span>
+                Setters {formatUsd(metrics.setterCommission)}
+              </div>
+            )} */}
+        </MetricCard>
 
-          <MetricCard>
+        <MetricCard className="!min-h-[100px]">
+          <div className="flex items-center justify-between mb-2">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Team on shift
             </div>
-            {loading ? (
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                {cardShimmerLine("h-[52px] w-full rounded-lg")}
-                {cardShimmerLine("h-[52px] w-full rounded-lg")}
+
+            <div className="flex items-center flex-col gap-1.5 pr-2">
+              {/* <div className="mb-1 text-[10px] font-medium text-slate-500">
+                Currently in open shifts
+              </div> */}
+              <div className="mt-auto flex flex-1 items-end gap-1.5">
+                {(loading ? [] : metrics.avatars).map((a) => (
+                  <div key={a.key} className="group relative h-6 w-6 shrink-0">
+                    <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-[10px] font-semibold whitespace-nowrap text-white opacity-0 shadow-[0_8px_20px_rgba(2,6,23,0.35)] transition-opacity duration-150 group-hover:opacity-100">
+                      {a.name || "Closer"}
+                    </div>
+                    <div className="absolute inset-0 flex h-8 w-8 items-center justify-center rounded-full bg-slate-500 text-[12px] font-bold text-white shadow-sm ring-2 ring-white">
+                      {a.initial}
+                    </div>
+                    {a.avatarUrl ? (
+                      <img
+                        src={a.avatarUrl}
+                        alt={a.name || "Closer"}
+                        className="absolute inset-0 h-8 w-8 rounded-full object-cover shadow-sm ring-2 ring-white"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : null}
+                  </div>
+                ))}
+                {!loading && metrics.avatars.length === 0 ? (
+                  <div className="text-[11px] font-medium text-slate-400">
+                    No closers on shift
+                  </div>
+                ) : null}
+                {loading ? (
+                  <>
+                    {cardShimmerLine("h-8 w-8 rounded-full")}
+                    {cardShimmerLine("h-8 w-8 rounded-full")}
+                    {cardShimmerLine("h-8 w-8 rounded-full")}
+                  </>
+                ) : null}
               </div>
-            ) : (
-              <div className="mt-3 grid grid-cols-2 gap-2 mb-2">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                    Closers
-                  </div>
-                  <div className="mt-1 text-[24px] font-bold tabular-nums leading-none text-slate-900">
-                    {metrics.activeClosers}
-                  </div>
+            </div>
+          </div>
+          {loading ? (
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {cardShimmerLine("h-[52px] w-full rounded-lg")}
+              {cardShimmerLine("h-[52px] w-full rounded-lg")}
+            </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-2 gap-2 mb-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  Closers
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                    Setters
-                  </div>
-                  <div className="mt-1 text-[24px] font-bold tabular-nums leading-none text-slate-900">
-                    {metrics.activeSetters}
-                  </div>
+                <div className="mt-1 text-[24px] font-bold tabular-nums leading-none text-slate-900">
+                  {metrics.activeClosers}
                 </div>
               </div>
-            )}
-            <div className="mb-2 text-[10px] font-medium text-slate-500">
-              Currently in open shifts
-            </div>
-            <div className="mt-auto flex flex-1 items-end gap-1.5">
-              {(loading ? [] : metrics.avatars).map((a) => (
-                <div key={a.key} className="group relative h-8 w-8 shrink-0">
-                  <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-[10px] font-semibold whitespace-nowrap text-white opacity-0 shadow-[0_8px_20px_rgba(2,6,23,0.35)] transition-opacity duration-150 group-hover:opacity-100">
-                    {a.name || "Closer"}
-                  </div>
-                  <div className="absolute inset-0 flex h-8 w-8 items-center justify-center rounded-full bg-slate-500 text-[14px] font-bold text-white shadow-sm ring-2 ring-white">
-                    {a.initial}
-                  </div>
-                  {a.avatarUrl ? (
-                    <img
-                      src={a.avatarUrl}
-                      alt={a.name || "Closer"}
-                      className="absolute inset-0 h-8 w-8 rounded-full object-cover shadow-sm ring-2 ring-white"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
-                  ) : null}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  Setters
                 </div>
-              ))}
-              {!loading && metrics.avatars.length === 0 ? (
-                <div className="text-[11px] font-medium text-slate-400">No closers on shift</div>
-              ) : null}
-              {loading ? (
-                <>
-                  {cardShimmerLine("h-8 w-8 rounded-full")}
-                  {cardShimmerLine("h-8 w-8 rounded-full")}
-                  {cardShimmerLine("h-8 w-8 rounded-full")}
-                </>
-              ) : null}
+                <div className="mt-1 text-[24px] font-bold tabular-nums leading-none text-slate-900">
+                  {metrics.activeSetters}
+                </div>
+              </div>
             </div>
-          </MetricCard>
-        </div>
+          )}
+        </MetricCard>
       </div>
     </div>
   );

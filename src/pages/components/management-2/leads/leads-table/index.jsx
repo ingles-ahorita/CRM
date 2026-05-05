@@ -136,7 +136,7 @@ function SubTabs({ value, onChange }) {
 
 export default function LeadsTable({ title = "Today's Leads" }) {
   const [subTab, setSubTab] = useState("today");
-  const [sortOrder, setSortOrder] = useState("desc");
+  const [sortOrder, setSortOrder] = useState("desc"); 
   const [sortBy, setSortBy] = useState("call_date");
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -159,7 +159,6 @@ export default function LeadsTable({ title = "Today's Leads" }) {
     noManychatId: false,
   });
   const [noShowStateFilter, setNoShowStateFilter] = useState("");
-  const [openActionsId, setOpenActionsId] = useState(null);
   const [slotsByDate, setSlotsByDate] = useState({});
   const requestSeqRef = useRef(0);
   const [dataState, setDataState] = useState({
@@ -711,10 +710,8 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                     lead={l}
                     setterName={dataState?.setterMap?.[String(l.setter_id)] || l?.setters?.name}
                     closerName={dataState?.closerMap?.[String(l.closer_id)] || l?.closers?.name}
-                    actionsOpen={openActionsId === l.id}
-                    onToggleActions={() =>
-                      setOpenActionsId((prev) => (prev === l.id ? null : l.id))
-                    }
+                    setterMap={dataState?.setterMap || {}}
+                    closerList={dataState?.closerList || []}
                     useCompactStatusBadges
                   />
                 ))

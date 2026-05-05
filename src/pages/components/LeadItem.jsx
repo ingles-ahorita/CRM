@@ -1051,7 +1051,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
 
 
 
-const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSetter, lead, showToast, closerList = [], onRecoverLead }) => {
+export const ThreeDotsMenu = ({ onEdit, onDelete, onDeleteCall, mode, setMode, modalSetter, lead, showToast, closerList = [], onRecoverLead }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
   const anchorRef = useRef(null);
