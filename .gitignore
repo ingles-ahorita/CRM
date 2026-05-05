@@ -26,3 +26,4 @@ ga4-api-*.json
 *.njsproj
 *.sln
 *.sw?
+graphify-out

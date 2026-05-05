@@ -34,49 +34,49 @@ import {
 import NoShowStateModal from "../../../../NoShowStateModal";
 
 /** `calls` columns that affect Recovered Leads sidebar (Closer.jsx loadRecoveredAside). */
-const RECOVERED_RELATED_CALL_FIELDS = new Set([
+const RECOVERED_RELATED_CALL_FIELDS = new Set( [
   "showed_up",
   "confirmed",
   "cancelled",
   "recovered",
   "no_show_state",
   "purchased",
-]);
+] );
 
-function cx(...parts) {
-  return parts.filter(Boolean).join(" ");
+function cx ( ...parts ) {
+  return parts.filter( Boolean ).join( " " );
 }
 
 // Same as LeadItem.jsx
-function callTimeColor(time, isRescheduled, called) {
-  if (time === undefined) return "#e5e7eb"; // loading
-  if (isRescheduled && !called) return "#dd86ddff";
-  if (!called) return "#cfcfcfff";
-  if (time < 6) return "#88ff2dff";
-  if (time < 15) return "#fdd329ff";
-  if (time >= 15) return "#ff8b8bff";
+function callTimeColor ( time, isRescheduled, called ) {
+  if ( time === undefined ) return "#e5e7eb"; // loading
+  if ( isRescheduled && !called ) return "#dd86ddff";
+  if ( !called ) return "#cfcfcfff";
+  if ( time < 6 ) return "#88ff2dff";
+  if ( time < 15 ) return "#fdd329ff";
+  if ( time >= 15 ) return "#ff8b8bff";
   return "#e5e7eb";
 }
 
-function getZoomCallLogUrl(phone, bookDate) {
-  if (!phone || !bookDate) return "#";
-  const fromDate = new Date(bookDate);
-  fromDate.setDate(fromDate.getDate() - 1);
-  const toDate = new Date(bookDate);
-  toDate.setMonth(toDate.getMonth() + 1);
+function getZoomCallLogUrl ( phone, bookDate ) {
+  if ( !phone || !bookDate ) return "#";
+  const fromDate = new Date( bookDate );
+  fromDate.setDate( fromDate.getDate() - 1 );
+  const toDate = new Date( bookDate );
+  toDate.setMonth( toDate.getMonth() + 1 );
   const from = `${fromDate.getFullYear()}-${fromDate.getMonth() + 1}-${fromDate.getDate()} `;
   const to = `${toDate.getFullYear()}-${toDate.getMonth() + 1}-${toDate.getDate()} `;
-  const phoneCleaned = "+" + phone.toString().replace(/\D/g, "");
-  return `https://us06web.zoom.us/pbx/page/telephone/callLog#/recording-list?page_size=15&page_number=1&recordingReport=0&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&keyword=${encodeURIComponent(phoneCleaned)}`;
+  const phoneCleaned = "+" + phone.toString().replace( /\D/g, "" );
+  return `https://us06web.zoom.us/pbx/page/telephone/callLog#/recording-list?page_size=15&page_number=1&recordingReport=0&from=${encodeURIComponent( from )}&to=${encodeURIComponent( to )}&keyword=${encodeURIComponent( phoneCleaned )}`;
 }
 
-function ResponsePill({ lead, calltimeLoading = false }) {
+function ResponsePill ( { lead, calltimeLoading = false } ) {
   const phone = lead?.leads?.phone || lead?.phone;
   const bookDate = lead?.book_date;
-  const href = getZoomCallLogUrl(phone, bookDate);
+  const href = getZoomCallLogUrl( phone, bookDate );
 
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+    <a href={href} target="_blank" rel="noopener noreferrer" onClick={( e ) => e.stopPropagation()}>
       <span
         className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[12px] font-semibold"
         style={{
@@ -116,7 +116,7 @@ const TABS = [
   { key: "all", label: "All" },
 ];
 
-function MainTabs({ value, onChange, leadsCount = 0, payoffCount = 0 }) {
+function MainTabs ( { value, onChange, leadsCount = 0, payoffCount = 0 } ) {
   const tabs = [
     { key: MAIN_TABS.leads, label: "Leads", count: leadsCount },
     {
@@ -129,13 +129,13 @@ function MainTabs({ value, onChange, leadsCount = 0, payoffCount = 0 }) {
 
   return (
     <div className="inline-flex rounded-lg bg-slate-100/80 p-1">
-      {tabs.map((t) => {
+      {tabs.map( ( t ) => {
         const active = t.key === value;
         return (
           <button
             key={t.key}
             type="button"
-            onClick={() => onChange?.(t.key)}
+            onClick={() => onChange?.( t.key )}
             className={cx(
               "px-3 py-1 text-[11px] font-semibold rounded-md transition !outline-none",
               active
@@ -161,21 +161,21 @@ function MainTabs({ value, onChange, leadsCount = 0, payoffCount = 0 }) {
             </span>
           </button>
         );
-      })}
+      } )}
     </div>
   );
 }
 
-function Tabs({ value, onChange }) {
+function Tabs ( { value, onChange } ) {
   return (
     <div className="inline-flex rounded-lg bg-slate-100/80 p-1">
-      {TABS.map((t) => {
+      {TABS.map( ( t ) => {
         const active = t.key === value;
         return (
           <button
             key={t.key}
             type="button"
-            onClick={() => onChange?.(t.key)}
+            onClick={() => onChange?.( t.key )}
             className={cx(
               "px-3 py-1 text-[11px] font-semibold rounded-md transition !outline-none",
               active
@@ -186,18 +186,18 @@ function Tabs({ value, onChange }) {
             {t.label}
           </button>
         );
-      })}
+      } )}
     </div>
   );
 }
 
-function StatusPill({
+function StatusPill ( {
   children,
   tone = "neutral",
   as: As = "span",
   className,
   ...props
-}) {
+} ) {
   const cls =
     tone === "good"
       ? "bg-emerald-100 text-emerald-700"
@@ -220,49 +220,49 @@ function StatusPill({
   );
 }
 
-const formatStatusValue = (value) => {
-  if (value === true) return "true";
-  if (value === false) return "false";
-  if (value === null || value === undefined) return "null";
+const formatStatusValue = ( value ) => {
+  if ( value === true ) return "true";
+  if ( value === false ) return "false";
+  if ( value === null || value === undefined ) return "null";
   return value;
 };
 
-async function firePifConfetti() {
+async function firePifConfetti () {
   try {
-    const mod = await import("canvas-confetti");
+    const mod = await import( "canvas-confetti" );
     const confetti = mod?.default || mod;
-    confetti({
+    confetti( {
       particleCount: 120,
       spread: 70,
       origin: { y: 0.6 },
       scalar: 0.9,
       ticks: 220,
-    });
-    confetti({
+    } );
+    confetti( {
       particleCount: 70,
       spread: 100,
       origin: { y: 0.65 },
       startVelocity: 35,
       scalar: 0.8,
       ticks: 200,
-    });
-  } catch (e) {
-    console.warn("[CloserTodaysLeads] confetti failed to load:", e);
+    } );
+  } catch ( e ) {
+    console.warn( "[CloserTodaysLeads] confetti failed to load:", e );
   }
 }
 
-function StatusPillControl({
+function StatusPillControl ( {
   label,
   value,
   onChange,
   goodTone = "good",
   badTone = "neutral",
   disabled = false,
-}) {
-  const [open, setOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef(null);
-  const menuRef = useRef(null);
+} ) {
+  const [ open, setOpen ] = useState( false );
+  const [ menuPosition, setMenuPosition ] = useState( { top: 0, left: 0 } );
+  const triggerRef = useRef( null );
+  const menuRef = useRef( null );
 
   const s =
     value === "true" || value === true
@@ -273,29 +273,29 @@ function StatusPillControl({
   const pillTone = s === "yes" ? goodTone : s === "no" ? badTone : "warn";
   const pillText = s === "yes" ? "✓" : s === "no" ? "✕" : "?";
 
-  useEffect(() => {
-    if (!open) return;
+  useEffect( () => {
+    if ( !open ) return;
     const updatePosition = () => {
       const triggerEl = triggerRef.current;
-      if (!triggerEl) return;
+      if ( !triggerEl ) return;
       const rect = triggerEl.getBoundingClientRect();
       const menuHeight = menuRef.current?.offsetHeight || 108;
       const openUp = rect.bottom + menuHeight + 8 > window.innerHeight;
       const top = openUp
-        ? Math.max(8, rect.top - menuHeight - 8)
-        : Math.min(window.innerHeight - menuHeight - 8, rect.bottom + 8);
-      const left = Math.max(8, Math.min(window.innerWidth - 120, rect.left));
-      setMenuPosition({ top, left });
+        ? Math.max( 8, rect.top - menuHeight - 8 )
+        : Math.min( window.innerHeight - menuHeight - 8, rect.bottom + 8 );
+      const left = Math.max( 8, Math.min( window.innerWidth - 120, rect.left ) );
+      setMenuPosition( { top, left } );
     };
 
     updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener( "resize", updatePosition );
+    window.addEventListener( "scroll", updatePosition, true );
     return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener( "resize", updatePosition );
+      window.removeEventListener( "scroll", updatePosition, true );
     };
-  }, [open]);
+  }, [ open ] );
 
   return (
     <div className="relative flex justify-center items-center">
@@ -306,11 +306,11 @@ function StatusPillControl({
           disabled={disabled}
           onClick={() => {
             // TEMP: For PURCHASED, don't open dropdown — just show celebration animation.
-            if (label === "PURCHASED") {
+            if ( label === "PURCHASED" ) {
               firePifConfetti();
               return;
             }
-            setOpen((v) => !v);
+            setOpen( ( v ) => !v );
           }}
           className={cx(
             "focus:outline-none focus:ring-2 focus:ring-indigo-500/40",
@@ -337,8 +337,8 @@ function StatusPillControl({
             <button
               type="button"
               onClick={() => {
-                setOpen(false);
-                onChange?.("true");
+                setOpen( false );
+                onChange?.( "true" );
               }}
               className="w-full px-3 py-2 text-left text-[12px] font-semibold bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100"
             >
@@ -347,8 +347,8 @@ function StatusPillControl({
             <button
               type="button"
               onClick={() => {
-                setOpen(false);
-                onChange?.("false");
+                setOpen( false );
+                onChange?.( "false" );
               }}
               className="w-full px-3 py-2 text-left text-[12px] font-semibold bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100"
             >
@@ -357,8 +357,8 @@ function StatusPillControl({
             <button
               type="button"
               onClick={() => {
-                setOpen(false);
-                onChange?.("null");
+                setOpen( false );
+                onChange?.( "null" );
               }}
               className="w-full px-3 py-2 text-left text-[12px] font-semibold bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100"
             >
@@ -367,7 +367,7 @@ function StatusPillControl({
           </div>
           <div
             className="fixed inset-0 z-40 cursor-default bg-transparent"
-            onClick={() => setOpen(false)}
+            onClick={() => setOpen( false )}
             aria-label="Close status menu"
             role="button"
             tabIndex={-1}
@@ -379,40 +379,40 @@ function StatusPillControl({
 }
 
 // LeadItem.jsx-compatible dropdown UI (YES/NO/TBD with colored background)
-function StatusDropdown({
+function StatusDropdown ( {
   value,
   onChange,
   label,
   disabled = false,
   onClick = null,
   outcomeLog = null,
-}) {
+} ) {
   const getBackgroundColor = () => {
-    const isDontQualify = Array.isArray(outcomeLog)
-      ? outcomeLog.some((ol) => ol?.outcome === "dont_qualify")
+    const isDontQualify = Array.isArray( outcomeLog )
+      ? outcomeLog.some( ( ol ) => ol?.outcome === "dont_qualify" )
       : outcomeLog?.outcome === "dont_qualify";
-    if (isDontQualify && label === "PURCHASED") return "#000000";
-    if (label === "PURCHASED") {
-      const isLockIn = Array.isArray(outcomeLog)
-        ? outcomeLog.some((ol) => ol?.outcome === "lock_in")
+    if ( isDontQualify && label === "PURCHASED" ) return "#000000";
+    if ( label === "PURCHASED" ) {
+      const isLockIn = Array.isArray( outcomeLog )
+        ? outcomeLog.some( ( ol ) => ol?.outcome === "lock_in" )
         : outcomeLog?.outcome === "lock_in";
-      const isFollowUp = Array.isArray(outcomeLog)
-        ? outcomeLog.some((ol) => ol?.outcome === "follow_up")
+      const isFollowUp = Array.isArray( outcomeLog )
+        ? outcomeLog.some( ( ol ) => ol?.outcome === "follow_up" )
         : outcomeLog?.outcome === "follow_up";
-      if (isLockIn || isFollowUp) return "#e9d5ff";
+      if ( isLockIn || isFollowUp ) return "#e9d5ff";
     }
-    if (value === true || value === "true") return "#cfffc5ff";
-    if (value === false || value === "false") return "#ff9494ff";
-    if (value === null || value === "" || value === undefined || value === "null")
+    if ( value === true || value === "true" ) return "#cfffc5ff";
+    if ( value === false || value === "false" ) return "#ff9494ff";
+    if ( value === null || value === "" || value === undefined || value === "null" )
       return "#f9ffa6ff";
     return "#f9ffa6ff";
   };
 
   const isDontQualify =
-    (label === "SHOW UP" || label === "PURCHASED") &&
-    (Array.isArray(outcomeLog)
-      ? outcomeLog.some((ol) => ol?.outcome === "dont_qualify")
-      : outcomeLog?.outcome === "dont_qualify");
+    ( label === "SHOW UP" || label === "PURCHASED" ) &&
+    ( Array.isArray( outcomeLog )
+      ? outcomeLog.some( ( ol ) => ol?.outcome === "dont_qualify" )
+      : outcomeLog?.outcome === "dont_qualify" );
 
   return (
     <div
@@ -439,8 +439,8 @@ function StatusDropdown({
         {label}
       </label>
       <select
-        value={String(value)}
-        onChange={(e) => onChange(e.target.value)}
+        value={String( value )}
+        onChange={( e ) => onChange( e.target.value )}
         disabled={disabled}
         style={{
           appearance: "none",
@@ -458,16 +458,16 @@ function StatusDropdown({
           textAlign: "center",
           width: 50,
         }}
-        onMouseEnter={(e) => {
+        onMouseEnter={( e ) => {
           e.currentTarget.style.opacity = "0.8";
           e.currentTarget.style.borderColor = "#bcbec0ff";
         }}
-        onMouseLeave={(e) => {
+        onMouseLeave={( e ) => {
           e.currentTarget.style.opacity = "1";
           e.currentTarget.style.borderColor = "#d1d5db";
         }}
-        onMouseDown={(e) => {
-          if (onClick) {
+        onMouseDown={( e ) => {
+          if ( onClick ) {
             e.preventDefault();
             onClick();
           }
@@ -491,7 +491,7 @@ function StatusDropdown({
   );
 }
 
-function ActionMenu({
+function ActionMenu ( {
   open,
   onToggle,
   onCopyCallId,
@@ -504,15 +504,15 @@ function ActionMenu({
   onDeleteCall,
   onReport,
   canReschedule,
-}) {
-  const anchorRef = useRef(null);
-  const menuRef = useRef(null);
-  const [menuPos, setMenuPos] = useState({ left: 0, top: 0 });
+} ) {
+  const anchorRef = useRef( null );
+  const menuRef = useRef( null );
+  const [ menuPos, setMenuPos ] = useState( { left: 0, top: 0 } );
 
-  useEffect(() => {
-    if (!open) return;
+  useEffect( () => {
+    if ( !open ) return;
     const anchor = anchorRef.current;
-    if (!anchor) return;
+    if ( !anchor ) return;
 
     const gap = 8;
     const computeAndSetPos = () => {
@@ -520,8 +520,8 @@ function ActionMenu({
       const menuEl = menuRef.current;
       const menuRect = menuEl?.getBoundingClientRect?.();
 
-      if (!menuRect) {
-        setMenuPos({ left: rect.right, top: rect.bottom + gap });
+      if ( !menuRect ) {
+        setMenuPos( { left: rect.right, top: rect.bottom + gap } );
         return;
       }
 
@@ -529,25 +529,25 @@ function ActionMenu({
       const openUp = spaceBelow < menuRect.height + gap;
 
       const top = openUp
-        ? Math.max(gap, rect.top - menuRect.height - gap)
+        ? Math.max( gap, rect.top - menuRect.height - gap )
         : rect.bottom + gap;
       const left = Math.min(
         window.innerWidth - gap,
-        Math.max(gap, rect.right - menuRect.width),
+        Math.max( gap, rect.right - menuRect.width ),
       );
-      setMenuPos({ left, top });
+      setMenuPos( { left, top } );
     };
 
     computeAndSetPos();
-    const raf = requestAnimationFrame(computeAndSetPos);
-    window.addEventListener("resize", computeAndSetPos);
-    window.addEventListener("scroll", computeAndSetPos, true);
+    const raf = requestAnimationFrame( computeAndSetPos );
+    window.addEventListener( "resize", computeAndSetPos );
+    window.addEventListener( "scroll", computeAndSetPos, true );
     return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", computeAndSetPos);
-      window.removeEventListener("scroll", computeAndSetPos, true);
+      cancelAnimationFrame( raf );
+      window.removeEventListener( "resize", computeAndSetPos );
+      window.removeEventListener( "scroll", computeAndSetPos, true );
     };
-  }, [open]);
+  }, [ open ] );
 
   return (
     <div className="relative">
@@ -634,7 +634,7 @@ function ActionMenu({
           </div>
           <div
             className="fixed inset-0 z-[9999]"
-            onClick={(e) => {
+            onClick={( e ) => {
               e.stopPropagation();
               onToggle?.();
             }}
@@ -645,7 +645,7 @@ function ActionMenu({
   );
 }
 
-function LeadRow({
+function LeadRow ( {
   lead,
   setterName,
   onUpdateStatus,
@@ -662,7 +662,7 @@ function LeadRow({
   onToggleActions,
   useCompactStatusBadges = false,
   calltimeLoading = false,
-}) {
+} ) {
   const navigate = useNavigate();
   const profile = lead?.leads || {};
   const name = profile?.name || "—";
@@ -670,34 +670,34 @@ function LeadRow({
   const phone = profile?.phone || "—";
   const leadId = profile?.id ?? lead?.lead_id ?? null;
 
-  const manyChatUrl = useMemo(() => {
-    if (!phone || phone === "—") return null;
-    const digits = String(phone).replace(/\D/g, "");
-    if (!digits) return null;
+  const manyChatUrl = useMemo( () => {
+    if ( !phone || phone === "—" ) return null;
+    const digits = String( phone ).replace( /\D/g, "" );
+    if ( !digits ) return null;
     const template =
       "https://app.manychat.com/signin?return=%2Ffb1237190%2Fchat%2F256311379";
-    return template.replace(/(chat%2F)\d+$/, `$1${encodeURIComponent(digits)}`);
-  }, [phone]);
+    return template.replace( /(chat%2F)\d+$/, `$1${encodeURIComponent( digits )}` );
+  }, [ phone ] );
 
-  const kajabiContactsUrl = useMemo(() => {
+  const kajabiContactsUrl = useMemo( () => {
     const e = profile?.email;
-    if (!e) return null;
+    if ( !e ) return null;
     return `https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(
       e,
     )}`;
-  }, [profile?.email]);
+  }, [ profile?.email ] );
 
-  const emojiStack = (() => {
+  const emojiStack = ( () => {
     const callSource = lead?.source_type || profile?.source || "organic";
-    const isAds = String(callSource).toLowerCase().includes("ad");
+    const isAds = String( callSource ).toLowerCase().includes( "ad" );
     const callCampaign = lead?.utm_campaign;
     return (
       <>
         <span className="text-[16px] leading-4">{isAds ? "💰" : "🌱"}</span>
-        {(callCampaign === "dm-setter" || callCampaign === "ai-setting") && (
+        {( callCampaign === "dm-setter" || callCampaign === "ai-setting" ) && (
           <span className="text-[16px] leading-4">💬</span>
         )}
-        {(lead?.recovered || lead?.is_reschedule) && (
+        {( lead?.recovered || lead?.is_reschedule ) && (
           <span
             className="text-[16px] leading-4"
             title={lead?.recovered ? "Recovered lead" : "Reschedule"}
@@ -708,38 +708,38 @@ function LeadRow({
         {lead?.cancelled && <span className="text-[16px] leading-4">❌</span>}
       </>
     );
-  })();
+  } )();
 
   const timeIso = lead?.call_date || lead?.book_date;
   const timeLabel = timeIso
-    ? new Date(timeIso).toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? new Date( timeIso ).toLocaleTimeString( undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    } )
     : "—";
 
-  const [pickUpValue, setPickUpValue] = useState(() =>
-    formatStatusValue(lead?.picked_up),
+  const [ pickUpValue, setPickUpValue ] = useState( () =>
+    formatStatusValue( lead?.picked_up ),
   );
-  const [confirmedValue, setConfirmedValue] = useState(() =>
-    formatStatusValue(lead?.confirmed),
+  const [ confirmedValue, setConfirmedValue ] = useState( () =>
+    formatStatusValue( lead?.confirmed ),
   );
-  const [showUpValue, setShowUpValue] = useState(() =>
-    formatStatusValue(lead?.showed_up),
+  const [ showUpValue, setShowUpValue ] = useState( () =>
+    formatStatusValue( lead?.showed_up ),
   );
-  const [purchaseValue, setPurchaseValue] = useState(() =>
-    formatStatusValue(lead?.purchased),
+  const [ purchaseValue, setPurchaseValue ] = useState( () =>
+    formatStatusValue( lead?.purchased ),
   );
-  const [showConfirmCancelModal, setShowConfirmCancelModal] = useState(false);
-  const [pendingConfirmedValue, setPendingConfirmedValue] = useState(null);
-  const [showNoShowStateModal, setShowNoShowStateModal] = useState(false);
+  const [ showConfirmCancelModal, setShowConfirmCancelModal ] = useState( false );
+  const [ pendingConfirmedValue, setPendingConfirmedValue ] = useState( null );
+  const [ showNoShowStateModal, setShowNoShowStateModal ] = useState( false );
 
-  useEffect(() => {
-    setPickUpValue(formatStatusValue(lead?.picked_up));
-    setConfirmedValue(formatStatusValue(lead?.confirmed));
-    setShowUpValue(formatStatusValue(lead?.showed_up));
-    setPurchaseValue(formatStatusValue(lead?.purchased));
-  }, [lead]);
+  useEffect( () => {
+    setPickUpValue( formatStatusValue( lead?.picked_up ) );
+    setConfirmedValue( formatStatusValue( lead?.confirmed ) );
+    setShowUpValue( formatStatusValue( lead?.showed_up ) );
+    setPurchaseValue( formatStatusValue( lead?.purchased ) );
+  }, [ lead ] );
 
   return (
     <div
@@ -764,7 +764,7 @@ function LeadRow({
           <div className="text-sm font-semibold text-slate-900 truncate">
             {leadId ? (
               <span
-                onClick={() => navigate(`/lead/${leadId}`)}
+                onClick={() => navigate( `/lead/${leadId}` )}
                 className="cursor-pointer hover:underline underline-offset-2"
                 title="Open lead"
               >
@@ -783,7 +783,7 @@ function LeadRow({
                   rel="noreferrer"
                   className="hover:underline underline-offset-2 text-slate-900"
                   title="Open in Kajabi"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={( e ) => e.stopPropagation()}
                 >
                   {email}
                 </a>
@@ -798,16 +798,16 @@ function LeadRow({
                     rel="noreferrer"
                     className="hover:underline underline-offset-2 text-slate-900"
                     title="Open in ManyChat"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={( e ) => e.stopPropagation()}
                   >
                     {phone}
                   </a>
                 ) : (
                   phone
                 )}
-                {phone && getCountryFlagFromPhone(phone) ? (
-                  <span className="ml-1" title={getCountryFromPhone(phone)}>
-                    {getCountryFlagFromPhone(phone)}
+                {phone && getCountryFlagFromPhone( phone ) ? (
+                  <span className="ml-1" title={getCountryFromPhone( phone )}>
+                    {getCountryFlagFromPhone( phone )}
                   </span>
                 ) : null}
               </div>
@@ -859,8 +859,8 @@ function LeadRow({
             <div className="flex items-end gap-2">
               <StatusDropdown
                 value={pickUpValue}
-                onChange={(v) =>
-                  onUpdateStatus?.(lead, "picked_up", v, setPickUpValue)
+                onChange={( v ) =>
+                  onUpdateStatus?.( lead, "picked_up", v, setPickUpValue )
                 }
                 label="PICK UP"
                 // Match LeadItem.jsx: disabled in closer/view mode
@@ -868,12 +868,12 @@ function LeadRow({
               />
               <StatusDropdown
                 value={confirmedValue}
-                onChange={(v) => {
-                  if (v === "false" || v === false) {
-                    setPendingConfirmedValue(v);
-                    setShowConfirmCancelModal(true);
+                onChange={( v ) => {
+                  if ( v === "false" || v === false ) {
+                    setPendingConfirmedValue( v );
+                    setShowConfirmCancelModal( true );
                   } else {
-                    onUpdateStatus?.(lead, "confirmed", v, setConfirmedValue);
+                    onUpdateStatus?.( lead, "confirmed", v, setConfirmedValue );
                   }
                 }}
                 label="CONFIRMED"
@@ -882,16 +882,16 @@ function LeadRow({
               />
               <StatusDropdown
                 value={showUpValue}
-                onChange={(v) => {
-                  if (v === "false" || v === false) {
-                    setShowNoShowStateModal(true);
+                onChange={( v ) => {
+                  if ( v === "false" || v === false ) {
+                    setShowNoShowStateModal( true );
                   } else {
-                    onUpdateStatus?.(lead, "showed_up", v, setShowUpValue);
+                    onUpdateStatus?.( lead, "showed_up", v, setShowUpValue );
                   }
                 }}
                 onClick={
                   showUpValue === "false" || showUpValue === false
-                    ? () => setShowNoShowStateModal(true)
+                    ? () => setShowNoShowStateModal( true )
                     : undefined
                 }
                 label="SHOW UP"
@@ -904,8 +904,8 @@ function LeadRow({
                 label="PURCHASED"
                 // Match LeadItem.jsx: disabled when showed_up is false (closer/admin case)
                 disabled={lead?.showed_up === false}
-                onChange={(v) =>
-                  onUpdateStatus?.(lead, "purchased", v, setPurchaseValue)
+                onChange={( v ) =>
+                  onUpdateStatus?.( lead, "purchased", v, setPurchaseValue )
                 }
               />
             </div>
@@ -954,8 +954,8 @@ function LeadRow({
       <Modal
         isOpen={showConfirmCancelModal}
         onClose={() => {
-          setShowConfirmCancelModal(false);
-          setPendingConfirmedValue(null);
+          setShowConfirmCancelModal( false );
+          setPendingConfirmedValue( null );
         }}
       >
         <div style={{ padding: "24px", maxWidth: "400px" }}>
@@ -983,8 +983,8 @@ function LeadRow({
             <button
               type="button"
               onClick={() => {
-                setShowConfirmCancelModal(false);
-                setPendingConfirmedValue(null);
+                setShowConfirmCancelModal( false );
+                setPendingConfirmedValue( null );
               }}
               style={{
                 padding: "10px 20px",
@@ -1003,7 +1003,7 @@ function LeadRow({
             <button
               type="button"
               onClick={() => {
-                if (pendingConfirmedValue != null) {
+                if ( pendingConfirmedValue != null ) {
                   onUpdateStatus?.(
                     lead,
                     "confirmed",
@@ -1012,8 +1012,8 @@ function LeadRow({
                     { cancelled: true },
                   );
                 }
-                setShowConfirmCancelModal(false);
-                setPendingConfirmedValue(null);
+                setShowConfirmCancelModal( false );
+                setPendingConfirmedValue( null );
               }}
               style={{
                 padding: "10px 20px",
@@ -1035,10 +1035,10 @@ function LeadRow({
 
       <NoShowStateModal
         isOpen={showNoShowStateModal}
-        onClose={() => setShowNoShowStateModal(false)}
+        onClose={() => setShowNoShowStateModal( false )}
         leadName={name}
         currentNoShowState={lead?.no_show_state}
-        onConfirm={async (noShowState) => {
+        onConfirm={async ( noShowState ) => {
           const extraUpdates =
             noShowState === "showed_up_yes" ? {} : { no_show_state: noShowState };
           const showedUpValue = noShowState === "showed_up_yes";
@@ -1056,19 +1056,19 @@ function LeadRow({
   );
 }
 
-function PayoffRow({
+function PayoffRow ( {
   name,
   meta,
   actionLabel,
   onAction,
   actionDisabled = false,
   onDismiss,
-}) {
-  const cleanPhone = (p) => String(p || "").replace(/\D/g, "");
-  const phoneDigits = cleanPhone(meta?.phone);
+} ) {
+  const cleanPhone = ( p ) => String( p || "" ).replace( /\D/g, "" );
+  const phoneDigits = cleanPhone( meta?.phone );
   const phoneDisplay = meta?.phone || "—";
   const waUrl = phoneDigits
-    ? `https://wa.me/${encodeURIComponent(phoneDigits)}`
+    ? `https://wa.me/${encodeURIComponent( phoneDigits )}`
     : null;
 
   return (
@@ -1090,9 +1090,9 @@ function PayoffRow({
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={(e) => {
+                onClick={( e ) => {
                   e.stopPropagation();
-                  navigator.clipboard.writeText(String(phoneDigits));
+                  navigator.clipboard.writeText( String( phoneDigits ) );
                 }}
                 title="Copy phone"
               >
@@ -1107,7 +1107,7 @@ function PayoffRow({
       <div className="flex items-center gap-2 flex-shrink-0">
         <button
           type="button"
-          onClick={(e) => {
+          onClick={( e ) => {
             e.stopPropagation();
             onDismiss?.();
           }}
@@ -1120,9 +1120,9 @@ function PayoffRow({
         <button
           type="button"
           disabled={!waUrl}
-          onClick={(e) => {
+          onClick={( e ) => {
             e.stopPropagation();
-            if (waUrl) window.open(waUrl, "_blank", "noopener,noreferrer");
+            if ( waUrl ) window.open( waUrl, "_blank", "noopener,noreferrer" );
           }}
           className={cx(
             "rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold px-3 py-2 transition inline-flex items-center gap-1.5",
@@ -1146,7 +1146,7 @@ function PayoffRow({
   );
 }
 
-export default function CloserTodaysLeads({
+export default function CloserTodaysLeads ( {
   loading = false,
   title = "Today's Leads",
   leads = [],
@@ -1158,122 +1158,123 @@ export default function CloserTodaysLeads({
   onRecoveredChange,
   activeTab = "today",
   onTabChange,
-}) {
-  const safeLeads = Array.isArray(leads) ? leads : [];
-  const tabValue = useMemo(() => activeTab || "today", [activeTab]);
-  const [mainTab, setMainTab] = useState(MAIN_TABS.leads);
-  const [dismissedPayoffIds, setDismissedPayoffIds] = useState(() => new Set());
-  const rawPayoffList = Array.isArray(payoffEntries) ? payoffEntries : [];
-  const payoffList = useMemo(() => {
-    if (!dismissedPayoffIds?.size) return rawPayoffList;
-    return rawPayoffList.filter((p) => {
-      const id = String(p?.kajabiPurchaseId || p?.call?.id || "");
-      return !dismissedPayoffIds.has(id);
-    });
-  }, [rawPayoffList, dismissedPayoffIds]);
-  const [toast, setToast] = useState({
+  searchTerm = "",
+  onSearchChange,
+} ) {
+  const safeLeads = Array.isArray( leads ) ? leads : [];
+  const tabValue = useMemo( () => activeTab || "today", [ activeTab ] );
+  const [ mainTab, setMainTab ] = useState( MAIN_TABS.leads );
+  const [ dismissedPayoffIds, setDismissedPayoffIds ] = useState( () => new Set() );
+  const rawPayoffList = Array.isArray( payoffEntries ) ? payoffEntries : [];
+  const payoffList = useMemo( () => {
+    if ( !dismissedPayoffIds?.size ) return rawPayoffList;
+    return rawPayoffList.filter( ( p ) => {
+      const id = String( p?.kajabiPurchaseId || p?.call?.id || "" );
+      return !dismissedPayoffIds.has( id );
+    } );
+  }, [ rawPayoffList, dismissedPayoffIds ] );
+  const [ toast, setToast ] = useState( {
     show: false,
     message: "",
     type: "success",
-  });
-  const [noteLead, setNoteLead] = useState(null);
-  const [viewLead, setViewLead] = useState(null);
-  const [setterNoteLead, setSetterNoteLead] = useState(null);
-  const [closerNoteLead, setCloserNoteLead] = useState(null);
-  const [transferLead, setTransferLead] = useState(null);
-  const [recoverLead, setRecoverLead] = useState(null);
-  const [openActionsId, setOpenActionsId] = useState(null);
-  const [openPayoffEntry, setOpenPayoffEntry] = useState(null);
+  } );
+  const [ noteLead, setNoteLead ] = useState( null );
+  const [ viewLead, setViewLead ] = useState( null );
+  const [ setterNoteLead, setSetterNoteLead ] = useState( null );
+  const [ closerNoteLead, setCloserNoteLead ] = useState( null );
+  const [ transferLead, setTransferLead ] = useState( null );
+  const [ recoverLead, setRecoverLead ] = useState( null );
+  const [ openActionsId, setOpenActionsId ] = useState( null );
+  const [ openPayoffEntry, setOpenPayoffEntry ] = useState( null );
 
   const leadsCountForDisplay = safeLeads.length;
   const payoffCountForDisplay = payoffList.length;
 
   // HeaderTabsAndToolbar-style filters (local, for this table)
-  const [sortOrder, setSortOrder] = useState("asc"); // Earliest first by default
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [statusFilters, setStatusFilters] = useState({
+  const [ sortOrder, setSortOrder ] = useState( "asc" ); // Earliest first by default
+  const [ showFilterPanel, setShowFilterPanel ] = useState( false );
+  const [ showSearch, setShowSearch ] = useState( false );
+  const [ startDate, setStartDate ] = useState( "" );
+  const [ endDate, setEndDate ] = useState( "" );
+  const [ statusFilters, setStatusFilters ] = useState( {
     noConversations: false,
     noManyChatId: false,
     lockIn: false,
-  });
-  const [noShowStateFilter, setNoShowStateFilter] = useState("");
+  } );
+  const [ noShowStateFilter, setNoShowStateFilter ] = useState( "" );
 
-  const filteredLeads = useMemo(() => {
-    const term = String(searchTerm || "").trim().toLowerCase();
+  const filteredLeads = useMemo( () => {
+    const term = String( searchTerm || "" ).trim().toLowerCase();
     const hasTerm = term.length > 0;
 
-    const start = startDate ? new Date(startDate) : null;
-    const end = endDate ? new Date(endDate) : null;
+    const start = startDate ? new Date( startDate ) : null;
+    const end = endDate ? new Date( endDate ) : null;
 
-    return safeLeads.filter((l) => {
+    return safeLeads.filter( ( l ) => {
       const profile = l?.leads || {};
-      const name = String(profile?.name || l?.name || "").toLowerCase();
-      const email = String(profile?.email || l?.email || "").toLowerCase();
-      const phone = String(profile?.phone || l?.phone || "").toLowerCase();
-      if (hasTerm && !(`${name} ${email} ${phone}`.includes(term))) return false;
+      const name = String( profile?.name || l?.name || "" ).toLowerCase();
+      const email = String( profile?.email || l?.email || "" ).toLowerCase();
+      const phone = String( profile?.phone || l?.phone || "" ).toLowerCase();
+      if ( hasTerm && !( `${name} ${email} ${phone}`.includes( term ) ) ) return false;
 
       const mcId = l?.manychat_user_id || profile?.mc_id;
-      if (statusFilters.noManyChatId && !!mcId) return false;
-      if (statusFilters.noConversations && !!mcId) return false; // best-effort match
+      if ( statusFilters.noManyChatId && !!mcId ) return false;
+      if ( statusFilters.noConversations && !!mcId ) return false; // best-effort match
 
-      if (statusFilters.lockIn) {
+      if ( statusFilters.lockIn ) {
         const ol = l?.outcome_log;
-        const hasLockIn = Array.isArray(ol)
-          ? ol.some((x) => x?.outcome === "lock_in")
+        const hasLockIn = Array.isArray( ol )
+          ? ol.some( ( x ) => x?.outcome === "lock_in" )
           : ol?.outcome === "lock_in";
-        if (!hasLockIn) return false;
+        if ( !hasLockIn ) return false;
       }
 
-      if (tabValue === "no shows" && noShowStateFilter) {
-        if (String(l?.no_show_state || "") !== noShowStateFilter) return false;
+      if ( tabValue === "no shows" && noShowStateFilter ) {
+        if ( String( l?.no_show_state || "" ) !== noShowStateFilter ) return false;
       }
 
       // Date range is only used on broader views, matching Header behavior
-      if ((tabValue === "all" || tabValue === "follow ups" || tabValue === "no shows") && (start || end)) {
+      if ( ( tabValue === "all" || tabValue === "follow ups" || tabValue === "no shows" ) && ( start || end ) ) {
         const iso = l?.call_date || l?.book_date;
-        const d = iso ? new Date(iso) : null;
-        if (!d || Number.isNaN(d.getTime())) return false;
-        if (start && d < start) return false;
-        if (end) {
-          const endMax = new Date(end);
-          endMax.setHours(23, 59, 59, 999);
-          if (d > endMax) return false;
+        const d = iso ? new Date( iso ) : null;
+        if ( !d || Number.isNaN( d.getTime() ) ) return false;
+        if ( start && d < start ) return false;
+        if ( end ) {
+          const endMax = new Date( end );
+          endMax.setHours( 23, 59, 59, 999 );
+          if ( d > endMax ) return false;
         }
       }
 
       return true;
-    });
-  }, [safeLeads, searchTerm, startDate, endDate, statusFilters, tabValue, noShowStateFilter]);
+    } );
+  }, [ safeLeads, searchTerm, startDate, endDate, statusFilters, tabValue, noShowStateFilter ] );
 
-  const sortedLeads = useMemo(() => {
-    const isRejected = (l) => {
-      if (l?.cancelled) return true;
-      const s = String(l?.status || l?.call_status || "").toLowerCase();
+  const sortedLeads = useMemo( () => {
+    const isRejected = ( l ) => {
+      if ( l?.cancelled ) return true;
+      const s = String( l?.status || l?.call_status || "" ).toLowerCase();
       return s === "rejected" || s === "cancelled";
     };
     const dir = sortOrder === "asc" ? 1 : -1;
-    return [...filteredLeads].sort((a, b) => {
+    return [ ...filteredLeads ].sort( ( a, b ) => {
       // Always keep rejected rows at the bottom (even with filters / sorting)
-      const ra = Number(isRejected(a));
-      const rb = Number(isRejected(b));
-      if (ra !== rb) return ra - rb;
+      const ra = Number( isRejected( a ) );
+      const rb = Number( isRejected( b ) );
+      if ( ra !== rb ) return ra - rb;
 
       // Then sort by time inside each group
-      const ad = new Date(a?.call_date || a?.book_date || 0).getTime();
-      const bd = new Date(b?.call_date || b?.book_date || 0).getTime();
-      return (ad - bd) * dir;
-    });
-  }, [filteredLeads, sortOrder]);
+      const ad = new Date( a?.call_date || a?.book_date || 0 ).getTime();
+      const bd = new Date( b?.call_date || b?.book_date || 0 ).getTime();
+      return ( ad - bd ) * dir;
+    } );
+  }, [ filteredLeads, sortOrder ] );
 
-  const showToast = (message, type = "success") => {
-    setToast({ show: true, message, type });
-    window.setTimeout(() => {
-      setToast({ show: false, message: "", type: "success" });
-    }, 2500);
+  const showToast = ( message, type = "success" ) => {
+    setToast( { show: true, message, type } );
+    window.setTimeout( () => {
+      setToast( { show: false, message: "", type: "success" } );
+    }, 2500 );
   };
 
   const updateStatus = async (
@@ -1284,13 +1285,13 @@ export default function CloserTodaysLeads({
     extraUpdates = {},
   ) => {
     const id = callRow?.id;
-    if (!id) return false;
+    if ( !id ) return false;
 
-    setterF(value); // optimistic
+    setterF( value ); // optimistic
 
     const leadData = {
       ...callRow,
-      ...(callRow?.leads || {}),
+      ...( callRow?.leads || {} ),
     };
 
     let updatePayload = {};
@@ -1298,28 +1299,28 @@ export default function CloserTodaysLeads({
     try {
       let formattedValue = value;
       if (
-        ["picked_up", "confirmed", "showed_up", "purchased"].includes(field)
+        [ "picked_up", "confirmed", "showed_up", "purchased" ].includes( field )
       ) {
-        if (value === "true" || value === true) formattedValue = true;
-        else if (value === "false" || value === false) formattedValue = false;
-        else if (value === "null" || value === null || value === "")
+        if ( value === "true" || value === true ) formattedValue = true;
+        else if ( value === "false" || value === false ) formattedValue = false;
+        else if ( value === "null" || value === null || value === "" )
           formattedValue = null;
       }
 
-      updatePayload = { [field]: formattedValue, ...extraUpdates };
+      updatePayload = { [ field ]: formattedValue, ...extraUpdates };
       const { data: updateData, error } = await supabase
-        .from("calls")
-        .update(updatePayload)
-        .eq("id", id)
-        .select("id");
+        .from( "calls" )
+        .update( updatePayload )
+        .eq( "id", id )
+        .select( "id" );
 
-      if (error) {
-        console.error("[CloserTodaysLeads] Supabase update error:", error);
-        showToast(error.message || "Failed to update", "error");
-        setterF(formatStatusValue(callRow?.[field]));
+      if ( error ) {
+        console.error( "[CloserTodaysLeads] Supabase update error:", error );
+        showToast( error.message || "Failed to update", "error" );
+        setterF( formatStatusValue( callRow?.[ field ] ) );
         return false;
       }
-      if (!updateData || updateData.length === 0) {
+      if ( !updateData || updateData.length === 0 ) {
         console.warn(
           "[CloserTodaysLeads] Update matched 0 rows. id:",
           id,
@@ -1330,20 +1331,20 @@ export default function CloserTodaysLeads({
           "Update may not have been applied. Check permissions.",
           "error",
         );
-        setterF(formatStatusValue(callRow?.[field]));
+        setterF( formatStatusValue( callRow?.[ field ] ) );
         return false;
       }
 
       const mcID = callRow?.manychat_user_id || callRow?.leads?.mc_id;
-      if (mcID) {
+      if ( mcID ) {
         try {
-          await updateManychatField(mcID, field, formattedValue);
-        } catch (mcErr) {
-          console.error("[CloserTodaysLeads] ManyChat update error:", mcErr);
+          await updateManychatField( mcID, field, formattedValue );
+        } catch ( mcErr ) {
+          console.error( "[CloserTodaysLeads] ManyChat update error:", mcErr );
         }
       }
 
-      if (field === "purchased" && formattedValue === true) {
+      if ( field === "purchased" && formattedValue === true ) {
         // Celebrate purchase (canvas-confetti)
         firePifConfetti();
       }
@@ -1357,11 +1358,11 @@ export default function CloserTodaysLeads({
       ) {
         try {
           await setManychatFieldsByName(
-            String(callRow.closer_mc_id),
-            [{ name: "showed_up", value: false }],
+            String( callRow.closer_mc_id ),
+            [ { name: "showed_up", value: false } ],
             callRow.closers.mc_api_key,
           );
-        } catch (mcErr) {
+        } catch ( mcErr ) {
           console.error(
             "[CloserTodaysLeads] ManyChat showed_up update (closer bot) error:",
             mcErr,
@@ -1370,9 +1371,9 @@ export default function CloserTodaysLeads({
       }
 
       // Confirmed YES → send to closer MC (same as LeadItem)
-      if (field === "confirmed" && formattedValue === true) {
+      if ( field === "confirmed" && formattedValue === true ) {
         try {
-          const mcResult = await sendToCloserMC({
+          const mcResult = await sendToCloserMC( {
             id,
             name: leadData?.name,
             phone: leadData?.phone,
@@ -1385,43 +1386,43 @@ export default function CloserTodaysLeads({
                 name: "DATE (LEAD TZ)",
                 value:
                   callRow?.call_date && callRow?.timezone
-                    ? new Date(callRow.call_date).toLocaleDateString("en-US", {
-                        timeZone: callRow.timezone,
-                        year: "numeric",
-                        month: "2-digit",
-                        day: "2-digit",
-                      })
-                    : (callRow?.call_date || "") + " (Tu fecha local)",
+                    ? new Date( callRow.call_date ).toLocaleDateString( "en-US", {
+                      timeZone: callRow.timezone,
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                    } )
+                    : ( callRow?.call_date || "" ) + " (Tu fecha local)",
               },
               {
                 name: "CALL TIME (LEAD TZ)",
                 value:
                   callRow?.call_date && callRow?.timezone
-                    ? new Date(callRow.call_date).toLocaleTimeString("en-US", {
-                        timeZone: callRow.timezone,
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : (callRow?.call_date || "") + " (Tu hora local)",
+                    ? new Date( callRow.call_date ).toLocaleTimeString( "en-US", {
+                      timeZone: callRow.timezone,
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    } )
+                    : ( callRow?.call_date || "" ) + " (Tu hora local)",
               },
               { name: "call_date", value: callRow?.call_date },
             ],
-          });
+          } );
 
-          if (mcResult?.subscriberId) {
+          if ( mcResult?.subscriberId ) {
             const { error: mcIdErr } = await supabase
-              .from("calls")
-              .update({ closer_mc_id: String(mcResult.subscriberId) })
-              .eq("id", id);
-            if (mcIdErr)
+              .from( "calls" )
+              .update( { closer_mc_id: String( mcResult.subscriberId ) } )
+              .eq( "id", id );
+            if ( mcIdErr )
               console.error(
                 "[CloserTodaysLeads] Failed to store closer_mc_id:",
                 mcIdErr,
               );
           }
 
-          showToast("Lead confirmed and sent to closer", "success");
-        } catch (error) {
+          showToast( "Lead confirmed and sent to closer", "success" );
+        } catch ( error ) {
           console.error(
             "[CloserTodaysLeads] Error creating ManyChat user:",
             error,
@@ -1434,13 +1435,13 @@ export default function CloserTodaysLeads({
             "Failed to send lead to closer. Lead is still marked confirmed. Check console for details.",
           );
           try {
-            await supabase.from("function_errors").insert({
+            await supabase.from( "function_errors" ).insert( {
               function_name: "sendToCloserMC",
-              error_message: error?.message || String(error),
-              error_details: JSON.stringify(error?.stack || error),
+              error_message: error?.message || String( error ),
+              error_details: JSON.stringify( error?.stack || error ),
               source: "CloserTodaysLeads/index.jsx/updateStatus",
-            });
-          } catch (logError) {
+            } );
+          } catch ( logError ) {
             console.error(
               "[CloserTodaysLeads] Failed to log function_errors:",
               logError,
@@ -1449,34 +1450,34 @@ export default function CloserTodaysLeads({
         }
 
         try {
-          await fetch("/api/n8n-webhook", {
+          await fetch( "/api/n8n-webhook", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+            body: JSON.stringify( {
               event: "lead_confirmed",
               calendly_id: leadData?.calendly_id,
               email: leadData?.email,
               phone: leadData?.phone,
-            }),
-          });
-        } catch (webhookError) {
+            } ),
+          } );
+        } catch ( webhookError ) {
           console.error(
             "[CloserTodaysLeads] Error sending N8N webhook:",
             webhookError,
           );
         }
       }
-    } catch (err) {
-      console.error("[CloserTodaysLeads] updateStatus error:", err);
-      showToast("Error updating status. See console.", "error");
-      setterF(formatStatusValue(callRow?.[field]));
+    } catch ( err ) {
+      console.error( "[CloserTodaysLeads] updateStatus error:", err );
+      showToast( "Error updating status. See console.", "error" );
+      setterF( formatStatusValue( callRow?.[ field ] ) );
       return false;
     }
 
-    const payloadKeys = Object.keys(updatePayload || {});
+    const payloadKeys = Object.keys( updatePayload || {} );
     if (
-      RECOVERED_RELATED_CALL_FIELDS.has(field) ||
-      payloadKeys.some((k) => RECOVERED_RELATED_CALL_FIELDS.has(k))
+      RECOVERED_RELATED_CALL_FIELDS.has( field ) ||
+      payloadKeys.some( ( k ) => RECOVERED_RELATED_CALL_FIELDS.has( k ) )
     ) {
       onRecoveredChange?.();
     }
@@ -1484,7 +1485,33 @@ export default function CloserTodaysLeads({
     return true;
   };
 
-  if (loading) return <CloserTodaysLeadsShimmer />;
+  // 1. Local state for the input field (to avoid lag/focus loss while debouncing)
+  const [ inputValue, setInputValue ] = useState( searchTerm );
+
+  // 2. Debounce logic: update the parent's searchTerm after 400ms
+  useEffect( () => {
+    // If props.searchTerm changes from outside (e.g. clear), sync it back
+    setInputValue( searchTerm );
+  }, [ searchTerm ] );
+
+  useEffect( () => {
+    const timer = setTimeout( () => {
+      if ( inputValue !== searchTerm ) {
+        onSearchChange?.( inputValue );
+      }
+    }, 400 );
+    return () => clearTimeout( timer );
+  }, [ inputValue, searchTerm, onSearchChange ] );
+
+  const handleSearchSubmit = ( e ) => {
+    e?.preventDefault();
+    // Trigger immediate search
+    onSearchChange?.( inputValue );
+    // Switch to 'all' tab if not already there
+    if ( inputValue.trim() && tabValue !== "all" ) {
+      onTabChange?.( "all" );
+    }
+  };
 
   return (
     <div className="w-full rounded-2xl bg-white border border-slate-200 shadow-sm overflow-visible relative">
@@ -1506,7 +1533,7 @@ export default function CloserTodaysLeads({
 
           <div className="flex items-center gap-2 flex-wrap">
             <span
-              onClick={() => setSortOrder((p) => (p === "asc" ? "desc" : "asc"))}
+              onClick={() => setSortOrder( ( p ) => ( p === "asc" ? "desc" : "asc" ) )}
               className="h-9 w-9 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center cursor-pointer"
               title="Toggle sort order"
             >
@@ -1522,7 +1549,7 @@ export default function CloserTodaysLeads({
 
             <button
               type="button"
-              onClick={() => setShowFilterPanel((s) => !s)}
+              onClick={() => setShowFilterPanel( ( s ) => !s )}
               className={cx(
                 "h-9 rounded-lg px-3 border text-[13px] font-medium inline-flex items-center gap-2 transition !outline-none",
                 showFilterPanel
@@ -1537,12 +1564,17 @@ export default function CloserTodaysLeads({
               Filters
             </button>
 
-            <div className="flex items-center gap-2">
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex items-center gap-2"
+            >
               <input
                 type="text"
                 placeholder="Search lead..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={inputValue}
+                onChange={( e ) => {
+                  setInputValue( e.target.value );
+                }}
                 className={cx(
                   "h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none transition",
                   showSearch
@@ -1551,14 +1583,20 @@ export default function CloserTodaysLeads({
                 )}
                 style={{ pointerEvents: showSearch ? "auto" : "none" }}
               />
-              <span
-                onClick={() => setShowSearch((s) => !s)}
-                className="h-9 w-9 rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center cursor-pointer"
+              <button
+                type="submit"
+                onClick={( e ) => {
+                  if ( !showSearch ) {
+                    e.preventDefault();
+                    setShowSearch( true );
+                  }
+                }}
+                className="h-9 w-9 shrink-0! rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center cursor-pointer border-0 outline-none p-0"
                 title="Search"
               >
                 <Search size={16} className="!text-white" />
-              </span>
-            </div>
+              </button>
+            </form>
           </div>
         </div>
       ) : null}
@@ -1573,14 +1611,14 @@ export default function CloserTodaysLeads({
                 { key: "contacted", label: "Contacted" },
                 { key: "rebooked", label: "Rebooked" },
                 { key: "dead", label: "Dead" },
-              ].map((x) => {
+              ].map( ( x ) => {
                 const active = noShowStateFilter === x.key;
                 return (
                   <button
                     key={x.key}
                     type="button"
                     onClick={() =>
-                      setNoShowStateFilter((p) => (p === x.key ? "" : x.key))
+                      setNoShowStateFilter( ( p ) => ( p === x.key ? "" : x.key ) )
                     }
                     className={cx(
                       "px-3 py-1.5 rounded-md border text-[12px] font-medium transition !outline-none",
@@ -1593,13 +1631,13 @@ export default function CloserTodaysLeads({
                     {x.label}
                   </button>
                 );
-              })}
+              } )}
             </div>
           ) : null}
 
           {showFilterPanel ? (
             <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col gap-4">
-              {(tabValue === "all" || tabValue === "follow ups" || tabValue === "no shows") ? (
+              {( tabValue === "all" || tabValue === "follow ups" || tabValue === "no shows" ) ? (
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="text-[13px] font-semibold text-slate-700">Date range</div>
                   <div className="flex items-center gap-2">
@@ -1607,7 +1645,7 @@ export default function CloserTodaysLeads({
                     <input
                       type="date"
                       value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
+                      onChange={( e ) => setStartDate( e.target.value )}
                       className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
                     />
                   </div>
@@ -1616,7 +1654,7 @@ export default function CloserTodaysLeads({
                     <input
                       type="date"
                       value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
+                      onChange={( e ) => setEndDate( e.target.value )}
                       className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
                     />
                   </div>
@@ -1629,14 +1667,14 @@ export default function CloserTodaysLeads({
                   { key: "noConversations", label: "No conversations" },
                   { key: "noManyChatId", label: "No ManyChat ID" },
                   { key: "lockIn", label: "Lock In" },
-                ].map((x) => {
-                  const active = !!statusFilters?.[x.key];
+                ].map( ( x ) => {
+                  const active = !!statusFilters?.[ x.key ];
                   return (
                     <button
                       key={x.key}
                       type="button"
                       onClick={() =>
-                        setStatusFilters((p) => ({ ...p, [x.key]: !p[x.key] }))
+                        setStatusFilters( ( p ) => ( { ...p, [ x.key ]: !p[ x.key ] } ) )
                       }
                       className={cx(
                         "px-3 py-2 rounded-lg border text-[13px] font-medium transition !outline-none",
@@ -1649,7 +1687,7 @@ export default function CloserTodaysLeads({
                       {x.label}
                     </button>
                   );
-                })}
+                } )}
               </div>
             </div>
           ) : null}
@@ -1682,7 +1720,7 @@ export default function CloserTodaysLeads({
                 No payoff opportunities in the last 30 days.
               </div>
             ) : (
-              payoffList.map((p, idx) => (
+              payoffList.map( ( p, idx ) => (
                 <PayoffRow
                   key={`${p?.name ?? "opp"}-${idx}`}
                   name={p?.name}
@@ -1696,18 +1734,18 @@ export default function CloserTodaysLeads({
                   }}
                   actionLabel={p?.actionLabel}
                   actionDisabled={!p?.call?.id}
-                  onAction={() => setOpenPayoffEntry(p)}
+                  onAction={() => setOpenPayoffEntry( p )}
                   onDismiss={() => {
-                    const id = String(p?.kajabiPurchaseId || p?.call?.id || "");
-                    if (!id) return;
-                    setDismissedPayoffIds((prev) => {
-                      const next = new Set(prev);
-                      next.add(id);
+                    const id = String( p?.kajabiPurchaseId || p?.call?.id || "" );
+                    if ( !id ) return;
+                    setDismissedPayoffIds( ( prev ) => {
+                      const next = new Set( prev );
+                      next.add( id );
                       return next;
-                    });
+                    } );
                   }}
                 />
-              ))
+              ) )
             )}
           </div>
         </div>
@@ -1728,79 +1766,99 @@ export default function CloserTodaysLeads({
               "divide-y divide-slate-100",
             )}
           >
-            {safeLeads.length === 0 ? (
+            {loading ? (
+              <div className="divide-y divide-slate-100">
+                {[ 0, 1, 2, 3, 4 ].map( ( i ) => (
+                  <div key={i} className="flex items-center justify-between gap-4 px-5 py-4 animate-pulse">
+                    <div className="min-w-0">
+                      <div className="h-3 w-40 rounded bg-slate-100" />
+                      <div className="mt-2 h-3 w-56 rounded bg-slate-100" />
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {[ 0, 1, 2, 3 ].map( ( j ) => (
+                        <div key={j} className="h-5 w-20 rounded-full bg-slate-100" />
+                      ) )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="h-8 w-16 rounded-lg bg-slate-100" />
+                      <div className="h-8 w-8 rounded-lg bg-slate-100" />
+                    </div>
+                  </div>
+                ) )}
+              </div>
+            ) : safeLeads.length === 0 ? (
               <div className="px-3 py-8 text-sm text-slate-500 text-center">
                 No leads found.
               </div>
             ) : (
               <>
-              <div className="px-3 py-2 bg-slate-50/70 border-y border-slate-200">
-                <div
-                  className={cx(
-                    "grid items-center gap-4 text-[11px] font-bold tracking-wide text-slate-500 uppercase",
-                    tabValue === "all"
-                      ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
-                      : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
-                  )}
-                >
+                <div className="px-3 py-2 bg-slate-50/70 border-y border-slate-200">
+                  <div
+                    className={cx(
+                      "grid items-center gap-4 text-[11px] font-bold tracking-wide text-slate-500 uppercase",
+                      tabValue === "all"
+                        ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
+                        : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
+                    )}
+                  >
                     <div className="text-center"> </div>
                     <div>Lead</div>
                     <div className="text-center">Setter</div>
                     <div className="text-center">Time</div>
                     <div className="text-center">Status</div>
-                  {tabValue === "all" ? (
-                    <div className="text-center">Response</div>
-                  ) : null}
-                  <div className="text-center">Notes</div>
+                    {tabValue === "all" ? (
+                      <div className="text-center">Response</div>
+                    ) : null}
+                    <div className="text-center">Notes</div>
                     <div className="text-right"> </div>
                   </div>
                 </div>
 
-                {sortedLeads.map((l) => (
+                {sortedLeads.map( ( l ) => (
                   <LeadRow
                     key={l.id}
                     lead={l}
                     setterName={
-                      setterMap?.[String(l.setter_id)] || l?.setters?.name
+                      setterMap?.[ String( l.setter_id ) ] || l?.setters?.name
                     }
-                    onUpdateStatus={(callRow, field, v, setterF) =>
-                      updateStatus(callRow, field, v, setterF)
+                    onUpdateStatus={( callRow, field, v, setterF ) =>
+                      updateStatus( callRow, field, v, setterF )
                     }
                     onCopyCallId={() => {
-                      if (l?.id) navigator.clipboard.writeText(String(l.id));
-                      setOpenActionsId(null);
+                      if ( l?.id ) navigator.clipboard.writeText( String( l.id ) );
+                      setOpenActionsId( null );
                     }}
                     onTransfer={() => {
-                      setOpenActionsId(null);
-                      setTransferLead(l);
+                      setOpenActionsId( null );
+                      setTransferLead( l );
                     }}
                     onRecoverLead={() => {
-                      setOpenActionsId(null);
-                      setRecoverLead(l);
+                      setOpenActionsId( null );
+                      setRecoverLead( l );
                     }}
                     onSetterNotes={() => {
-                      setOpenActionsId(null);
-                      setSetterNoteLead(l);
+                      setOpenActionsId( null );
+                      setSetterNoteLead( l );
                     }}
                     onCloserNotes={() => {
-                      setOpenActionsId(null);
-                      setCloserNoteLead(l);
+                      setOpenActionsId( null );
+                      setCloserNoteLead( l );
                     }}
                     onSendManyChat={async () => {
-                      setOpenActionsId(null);
+                      setOpenActionsId( null );
                       const subscriberId =
                         l?.leads?.mc_id || l?.manychat_user_id;
-                      if (!subscriberId)
+                      if ( !subscriberId )
                         return alert(
                           "No ManyChat subscriber ID found for this lead",
                         );
-                      const callData = buildCallDataFromLead(l);
-                      await updateManychatCallFields(subscriberId, callData);
-                      alert("Successfully sent to ManyChat!");
+                      const callData = buildCallDataFromLead( l );
+                      await updateManychatCallFields( subscriberId, callData );
+                      alert( "Successfully sent to ManyChat!" );
                     }}
                     onReschedule={() => {
-                      setOpenActionsId(null);
-                      if (l?.reschedule_link)
+                      setOpenActionsId( null );
+                      if ( l?.reschedule_link )
                         window.open(
                           l.reschedule_link,
                           "_blank",
@@ -1808,27 +1866,27 @@ export default function CloserTodaysLeads({
                         );
                     }}
                     onDeleteCall={async () => {
-                      setOpenActionsId(null);
+                      setOpenActionsId( null );
                       if (
                         !window.confirm(
                           "Are you sure you want to delete this call? This cannot be undone.",
                         )
                       )
                         return;
-                      await deleteCallWithDependencies(l.id);
-                      onLeadDeleted?.(l.id);
+                      await deleteCallWithDependencies( l.id );
+                      onLeadDeleted?.( l.id );
                     }}
                     onReport={() => {
-                      setOpenActionsId(null);
-                      alert("Reported.");
+                      setOpenActionsId( null );
+                      alert( "Reported." );
                     }}
                     actionsOpen={openActionsId === l.id}
                     onToggleActions={() =>
-                      setOpenActionsId((prev) => (prev === l.id ? null : l.id))
+                      setOpenActionsId( ( prev ) => ( prev === l.id ? null : l.id ) )
                     }
                     useCompactStatusBadges={tabValue === "all"}
                   />
-                ))}
+                ) )}
               </>
             )}
           </div>
@@ -1852,27 +1910,27 @@ export default function CloserTodaysLeads({
 
       <NotesModal
         isOpen={!!noteLead}
-        onClose={() => setNoteLead(null)}
+        onClose={() => setNoteLead( null )}
         lead={noteLead}
         callId={noteLead?.id}
         mode="closer"
       />
       <ViewNotesModal
         isOpen={!!viewLead}
-        onClose={() => setViewLead(null)}
+        onClose={() => setViewLead( null )}
         lead={viewLead}
         callId={viewLead?.id}
       />
       <NotesModal
         isOpen={!!setterNoteLead}
-        onClose={() => setSetterNoteLead(null)}
+        onClose={() => setSetterNoteLead( null )}
         lead={setterNoteLead}
         callId={setterNoteLead?.id}
         mode="setter"
       />
       <NotesModal
         isOpen={!!closerNoteLead}
-        onClose={() => setCloserNoteLead(null)}
+        onClose={() => setCloserNoteLead( null )}
         lead={closerNoteLead}
         callId={closerNoteLead?.id}
         mode="closer"
@@ -1880,30 +1938,30 @@ export default function CloserTodaysLeads({
 
       <TransferSetterModal
         isOpen={!!transferLead}
-        onClose={() => setTransferLead(null)}
+        onClose={() => setTransferLead( null )}
         lead={transferLead}
-        setterOptions={Object.entries(setterMap || {}).map(([id, name]) => ({
+        setterOptions={Object.entries( setterMap || {} ).map( ( [ id, name ] ) => ( {
           id,
           name,
-        }))}
-        onTransfer={() => {}}
+        } ) )}
+        onTransfer={() => { }}
       />
 
       <RecoverLeadModal
         isOpen={!!recoverLead}
-        onClose={() => setRecoverLead(null)}
+        onClose={() => setRecoverLead( null )}
         lead={recoverLead}
         closerList={closerList}
         mode="closer"
-        onSuccess={(msg) => {
-          alert(msg || "Calendar event created");
+        onSuccess={( msg ) => {
+          alert( msg || "Calendar event created" );
           onRecoveredChange?.();
         }}
       />
 
       <NotesModal
         isOpen={!!openPayoffEntry}
-        onClose={() => setOpenPayoffEntry(null)}
+        onClose={() => setOpenPayoffEntry( null )}
         lead={openPayoffEntry?.call || null}
         callId={openPayoffEntry?.call?.id}
         mode="closer"

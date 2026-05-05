@@ -1263,7 +1263,6 @@ export default function Closer() {
             aoc,
             sales: v.sales,
             isYou: String(cid) === String(closer),
-            isYou: String(cid) === String(closer),
             _aov: aov ?? -1,
           };
         });
@@ -1615,6 +1614,8 @@ export default function Closer() {
           closerList={dataState.closerList}
           activeTab={headerState.activeTab}
           onTabChange={(tab) => setHeaderState((p) => ({ ...p, activeTab: tab }))}
+          searchTerm={headerState.searchTerm}
+          onSearchChange={(term) => setHeaderState((p) => ({ ...p, searchTerm: term }))}
           payoffLoading={payoffOpps.loading}
           payoffEntries={payoffOpps.entries}
           onLeadDeleted={(callId) => {

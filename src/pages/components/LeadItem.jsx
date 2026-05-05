@@ -1,5 +1,4 @@
 import { supabase } from '../../lib/supabaseClient';
-import crypto from 'crypto';
 import {Modal, NotesModal, ViewNotesModal} from './Modal';
 import { TransferSetterModal } from './TransferSetterModal';
 import RecoverLeadModal from './RecoverLeadModal';
