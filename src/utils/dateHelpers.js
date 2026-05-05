@@ -1,4 +1,4 @@
-import { fromZonedTime, toZonedTime, format, formatInTimeZone } from 'date-fns-tz';
+export { fromZonedTime, toZonedTime, format, formatInTimeZone } from 'date-fns-tz';
 import { startOfMonth, endOfMonth, getYear, getMonth, parseISO, addDays, subDays, subWeeks } from 'date-fns';
 
 /**

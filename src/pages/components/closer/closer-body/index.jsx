@@ -35,6 +35,8 @@ const CloserBody = (props) => {
         closerList={props?.closerList}
         activeTab={props?.activeTab}
         onTabChange={props?.onTabChange}
+        searchTerm={props?.searchTerm}
+        onSearchChange={props?.onSearchChange}
         payoffLoading={props?.payoffLoading}
         payoffEntries={props?.payoffEntries}
         onLeadDeleted={props?.onLeadDeleted}

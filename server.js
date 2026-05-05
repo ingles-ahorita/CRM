@@ -231,12 +231,12 @@ app.post('/api/n8n-webhook', async (req, res) => {
             console.log('ℹ️ No fbclid found for calendly_id:', calendly_id);
           }
 
-          if (data?.ip_adress) {
+          if (data?.ip_address) {
             // You can assign this to a variable if you want to use it in the webhookPayload
-            ip_address = data.ip_adress;
-            console.log('✅ Found tracked ip_adress for calendly_id:', calendly_id, 'ip_adress:', data.ip_adress);
+            ip_address = data.ip_address;
+            console.log('✅ Found tracked ip_address for calendly_id:', calendly_id, 'ip_address:', data.ip_address);
           } else {
-            console.log('ℹ️ No tracked ip_adress found for calendly_id:', calendly_id);
+            console.log('ℹ️ No tracked ip_address found for calendly_id:', calendly_id);
           }
         }
       } catch (dbError) {

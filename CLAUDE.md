@@ -203,3 +203,14 @@ export default function MyPage() {
   // ...
 }
 ```
+
+---
+
+## Knowledge Graph (graphify)
+
+This project uses **graphify** to maintain a navigable knowledge graph of the architecture.
+
+- **Context**: Read `graphify-out/GRAPH_REPORT.md` at the start of a session for god nodes and community structure.
+- **Visualization**: Open `graphify-out/graph.html` in a browser for a 3D view of the codebase.
+- **Updates**: After modifying code, run `graphify update .` to keep the graph and report current.
+- **Queries**: Use `graphify query "..."` or `graphify explain "..."` for cross-module navigation.
