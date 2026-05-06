@@ -710,13 +710,19 @@ function LeadRow ( {
     );
   } )();
 
-  const timeIso = lead?.call_date || lead?.book_date;
-  const timeLabel = timeIso
-    ? new Date( timeIso ).toLocaleTimeString( undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    } )
-    : "—";
+  const fmtDateTime = ( iso ) => {
+    if ( !iso ) return "—";
+    const d = new Date( iso );
+    if ( Number.isNaN( d.getTime() ) ) return "—";
+    const mm = String( d.getMonth() + 1 ).padStart( 2, "0" );
+    const dd = String( d.getDate() ).padStart( 2, "0" );
+    const yyyy = d.getFullYear();
+    const hh = String( d.getHours() ).padStart( 2, "0" );
+    const min = String( d.getMinutes() ).padStart( 2, "0" );
+    return `${mm}/${dd}/${yyyy}, ${hh}:${min}`;
+  };
+  const bookDateLabel = fmtDateTime( lead?.book_date );
+  const callDateLabel = fmtDateTime( lead?.call_date );
 
   const [ pickUpValue, setPickUpValue ] = useState( () =>
     formatStatusValue( lead?.picked_up ),
@@ -753,7 +759,7 @@ function LeadRow ( {
           "grid items-center gap-4 py-2",
           useCompactStatusBadges
             ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
-            : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
+            : "grid-cols-[24px_minmax(180px,1fr)_130px_130px_130px_260px_86px_56px]",
         )}
       >
         <div className="flex flex-col items-center justify-center gap-1">
@@ -824,9 +830,12 @@ function LeadRow ( {
           </span>
         </div>
 
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-600">
-          <Clock size={14} className="text-slate-400" />
-          <span className="font-semibold text-slate-700">{timeLabel}</span>
+        <div className="flex items-center justify-center text-[11px] text-slate-600">
+          <span className="font-semibold text-slate-700">{bookDateLabel}</span>
+        </div>
+
+        <div className="flex items-center justify-center text-[11px] text-slate-600">
+          <span className="font-semibold text-slate-700">{callDateLabel}</span>
         </div>
 
         <div className="flex items-center justify-center">
@@ -1040,7 +1049,7 @@ function LeadRow ( {
         currentNoShowState={lead?.no_show_state}
         onConfirm={async ( noShowState ) => {
           const extraUpdates =
-            noShowState === "showed_up_yes" ? {} : { no_show_state: noShowState };
+            noShowState === "showed_up_yes" ? { no_show_state: null } : { no_show_state: noShowState };
           const showedUpValue = noShowState === "showed_up_yes";
           const ok = await onUpdateStatus?.(
             lead,
@@ -1798,13 +1807,14 @@ export default function CloserTodaysLeads ( {
                       "grid items-center gap-4 text-[11px] font-bold tracking-wide text-slate-500 uppercase",
                       tabValue === "all"
                         ? "grid-cols-[24px_minmax(200px,1fr)_130px_84px_200px_110px_86px_56px]"
-                        : "grid-cols-[24px_minmax(240px,1fr)_140px_90px_260px_86px_56px]",
+                        : "grid-cols-[24px_minmax(180px,1fr)_130px_130px_130px_260px_86px_56px]",
                     )}
                   >
                     <div className="text-center"> </div>
                     <div>Lead</div>
                     <div className="text-center">Setter</div>
-                    <div className="text-center">Time</div>
+                    <div className="text-center">Book Date</div>
+                    <div className="text-center">Call Date</div>
                     <div className="text-center">Status</div>
                     {tabValue === "all" ? (
                       <div className="text-center">Response</div>
@@ -1821,8 +1831,8 @@ export default function CloserTodaysLeads ( {
                     setterName={
                       setterMap?.[ String( l.setter_id ) ] || l?.setters?.name
                     }
-                    onUpdateStatus={( callRow, field, v, setterF ) =>
-                      updateStatus( callRow, field, v, setterF )
+                    onUpdateStatus={( callRow, field, v, setterF, extraUpdates ) =>
+                      updateStatus( callRow, field, v, setterF, extraUpdates )
                     }
                     onCopyCallId={() => {
                       if ( l?.id ) navigator.clipboard.writeText( String( l.id ) );
