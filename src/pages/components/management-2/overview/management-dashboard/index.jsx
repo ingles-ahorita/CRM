@@ -211,7 +211,7 @@ export default function ManagementDashboard() {
           supabase
             .from("kajabi_transactions")
             .select("action, amount_in_cents, state, effective_date, payment_resolved_at, created_at_kajabi")
-            .or(`and(effective_date.gte.${startISO},effective_date.lte.${endISO}),and(payment_resolved_at.gte.${startISO},payment_resolved_at.lte.${endISO})`),
+            .or(`and(created_at_kajabi.gte.${startISO},created_at_kajabi.lte.${endISO}),and(effective_date.gte.${startISO},effective_date.lte.${endISO}),and(payment_resolved_at.gte.${startISO},payment_resolved_at.lte.${endISO})`),
           supabase
             .from("outcome_log")
             .select(
@@ -257,38 +257,49 @@ export default function ManagementDashboard() {
         let netRevenue = 0;
         let grossRevenue = 0;
 
-        // Combined Revenue calculation (uses effective_date/payment_resolved_at filtering)
+        // Exact match logic from legacy ManagementPage
         for (const row of netTxRows) {
+          const amountCents = Math.abs(Number(row?.amount_in_cents || 0));
+          const amount = amountCents / 100;
+          const state = String(row?.state || "").toLowerCase();
+          
+          // 1. Gross Revenue logic (matching legacy ManagementPage lines 123-146)
+          const inGrossRange = row.created_at_kajabi >= startISO && row.created_at_kajabi <= endISO;
+          if (inGrossRange) {
+            const action = row.action ?? (row.amount_in_cents >= 0 ? 'charge' : 'refund');
+            const isRefund = action === 'refund' || row.amount_in_cents < 0;
+            const isDispute = action === 'dispute';
+            const isFailed = isDispute || (row.state != null && !SUCCESS_STATES.includes(state));
+            
+            if (!isRefund && !isFailed) {
+              grossRevenue += amount;
+              const day = String(row.created_at_kajabi || "").slice(0, 10);
+              if (daily[day]) daily[day].gross += amount;
+            }
+          }
+
+          // 2. Net Revenue logic (matching legacy ManagementPage lines 148-177)
           const resolvedInRange = row?.payment_resolved_at != null
             && row.payment_resolved_at >= startISO
             && row.payment_resolved_at <= endISO
             && (row.effective_date == null || row.effective_date < startISO || row.effective_date > endISO);
           
-          const amount = Number(row?.amount_in_cents || 0) / 100;
-          const action = resolvedInRange ? 'charge' : (row?.action ?? (amount >= 0 ? "charge" : "refund"));
+          const inNetRange = (row.effective_date >= startISO && row.effective_date <= endISO) || resolvedInRange;
           
-          const isRefund = action === "refund" || amount < 0;
-          const isDispute = action === "dispute";
-          const isFailed = !resolvedInRange && (isDispute || (row?.state != null && !SUCCESS_STATES.includes(String(row.state).toLowerCase())));
-          
-          if (isFailed) continue;
-
-          // Determine which day to bucket this into
-          let targetDateStr = resolvedInRange ? row.payment_resolved_at : (row.effective_date || row.created_at_kajabi);
-          const day = String(targetDateStr || "").slice(0, 10);
-          
-          if (isRefund) {
-            if (daily[day]) daily[day].net -= Math.abs(amount);
-            netRevenue -= Math.abs(amount);
-            // Gross usually does NOT count refunds as deductions, 
-            // but if you want Gross to be "Total Successful Charges", we don't subtract here.
-          } else {
-            if (daily[day]) {
-              daily[day].net += Math.abs(amount);
-              daily[day].gross += Math.abs(amount);
+          if (inNetRange) {
+            const action = resolvedInRange ? 'charge' : (row?.action ?? (row.amount_in_cents >= 0 ? "charge" : "refund"));
+            const isRefund = action === "refund" || row.amount_in_cents < 0;
+            const isDispute = action === "dispute";
+            const isFailed = !resolvedInRange && (isDispute || (row.state != null && !SUCCESS_STATES.includes(state)));
+            
+            if (!isFailed) {
+              const netDelta = isRefund ? -amount : amount;
+              netRevenue += netDelta;
+              
+              let targetDateStr = resolvedInRange ? row.payment_resolved_at : (row.effective_date || row.created_at_kajabi);
+              const day = String(targetDateStr || "").slice(0, 10);
+              if (daily[day]) daily[day].net += netDelta;
             }
-            netRevenue += Math.abs(amount);
-            grossRevenue += Math.abs(amount);
           }
         }
 

@@ -87,13 +87,21 @@ function CloserBarsShimmer() {
 
 function getRangeBounds(rangeKey) {
   const now = new Date();
-  if (rangeKey === "this_week") {
+  if (rangeKey === "currentWeek") {
     const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(now);
     return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
   }
-  if (rangeKey === "last_week") {
+  if (rangeKey === "lastWeek") {
     const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset(1);
     return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
+  }
+  if (rangeKey === "lastMonth") {
+    const midLastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+    const monthRange = DateHelpers.getMonthRangeInTimezone(midLastMonth, "UTC");
+    return {
+      start: monthRange.startDate.toISOString(),
+      end: monthRange.endDate.toISOString(),
+    };
   }
   const monthRange = DateHelpers.getMonthRangeInTimezone(now, "UTC");
   return {
@@ -102,35 +110,49 @@ function getRangeBounds(rangeKey) {
   };
 }
 
-async function fetchClosedFromRecoveryCounts(start, end) {
+async function fetchAovData(start, end) {
   const pageSize = 1000;
   let offset = 0;
-  const counts = {};
+  const allRows = [];
   for (;;) {
     const { data, error } = await supabase
       .from("outcome_log")
-      .select("closer_id, calls!inner!call_id(closer_id, recovered)")
+      .select("closer_id, offers!offer_id(price), closers!closer_id(name)")
       .eq("outcome", "yes")
-      .eq("calls.recovered", true)
+      .not("offer_id", "is", null)
       .gte("purchase_date", start)
       .lte("purchase_date", end)
       .range(offset, offset + pageSize - 1);
 
     if (error) throw new Error(error.message);
     if (!data?.length) break;
-
-    for (const r of data) {
-      const cid = r.closer_id ?? r.calls?.closer_id;
-      if (cid == null) continue;
-      const k = String(cid);
-      counts[k] = (counts[k] || 0) + 1;
-    }
-
+    allRows.push(...data);
     if (data.length < pageSize) break;
     offset += pageSize;
     if (offset > 20000) break;
   }
-  return counts;
+  
+  const byCloser = {};
+  let totalPrice = 0, totalCount = 0;
+  for (const row of allRows) {
+    const price = Number(row.offers?.price ?? 0);
+    const name = row.closers?.name ?? "Unknown";
+    const id = row.closer_id ?? "unknown";
+    if (!byCloser[id]) byCloser[id] = { name, total: 0, count: 0 };
+    byCloser[id].total += price;
+    byCloser[id].count += 1;
+    totalPrice += price;
+    totalCount += 1;
+  }
+  
+  const closerList = Object.entries(byCloser)
+    .map(([id, c]) => ({ id, name: c.name, aov: c.count > 0 ? c.total / c.count : 0, sales: c.count }))
+    .sort((a, b) => b.aov - a.aov);
+    
+  return { 
+    overall: totalCount > 0 ? totalPrice / totalCount : null, 
+    byCloser: closerList 
+  };
 }
 
 function FunnelBarRow({
@@ -183,18 +205,19 @@ function FunnelBarRow({
   );
 }
 
-function CloserRow({ name, count, maxCount, animate, tooltip }) {
-  const widthPct = maxCount > 0 ? (count / maxCount) * 100 : 0;
-  const hasSale = count > 0;
+function CloserRow({ index, name, aov, sales, maxAov, animate, tooltip }) {
+  const widthPct = maxAov > 0 ? (aov / maxAov) * 100 : 0;
+  const hasSale = sales > 0;
+  const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : null;
 
   return (
     <div className="flex items-stretch">
       <div className={LABEL_COL} title={tooltip}>
-        {name}
+        {medal ? <span className="mr-1">{medal}</span> : null}{name}
       </div>
       <div
         className="relative h-[12px] min-w-0 flex-1 cursor-help self-center"
-        title={tooltip ? `${tooltip}\nClosed: ${count}` : undefined}
+        title={tooltip ? `${tooltip}\nAOV: $${Math.round(aov)}` : undefined}
       >
         <div
           className="absolute inset-0 rounded-md"
@@ -214,15 +237,15 @@ function CloserRow({ name, count, maxCount, animate, tooltip }) {
         {hasSale ? (
           <>
             <span className="text-[12px] font-bold tabular-nums leading-none">
-              {count}
+              ${Math.round(aov).toLocaleString('en-US')}
             </span>
-            <span className="mt-0.5 text-[10px] font-bold uppercase leading-none tracking-wide text-black">
-              closed
+            <span className="mt-0.5 text-[10px] font-bold uppercase leading-none tracking-wide text-slate-500">
+              {sales} sale{sales !== 1 ? 's' : ''}
             </span>
           </>
         ) : (
           <span className="text-[12px] font-bold tabular-nums leading-none text-[#6b7280]">
-            0
+            $0
           </span>
         )}
       </div>
@@ -231,11 +254,14 @@ function CloserRow({ name, count, maxCount, animate, tooltip }) {
 }
 
 export default function RecoveredLeadsFunnel({ stackPanels = false }) {
-  const [range, setRange] = useState("last_week");
+  const [range, setRange] = useState("lastWeek");
+  const [aovRange, setAovRange] = useState("currentMonth");
   const [loading, setLoading] = useState(true);
+  const [aovLoading, setAovLoading] = useState(true);
   const [error, setError] = useState(null);
   const [animateBars, setAnimateBars] = useState(false);
   const [dataTick, setDataTick] = useState(0);
+  const [aovTick, setAovTick] = useState(0);
 
   const [funnelCounts, setFunnelCounts] = useState({
     noshow: 0,
@@ -244,12 +270,12 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
     showed: 0,
     closed: 0,
   });
-  const [closerRows, setCloserRows] = useState([]);
+  const [aovData, setAovData] = useState({ overall: null, byCloser: [] });
 
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    async function loadFunnel() {
       setLoading(true);
       setError(null);
       try {
@@ -260,31 +286,24 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
           contactedRes,
           rebookedRes,
           showUpsRes,
-          closedByCloser,
-          closersRes,
+          closedRes,
         ] = await Promise.all([
           supabase
             .from("calls")
             .select("id", { count: "exact", head: true })
-            .eq("confirmed", true)
             .eq("showed_up", false)
-            .neq("cancelled", true)
             .gte("call_date", start)
             .lte("call_date", end),
           supabase
             .from("calls")
             .select("id", { count: "exact", head: true })
             .eq("no_show_state", "contacted")
-            .eq("confirmed", true)
-            .eq("showed_up", false)
-            .neq("cancelled", true)
             .gte("call_date", start)
             .lte("call_date", end),
           supabase
             .from("calls")
             .select("id", { count: "exact", head: true })
             .eq("recovered", true)
-            .neq("cancelled", true)
             .gte("book_date", start)
             .lte("book_date", end),
           supabase
@@ -292,56 +311,28 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
             .select("id", { count: "exact", head: true })
             .eq("recovered", true)
             .eq("showed_up", true)
-            .neq("cancelled", true)
             .gte("call_date", start)
             .lte("call_date", end),
-          fetchClosedFromRecoveryCounts(start, end),
           supabase
-            .from("closers")
-            .select("id, name")
-            .eq("active", true)
-            .order("name", { ascending: true }),
+            .from("outcome_log")
+            .select("id, calls!inner!call_id(id)", { count: "exact", head: true })
+            .eq("outcome", "yes")
+            .eq("calls.recovered", true)
+            .not("purchase_date", "is", null)
+            .gte("purchase_date", start)
+            .lte("purchase_date", end),
         ]);
 
         if (cancelled) return;
-
-        const closedTotal = Object.values(closedByCloser).reduce(
-          (a, n) => a + n,
-          0,
-        );
 
         setFunnelCounts({
           noshow: noShowsRes.count ?? 0,
           contacted: contactedRes.count ?? 0,
           rebooked: rebookedRes.count ?? 0,
           showed: showUpsRes.count ?? 0,
-          closed: closedTotal,
+          closed: closedRes.count ?? 0,
         });
 
-        const closersData = closersRes.error ? [] : closersRes.data || [];
-        let rows = closersData.map((c) => ({
-          id: c.id,
-          name: c.name?.trim() || `Closer ${c.id}`,
-          count: closedByCloser[String(c.id)] ?? 0,
-        }));
-
-        if (!rows.length) {
-          rows = Object.entries(closedByCloser).map(([id, count]) => ({
-            id,
-            name: `Closer ${id}`,
-            count,
-          }));
-          rows.sort(
-            (a, b) =>
-              b.count - a.count || String(a.name).localeCompare(String(b.name)),
-          );
-        } else {
-          rows.sort(
-            (a, b) => b.count - a.count || a.name.localeCompare(b.name),
-          );
-        }
-
-        setCloserRows(rows);
         setDataTick((t) => t + 1);
       } catch (e) {
         if (!cancelled) {
@@ -353,28 +344,48 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
             showed: 0,
             closed: 0,
           });
-          setCloserRows([]);
-          setDataTick((t) => t + 1);
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    load();
-    return () => {
-      cancelled = true;
-    };
+    loadFunnel();
+    return () => { cancelled = true; };
   }, [range]);
 
   useEffect(() => {
-    if (loading) return;
+    let cancelled = false;
+
+    async function loadAov() {
+      setAovLoading(true);
+      try {
+        const { start, end } = getRangeBounds(aovRange);
+        const aovRes = await fetchAovData(start, end);
+        if (cancelled) return;
+        setAovData(aovRes);
+        setAovTick((t) => t + 1);
+      } catch (e) {
+        if (!cancelled) {
+          setAovData({ overall: null, byCloser: [] });
+        }
+      } finally {
+        if (!cancelled) setAovLoading(false);
+      }
+    }
+
+    loadAov();
+    return () => { cancelled = true; };
+  }, [aovRange]);
+
+  useEffect(() => {
+    if (loading && aovLoading) return;
     setAnimateBars(false);
     const id = requestAnimationFrame(() => {
       requestAnimationFrame(() => setAnimateBars(true));
     });
     return () => cancelAnimationFrame(id);
-  }, [loading, dataTick]);
+  }, [loading, aovLoading, dataTick, aovTick]);
 
   const base = funnelCounts.noshow;
   const funnelSteps = useMemo(
@@ -386,10 +397,6 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
     [funnelCounts],
   );
 
-  const closerMax = Math.max(...closerRows.map((c) => c.count), 1);
-
-  const closerTooltip =
-    "Purchases in this period where the linked call is marked recovered (team-wide).";
 
   return (
     <div className="w-full min-w-0 border border-slate-200 rounded-2xl bg-white p-3">
@@ -427,9 +434,10 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
                 aria-busy={loading}
                 className="h-7 cursor-pointer appearance-none rounded-full border border-slate-200/90 bg-[#f3f4f6] py-1 pl-3 pr-7 text-[10px] font-bold uppercase tracking-wide text-[#4b5563] !outline-none transition-colors hover:bg-[#eceff2]"
               >
-                <option value="last_week">LAST WEEK</option>
-                <option value="this_week">THIS WEEK</option>
-                <option value="mtd">MTD</option>
+                <option value="lastWeek">Last week</option>
+                <option value="currentWeek">This week</option>
+                <option value="lastMonth">Last month</option>
+                <option value="currentMonth">This month</option>
               </select>
               <ChevronDown
                 size={12}
@@ -464,34 +472,59 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
         </section>
 
         <section className="min-w-0 rounded-xl border bg-white p-3">
-          <h3 className="mb-5 text-[14px] font-bold uppercase tracking-[0.12em] text-black">
-            Closed-from-recovery by closer
-          </h3>
-          {loading ? (
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-[14px] font-bold uppercase tracking-[0.12em] text-black">
+              AOV by closer
+            </h3>
+            <div className="relative shrink-0">
+              <select
+                value={aovRange}
+                onChange={(e) => setAovRange(e.target.value)}
+                aria-label="AOV period"
+                aria-busy={aovLoading}
+                className="h-7 cursor-pointer appearance-none rounded-full border border-slate-200/90 bg-[#f3f4f6] py-1 pl-3 pr-7 text-[10px] font-bold uppercase tracking-wide text-[#4b5563] !outline-none transition-colors hover:bg-[#eceff2]"
+              >
+                <option value="lastWeek">Last week</option>
+                <option value="currentWeek">This week</option>
+                <option value="lastMonth">Last month</option>
+                <option value="currentMonth">This month</option>
+              </select>
+              <ChevronDown
+                size={12}
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+                aria-hidden
+              />
+            </div>
+          </div>
+          {!aovLoading && aovData.overall != null && (
+            <div className="mb-4 text-[12px] font-semibold text-slate-500">
+              Overall: <span className="text-[15px] font-bold text-slate-900">${Math.round(aovData.overall).toLocaleString('en-US')}</span>
+            </div>
+          )}
+          {aovLoading ? (
             <CloserBarsShimmer />
           ) : (
             <div className="flex flex-col gap-[8px]">
-              {closerRows.length === 0 ? (
+              {aovData.byCloser.length === 0 ? (
                 <p className="text-center text-[13px] text-slate-500">
-                  No closed-from-recovery sales in this period.
+                  No sales with offers in this period.
                 </p>
               ) : (
-                closerRows.map((c) => (
+                aovData.byCloser.map((c, idx) => (
                   <CloserRow
                     key={String(c.id)}
+                    index={idx}
                     name={c.name}
-                    count={c.count}
-                    maxCount={closerMax}
+                    aov={c.aov}
+                    sales={c.sales}
+                    maxAov={Math.max(...aovData.byCloser.map(x => x.aov), 1)}
                     animate={animateBars}
-                    tooltip={closerTooltip}
+                    tooltip="Average Order Value"
                   />
                 ))
               )}
             </div>
           )}
-          <p className="mt-4 text-[11px] font-normal leading-relaxed tracking-tight text-[#9ca3af]">
-            Recovered = no-shows that converted to a closed deal.
-          </p>
         </section>
       </div>
     </div>
