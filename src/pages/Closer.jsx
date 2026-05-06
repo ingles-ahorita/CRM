@@ -574,16 +574,27 @@ export default function Closer() {
     const getRange = () => {
       const now = new Date();
       if (recoveredAside.range === "thisWeek") {
-        const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(now);
+        const dayOfWeek = (now.getDay() + 6) % 7; // 0=Mon … 6=Sun
+        const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek, 0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
         return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
       }
       if (recoveredAside.range === "lastWeek") {
-        const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset(1);
-        return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
+        const dayOfWeek = (now.getDay() + 6) % 7;
+        const thisWeekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek, 0, 0, 0, 0);
+        const lastWeekStart = new Date(thisWeekStart);
+        lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+        const lastWeekEnd = new Date(lastWeekStart);
+        lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
+        lastWeekEnd.setHours(23, 59, 59, 999);
+        return { start: lastWeekStart.toISOString(), end: lastWeekEnd.toISOString() };
       }
       // mtd
-      const monthRange = DateHelpers.getMonthRangeInTimezone(now, "UTC");
-      return { start: monthRange.startDate.toISOString(), end: monthRange.endDate.toISOString() };
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      return { start: monthStart.toISOString(), end: monthEnd.toISOString() };
     };
 
     async function loadRecoveredAside() {
@@ -604,7 +615,6 @@ export default function Closer() {
           .from("calls")
           .select("id", { count: "exact", head: true })
           .eq("closer_id", closer)
-          .eq("confirmed", true)
           .eq("showed_up", false)
           .neq("cancelled", true)
           .gte("call_date", start)
@@ -613,7 +623,6 @@ export default function Closer() {
           .from("calls")
           .select("id", { count: "exact", head: true })
           .eq("closer_id", closer)
-          .eq("confirmed", true)
           .eq("showed_up", false)
           .neq("cancelled", true)
           .is("no_show_state", null)
@@ -624,7 +633,6 @@ export default function Closer() {
           .select("id", { count: "exact", head: true })
           .eq("closer_id", closer)
           .eq("no_show_state", "contacted")
-          .eq("confirmed", true)
           .eq("showed_up", false)
           .neq("cancelled", true)
           .gte("call_date", start)
