@@ -32,7 +32,7 @@ export default function TrendsChartPanel() {
   const [chartLoading, setChartLoading] = useState(true);
   const [chartMetric, setChartMetric] = useState("showUpRate");
   const [chartSplitBySource, setChartSplitBySource] = useState(false);
-  const [chartDays, setChartDays] = useState(90);
+  const [chartDays, setChartDays] = useState(7);
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
@@ -144,16 +144,16 @@ export default function TrendsChartPanel() {
         </div>
       </div>
 
-      <div className="mb-3 flex flex-col gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-2">
-          <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
-            {METRIC_OPTIONS.map((opt) => {
-              const active = chartMetric === opt.id;
+      <div className="mb-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-100/50 p-1">
+            {PERIOD_OPTIONS.map((opt) => {
+              const active = Number(chartDays) === Number(opt.id);
               return (
                 <button
                   key={opt.id}
                   type="button"
-                  onClick={() => setChartMetric(opt.id)}
+                  onClick={() => setChartDays(opt.id)}
                   className={cx(
                     "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none",
                     active
@@ -166,31 +166,30 @@ export default function TrendsChartPanel() {
               );
             })}
           </div>
-        </div>
-        <div className="flex w-full flex-wrap items-center justify-end gap-2">
-          <div className={`flex items-center ${chartMetric === "showUpRate" ? "justify-between" : "justify-end"} gap-2 w-full`}>
+
+          <div className="flex items-center gap-2">
             {chartMetric === "showUpRate" && (
               <button
                 type="button"
                 onClick={() => setChartSplitBySource((v) => !v)}
                 className={cx(
-                  "h-9 shrink-0 rounded-md border px-3 text-[12px] font-medium transition-colors",
+                  "h-8 shrink-0 rounded-lg border px-3 text-[11px] font-semibold transition-all !outline-none",
                   chartSplitBySource
-                    ? "border-indigo-500 bg-indigo-500 text-white"
-                    : "border-slate-200 bg-[#f9fafb] text-slate-700 hover:bg-slate-100",
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
                 )}
               >
                 Split by organic/ads
               </button>
             )}
-            <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-50/60 p-1">
-              {PERIOD_OPTIONS.map((opt) => {
-                const active = Number(chartDays) === Number(opt.id);
+            <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-100/50 p-1">
+              {METRIC_OPTIONS.map((opt) => {
+                const active = chartMetric === opt.id;
                 return (
                   <button
                     key={opt.id}
                     type="button"
-                    onClick={() => setChartDays(opt.id)}
+                    onClick={() => setChartMetric(opt.id)}
                     className={cx(
                       "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none",
                       active
