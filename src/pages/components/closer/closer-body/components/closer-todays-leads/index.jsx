@@ -1763,14 +1763,14 @@ export default function CloserTodaysLeads ( {
           className={cx(
             "mt-3",
             safeLeads.length
-              ? "overflow-x-auto [@media(min-width:1465px)]:overflow-x-visible"
+              ? "overflow-x-auto"
               : null,
           )}
         >
           <div
             className={cx(
               safeLeads.length
-                ? "min-w-[980px] [@media(min-width:1465px)]:min-w-0"
+                ? "min-w-[1100px] [@media(min-width:1565px)]:min-w-0"
                 : null,
               "divide-y divide-slate-100",
             )}
