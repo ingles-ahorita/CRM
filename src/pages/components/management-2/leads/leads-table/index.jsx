@@ -7,69 +7,75 @@ import { fetchAll } from "../../../../../utils/fetchLeads";
 import { useRealtimeLeads } from "../../../../../hooks/useRealtimeLeads";
 import { getDailySlotsTotal } from "../../../../../utils/ocuppancy";
 
-function cx(...p) {
-  return p.filter(Boolean).join(" ");
+function cx ( ...p ) {
+  return p.filter( Boolean ).join( " " );
 }
 
-function shimmer(className = "") {
+function shimmer ( className = "" ) {
   return (
     <div
-      className={cx("animate-pulse rounded-md bg-slate-200/70", className)}
+      className={cx( "animate-pulse rounded-md bg-slate-200/70", className )}
       aria-hidden
     />
   );
 }
 
 const GRID_CLASS_ALL =
-  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
 const GRID_CLASS_DEFAULT =
-  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
 
-function TableSkeletonRows({ subTab, count = 8 }) {
+function TableSkeletonRows ( { subTab, count = 8 } ) {
   const gridClass = subTab === "all" ? GRID_CLASS_ALL : GRID_CLASS_DEFAULT;
 
   return (
     <>
-      {Array.from({ length: count }).map((_, i) => (
+      {Array.from( { length: count } ).map( ( _, i ) => (
         <div key={i} className="px-3 py-2.5">
-          <div className={cx("grid items-center gap-4", gridClass)}>
+          <div className={cx( "grid items-center gap-4", gridClass )}>
             <div className="flex justify-center">
-              {shimmer("h-6 w-6 rounded-md")}
+              {shimmer( "h-6 w-6 rounded-md" )}
             </div>
             <div className="min-w-0 space-y-2">
-              {shimmer("h-4 w-[72%] max-w-[200px]")}
-              {shimmer("h-3 w-[88%] max-w-[240px]")}
+              {shimmer( "h-4 w-[72%] max-w-[200px]" )}
+              {shimmer( "h-3 w-[88%] max-w-[240px]" )}
             </div>
             <div className="flex justify-center">
-              {shimmer("h-8 w-full max-w-[108px] rounded-full")}
+              {shimmer( "h-8 w-full max-w-[108px] rounded-full" )}
             </div>
             <div className="flex justify-center">
-              {shimmer("h-8 w-full max-w-[108px] rounded-full")}
+              {shimmer( "h-8 w-full max-w-[108px] rounded-full" )}
             </div>
             <div className="flex justify-center">
-              {shimmer("h-4 w-[92%] max-w-[132px]")}
+              {shimmer( "h-4 w-[92%] max-w-[132px]" )}
             </div>
             <div className="flex justify-center">
-              {shimmer("h-4 w-[92%] max-w-[132px]")}
+              {shimmer( "h-4 w-[92%] max-w-[132px]" )}
+            </div>
+            <div className="flex justify-center">
+              {shimmer( "h-4 w-[85%] max-w-[100px]" )}
+            </div>
+            <div className="flex justify-center">
+              {shimmer( "h-4 w-[75%] max-w-[70px]" )}
             </div>
             <div className="flex justify-center gap-1.5">
-              {shimmer("h-[25px] w-[25px] rounded-md")}
-              {shimmer("h-[25px] w-[25px] rounded-md")}
-              {shimmer("h-[25px] w-[25px] rounded-md")}
-              {shimmer("h-[25px] w-[25px] rounded-md")}
+              {shimmer( "h-[25px] w-[25px] rounded-md" )}
+              {shimmer( "h-[25px] w-[25px] rounded-md" )}
+              {shimmer( "h-[25px] w-[25px] rounded-md" )}
+              {shimmer( "h-[25px] w-[25px] rounded-md" )}
             </div>
             <div className="flex justify-center">
-              {shimmer("h-8 w-16 rounded-md")}
+              {shimmer( "h-8 w-16 rounded-md" )}
             </div>
             <div className="flex justify-center">
-              {shimmer("h-8 w-[72px] rounded-lg")}
+              {shimmer( "h-8 w-[72px] rounded-lg" )}
             </div>
             <div className="flex justify-end">
-              {shimmer("h-8 w-8 rounded-md")}
+              {shimmer( "h-8 w-8 rounded-md" )}
             </div>
           </div>
         </div>
-      ))}
+      ) )}
     </>
   );
 }
@@ -84,15 +90,15 @@ const SUB_TABS = [
   { key: "all", label: "All" },
 ];
 
-const DAY_RANGE_TABS = new Set([
+const DAY_RANGE_TABS = new Set( [
   "yesterday",
   "today",
   "tomorrow",
   "tomorrow + 1",
-]);
-const FULL_FILTER_TABS = new Set(["all", "follow ups", "no shows"]);
+] );
+const FULL_FILTER_TABS = new Set( [ "all", "follow ups", "no shows" ] );
 
-function FilterChip({ label, active, onClick }) {
+function FilterChip ( { label, active, onClick } ) {
   return (
     <button
       type="button"
@@ -110,16 +116,16 @@ function FilterChip({ label, active, onClick }) {
   );
 }
 
-function SubTabs({ value, onChange }) {
+function SubTabs ( { value, onChange } ) {
   return (
     <div className="inline-flex rounded-lg bg-slate-100/80 p-1">
-      {SUB_TABS.map((t) => {
+      {SUB_TABS.map( ( t ) => {
         const active = t.key === value;
         return (
           <button
             key={t.key}
             type="button"
-            onClick={() => onChange?.(t.key)}
+            onClick={() => onChange?.( t.key )}
             className={cx(
               "px-3 py-1 text-[11px] font-semibold rounded-md transition !outline-none",
               active
@@ -130,63 +136,63 @@ function SubTabs({ value, onChange }) {
             {t.label}
           </button>
         );
-      })}
+      } )}
     </div>
   );
 }
 
-export default function LeadsTable({ title = "Today's Leads" }) {
-  const [searchParams, setSearchParams] = useSearchParams();
+export default function LeadsTable ( { title = "Today's Leads" } ) {
+  const [ searchParams, setSearchParams ] = useSearchParams();
   const navigate = useNavigate();
 
-  const [subTab, setSubTab] = useState(searchParams.get("subTab") || "today");
-  const [sortOrder, setSortOrder] = useState(searchParams.get("sortOrder") || "desc"); 
-  const [sortBy, setSortBy] = useState(searchParams.get("sortBy") || "call_date");
-  const [showFilterPanel, setShowFilterPanel] = useState(false);
-  const [showSearch, setShowSearch] = useState(!!searchParams.get("search"));
-  const [searchInput, setSearchInput] = useState(searchParams.get("search") || "");
-  const [searchTerm, setSearchTerm] = useState(searchParams.get("search") || "");
-  const [startDate, setStartDate] = useState(searchParams.get("start") || "");
-  const [endDate, setEndDate] = useState(searchParams.get("end") || "");
-  const [setterFilter, setSetterFilter] = useState(searchParams.get("setter") || "");
-  const [closerFilter, setCloserFilter] = useState(searchParams.get("closer") || "");
-  const [statusFilters, setStatusFilters] = useState({
-    confirmed: searchParams.get("confirmed") === "true",
-    cancelled: searchParams.get("cancelled") === "true",
-    noShow: searchParams.get("noShow") === "true",
-    noPickUp: searchParams.get("noPickUp") === "true",
-    rescheduled: searchParams.get("rescheduled") === "true",
-    transferred: searchParams.get("transferred") === "true",
-    purchased: searchParams.get("purchased") === "true",
-    noConversions: searchParams.get("noConversions") === "true",
-    lockIn: searchParams.get("lockIn") === "true",
-    recovered: searchParams.get("recovered") === "true",
-    noManychatId: searchParams.get("noManychatId") === "true",
-  });
-  const [noShowStateFilter, setNoShowStateFilter] = useState(searchParams.get("noShowState") || "");
-  const [slotsByDate, setSlotsByDate] = useState({});
-  const requestSeqRef = useRef(0);
-  const [dataState, setDataState] = useState({
+  const [ subTab, setSubTab ] = useState( searchParams.get( "subTab" ) || "today" );
+  const [ sortOrder, setSortOrder ] = useState( searchParams.get( "sortOrder" ) || "desc" );
+  const [ sortBy, setSortBy ] = useState( searchParams.get( "sortBy" ) || "call_date" );
+  const [ showFilterPanel, setShowFilterPanel ] = useState( false );
+  const [ showSearch, setShowSearch ] = useState( !!searchParams.get( "search" ) );
+  const [ searchInput, setSearchInput ] = useState( searchParams.get( "search" ) || "" );
+  const [ searchTerm, setSearchTerm ] = useState( searchParams.get( "search" ) || "" );
+  const [ startDate, setStartDate ] = useState( searchParams.get( "start" ) || "" );
+  const [ endDate, setEndDate ] = useState( searchParams.get( "end" ) || "" );
+  const [ setterFilter, setSetterFilter ] = useState( searchParams.get( "setter" ) || "" );
+  const [ closerFilter, setCloserFilter ] = useState( searchParams.get( "closer" ) || "" );
+  const [ statusFilters, setStatusFilters ] = useState( {
+    confirmed: searchParams.get( "confirmed" ) === "true",
+    cancelled: searchParams.get( "cancelled" ) === "true",
+    noShow: searchParams.get( "noShow" ) === "true",
+    noPickUp: searchParams.get( "noPickUp" ) === "true",
+    rescheduled: searchParams.get( "rescheduled" ) === "true",
+    transferred: searchParams.get( "transferred" ) === "true",
+    purchased: searchParams.get( "purchased" ) === "true",
+    noConversions: searchParams.get( "noConversions" ) === "true",
+    lockIn: searchParams.get( "lockIn" ) === "true",
+    recovered: searchParams.get( "recovered" ) === "true",
+    noManychatId: searchParams.get( "noManychatId" ) === "true",
+  } );
+  const [ noShowStateFilter, setNoShowStateFilter ] = useState( searchParams.get( "noShowState" ) || "" );
+  const [ slotsByDate, setSlotsByDate ] = useState( {} );
+  const requestSeqRef = useRef( 0 );
+  const [ dataState, setDataState ] = useState( {
     leads: [],
     loading: true,
     setterMap: {},
     closerMap: {},
-    currentDate: new Date().toISOString().split("T")[0],
+    currentDate: new Date().toISOString().split( "T" )[ 0 ],
     counts: { booked: 0, confirmed: 0, cancelled: 0, noShow: 0, noPickup: 0 },
-  });
+  } );
 
-  const handleSearch = (val) => {
-    setSubTab("all");
-    setSearchTerm(val);
+  const handleSearch = ( val ) => {
+    setSubTab( "all" );
+    setSearchTerm( val );
   };
 
-  useRealtimeLeads(dataState, setDataState, subTab, null, null, sortBy);
+  useRealtimeLeads( dataState, setDataState, subTab, null, null, sortBy );
 
-  useEffect(() => {
+  useEffect( () => {
     const requestSeq = ++requestSeqRef.current;
-    const guardedSetDataState = (updater) => {
-      if (requestSeqRef.current !== requestSeq) return;
-      setDataState(updater);
+    const guardedSetDataState = ( updater ) => {
+      if ( requestSeqRef.current !== requestSeq ) return;
+      setDataState( updater );
     };
 
     fetchAll(
@@ -219,53 +225,53 @@ export default function LeadsTable({ title = "Today's Leads" }) {
     endDate,
     setterFilter,
     closerFilter,
-  ]);
+  ] );
 
   // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearchTerm(searchInput);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+  useEffect( () => {
+    const timer = setTimeout( () => {
+      setSearchTerm( searchInput );
+    }, 500 );
+    return () => clearTimeout( timer );
+  }, [ searchInput ] );
 
   // Sync state to URL params
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams); // Preserve existing params (like main tab=leads)
-    
-    if (searchTerm) params.set("search", searchTerm);
-    else params.delete("search");
+  useEffect( () => {
+    const params = new URLSearchParams( searchParams ); // Preserve existing params (like main tab=leads)
 
-    if (subTab !== "today") params.set("subTab", subTab);
-    else params.delete("subTab");
+    if ( searchTerm ) params.set( "search", searchTerm );
+    else params.delete( "search" );
 
-    if (sortBy !== "call_date") params.set("sortBy", sortBy);
-    else params.delete("sortBy");
+    if ( subTab !== "today" ) params.set( "subTab", subTab );
+    else params.delete( "subTab" );
 
-    if (sortOrder !== "desc") params.set("sortOrder", sortOrder);
-    else params.delete("sortOrder");
+    if ( sortBy !== "call_date" ) params.set( "sortBy", sortBy );
+    else params.delete( "sortBy" );
 
-    if (startDate) params.set("start", startDate);
-    else params.delete("start");
+    if ( sortOrder !== "desc" ) params.set( "sortOrder", sortOrder );
+    else params.delete( "sortOrder" );
 
-    if (endDate) params.set("end", endDate);
-    else params.delete("end");
+    if ( startDate ) params.set( "start", startDate );
+    else params.delete( "start" );
 
-    if (setterFilter) params.set("setter", setterFilter);
-    else params.delete("setter");
+    if ( endDate ) params.set( "end", endDate );
+    else params.delete( "end" );
 
-    if (closerFilter) params.set("closer", closerFilter);
-    else params.delete("closer");
+    if ( setterFilter ) params.set( "setter", setterFilter );
+    else params.delete( "setter" );
 
-    if (noShowStateFilter) params.set("noShowState", noShowStateFilter);
-    else params.delete("noShowState");
+    if ( closerFilter ) params.set( "closer", closerFilter );
+    else params.delete( "closer" );
 
-    Object.entries(statusFilters).forEach(([key, value]) => {
-      if (value) params.set(key, "true");
-      else params.delete(key);
-    });
+    if ( noShowStateFilter ) params.set( "noShowState", noShowStateFilter );
+    else params.delete( "noShowState" );
 
-    setSearchParams(params, { replace: true });
+    Object.entries( statusFilters ).forEach( ( [ key, value ] ) => {
+      if ( value ) params.set( key, "true" );
+      else params.delete( key );
+    } );
+
+    setSearchParams( params, { replace: true } );
   }, [
     searchTerm,
     subTab,
@@ -278,65 +284,65 @@ export default function LeadsTable({ title = "Today's Leads" }) {
     noShowStateFilter,
     statusFilters,
     setSearchParams,
-  ]);
+  ] );
 
-  useEffect(() => {
+  useEffect( () => {
     let cancelled = false;
     const loadSlots = async () => {
       try {
         const slots = await getDailySlotsTotal();
-        if (!cancelled && slots && typeof slots === "object" && !Array.isArray(slots)) {
-          setSlotsByDate(slots);
+        if ( !cancelled && slots && typeof slots === "object" && !Array.isArray( slots ) ) {
+          setSlotsByDate( slots );
         }
-      } catch (e) {
-        if (!cancelled) setSlotsByDate({});
+      } catch ( e ) {
+        if ( !cancelled ) setSlotsByDate( {} );
       }
     };
     loadSlots();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [] );
 
   const safeLeads = dataState?.leads || [];
 
-  const filteredLeads = useMemo(() => {
-    return safeLeads.filter((l) => {
+  const filteredLeads = useMemo( () => {
+    return safeLeads.filter( ( l ) => {
       if (
         subTab === "no shows" &&
         noShowStateFilter &&
-        String(l?.no_show_state || "") !== noShowStateFilter
+        String( l?.no_show_state || "" ) !== noShowStateFilter
       ) {
         return false;
       }
       return true;
-    });
-  }, [safeLeads, subTab, noShowStateFilter]);
+    } );
+  }, [ safeLeads, subTab, noShowStateFilter ] );
 
   // Keep server order, but always push cancelled (red background) rows to end.
-  const sortedLeads = useMemo(() => {
+  const sortedLeads = useMemo( () => {
     const activeRows = [];
     const cancelledRows = [];
-    for (const row of filteredLeads) {
-      if (row?.cancelled) cancelledRows.push(row);
-      else activeRows.push(row);
+    for ( const row of filteredLeads ) {
+      if ( row?.cancelled ) cancelledRows.push( row );
+      else activeRows.push( row );
     }
-    return [...activeRows, ...cancelledRows];
-  }, [filteredLeads]);
+    return [ ...activeRows, ...cancelledRows ];
+  }, [ filteredLeads ] );
 
   const hasTableLayout = dataState?.loading || sortedLeads.length > 0;
-  const isDayRangeTab = DAY_RANGE_TABS.has(subTab);
-  const hasFullFilters = isDayRangeTab || FULL_FILTER_TABS.has(subTab);
+  const isDayRangeTab = DAY_RANGE_TABS.has( subTab );
+  const hasFullFilters = isDayRangeTab || FULL_FILTER_TABS.has( subTab );
   const isAllTab = subTab === "all";
   const gridClass = isAllTab ? GRID_CLASS_ALL : GRID_CLASS_DEFAULT;
   const tableMinWidthClass = isAllTab
-    ? "min-w-[1320px] [@media(min-width:1465px)]:min-w-0"
-    : "min-w-[1320px] [@media(min-width:1465px)]:min-w-0";
+    ? ""
+    : "";
   const selectedDateKey =
-    dataState?.currentDate || new Date().toISOString().split("T")[0];
-  const slots = Number(slotsByDate?.[selectedDateKey] || 0);
-  const booked = Number(dataState?.counts?.booked || 0);
-  const occupancy = slots > 0 ? Math.min(100, Math.round((booked / slots) * 100)) : 0;
+    dataState?.currentDate || new Date().toISOString().split( "T" )[ 0 ];
+  const slots = Number( slotsByDate?.[ selectedDateKey ] || 0 );
+  const booked = Number( dataState?.counts?.booked || 0 );
+  const occupancy = slots > 0 ? Math.min( 100, Math.round( ( booked / slots ) * 100 ) ) : 0;
 
   return (
     <div className="w-full max-w-full rounded-2xl bg-white border-slate-200 shadow-sm relative pt-3">
@@ -345,7 +351,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
 
         <div className="flex items-center gap-2 flex-wrap">
           <span
-            onClick={() => setSortOrder((p) => (p === "asc" ? "desc" : "asc"))}
+            onClick={() => setSortOrder( ( p ) => ( p === "asc" ? "desc" : "asc" ) )}
             className="h-9 w-9 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 flex items-center justify-center cursor-pointer"
             title="Toggle sort order"
           >
@@ -362,7 +368,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
           <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
             <button
               type="button"
-              onClick={() => setSortBy("book_date")}
+              onClick={() => setSortBy( "book_date" )}
               className={cx(
                 "px-2.5 py-1.5 text-[11px] font-semibold rounded-md",
                 sortBy === "book_date"
@@ -374,7 +380,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
             </button>
             <button
               type="button"
-              onClick={() => setSortBy("call_date")}
+              onClick={() => setSortBy( "call_date" )}
               className={cx(
                 "px-2.5 py-1.5 text-[11px] font-semibold rounded-md",
                 sortBy === "call_date"
@@ -388,7 +394,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
 
           <button
             type="button"
-            onClick={() => setShowFilterPanel((s) => !s)}
+            onClick={() => setShowFilterPanel( ( s ) => !s )}
             className={cx(
               "h-9 rounded-lg px-3 border text-[13px] font-medium inline-flex items-center gap-2 transition !outline-none",
               showFilterPanel
@@ -408,10 +414,10 @@ export default function LeadsTable({ title = "Today's Leads" }) {
               type="text"
               placeholder="Search lead..."
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSearch(searchInput);
+              onChange={( e ) => setSearchInput( e.target.value )}
+              onKeyDown={( e ) => {
+                if ( e.key === "Enter" ) {
+                  handleSearch( searchInput );
                 }
               }}
               className={cx(
@@ -424,10 +430,10 @@ export default function LeadsTable({ title = "Today's Leads" }) {
             />
             <span
               onClick={() => {
-                if (showSearch) {
-                  handleSearch(searchInput);
+                if ( showSearch ) {
+                  handleSearch( searchInput );
                 }
-                setShowSearch((s) => !s);
+                setShowSearch( ( s ) => !s );
               }}
               className="h-9 w-9 rounded-lg bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center cursor-pointer"
               title="Search"
@@ -449,14 +455,14 @@ export default function LeadsTable({ title = "Today's Leads" }) {
               { key: "contacted", label: "Contacted" },
               { key: "rebooked", label: "Rebooked" },
               { key: "dead", label: "Dead" },
-            ].map((x) => {
+            ].map( ( x ) => {
               const active = noShowStateFilter === x.key;
               return (
                 <button
                   key={x.key}
                   type="button"
                   onClick={() =>
-                    setNoShowStateFilter((p) => (p === x.key ? "" : x.key))
+                    setNoShowStateFilter( ( p ) => ( p === x.key ? "" : x.key ) )
                   }
                   className={cx(
                     "px-3 py-1.5 rounded-md border text-[12px] font-medium transition !outline-none",
@@ -469,7 +475,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                   {x.label}
                 </button>
               );
-            })}
+            } )}
           </div>
         ) : null}
 
@@ -485,7 +491,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                   <input
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={( e ) => setStartDate( e.target.value )}
                     className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
                   />
                 </div>
@@ -494,7 +500,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                   <input
                     type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={( e ) => setEndDate( e.target.value )}
                     className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
                   />
                 </div>
@@ -513,12 +519,12 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                     </label>
                     <select
                       value={setterFilter}
-                      onChange={(e) => setSetterFilter(e.target.value)}
+                      onChange={( e ) => setSetterFilter( e.target.value )}
                       className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
                     >
                       <option value="">All Setters</option>
-                      {Object.entries(dataState?.setterMap || {}).map(
-                        ([id, name]) => (
+                      {Object.entries( dataState?.setterMap || {} ).map(
+                        ( [ id, name ] ) => (
                           <option key={id} value={id}>
                             {name}
                           </option>
@@ -532,12 +538,12 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                     </label>
                     <select
                       value={closerFilter}
-                      onChange={(e) => setCloserFilter(e.target.value)}
+                      onChange={( e ) => setCloserFilter( e.target.value )}
                       className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
                     >
                       <option value="">All Closers</option>
-                      {Object.entries(dataState?.closerMap || {}).map(
-                        ([id, name]) => (
+                      {Object.entries( dataState?.closerMap || {} ).map(
+                        ( [ id, name ] ) => (
                           <option key={id} value={id}>
                             {name}
                           </option>
@@ -559,66 +565,66 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                     label="Confirmed"
                     active={!!statusFilters.confirmed}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         confirmed: !p.confirmed,
-                      }))
+                      } ) )
                     }
                   />
                   <FilterChip
                     label="Cancelled"
                     active={!!statusFilters.cancelled}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         cancelled: !p.cancelled,
-                      }))
+                      } ) )
                     }
                   />
                   <FilterChip
                     label="No Show"
                     active={!!statusFilters.noShow}
                     onClick={() =>
-                      setStatusFilters((p) => ({ ...p, noShow: !p.noShow }))
+                      setStatusFilters( ( p ) => ( { ...p, noShow: !p.noShow } ) )
                     }
                   />
                   <FilterChip
                     label="No Pick up"
                     active={!!statusFilters.noPickUp}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         noPickUp: !p.noPickUp,
-                      }))
+                      } ) )
                     }
                   />
                   <FilterChip
                     label="Reschedule"
                     active={!!statusFilters.rescheduled}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         rescheduled: !p.rescheduled,
-                      }))
+                      } ) )
                     }
                   />
                   <FilterChip
                     label="Transfered"
                     active={!!statusFilters.transferred}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         transferred: !p.transferred,
-                      }))
+                      } ) )
                     }
                   />
                   <FilterChip
                     label="Purchased"
                     active={!!statusFilters.purchased}
                     onClick={() => {
-                      setStatusFilters((p) => {
+                      setStatusFilters( ( p ) => {
                         const nextPurchased = !p.purchased;
-                        setSortBy((s) =>
+                        setSortBy( ( s ) =>
                           nextPurchased
                             ? "purchased_at"
                             : s === "purchased_at"
@@ -626,44 +632,44 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                               : s,
                         );
                         return { ...p, purchased: nextPurchased };
-                      });
+                      } );
                     }}
                   />
                   <FilterChip
                     label="No conversions"
                     active={!!statusFilters.noConversions}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         noConversions: !p.noConversions,
-                      }))
+                      } ) )
                     }
                   />
                   <FilterChip
                     label="Lock In"
                     active={!!statusFilters.lockIn}
                     onClick={() =>
-                      setStatusFilters((p) => ({ ...p, lockIn: !p.lockIn }))
+                      setStatusFilters( ( p ) => ( { ...p, lockIn: !p.lockIn } ) )
                     }
                   />
                   <FilterChip
                     label="Recovered"
                     active={!!statusFilters.recovered}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         recovered: !p.recovered,
-                      }))
+                      } ) )
                     }
                   />
                   <FilterChip
                     label="No ManyChat ID"
                     active={!!statusFilters.noManychatId}
                     onClick={() =>
-                      setStatusFilters((p) => ({
+                      setStatusFilters( ( p ) => ( {
                         ...p,
                         noManychatId: !p.noManychatId,
-                      }))
+                      } ) )
                     }
                   />
                 </div>
@@ -675,31 +681,31 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                     { key: "transferred", label: "Transferred" },
                     { key: "purchased", label: "Purchased" },
                     { key: "lockIn", label: "Lock In" },
-                  ].map((x) => (
+                  ].map( ( x ) => (
                     <FilterChip
                       key={x.key}
                       label={x.label}
-                      active={!!statusFilters?.[x.key]}
+                      active={!!statusFilters?.[ x.key ]}
                       onClick={() =>
                         x.key === "purchased"
-                          ? setStatusFilters((p) => {
-                              const nextPurchased = !p.purchased;
-                              setSortBy((s) =>
-                                nextPurchased
-                                  ? "purchased_at"
-                                  : s === "purchased_at"
-                                    ? "call_date"
-                                    : s,
-                              );
-                              return { ...p, purchased: nextPurchased };
-                            })
-                          : setStatusFilters((p) => ({
-                              ...p,
-                              [x.key]: !p[x.key],
-                            }))
+                          ? setStatusFilters( ( p ) => {
+                            const nextPurchased = !p.purchased;
+                            setSortBy( ( s ) =>
+                              nextPurchased
+                                ? "purchased_at"
+                                : s === "purchased_at"
+                                  ? "call_date"
+                                  : s,
+                            );
+                            return { ...p, purchased: nextPurchased };
+                          } )
+                          : setStatusFilters( ( p ) => ( {
+                            ...p,
+                            [ x.key ]: !p[ x.key ],
+                          } ) )
                       }
                     />
-                  ))}
+                  ) )}
                 </div>
               )}
             </div>
@@ -739,7 +745,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
         <div
           className={cx(
             hasTableLayout
-              ? cx("min-w-max", tableMinWidthClass)
+              ? cx( "min-w-max", tableMinWidthClass )
               : null,
             "divide-y divide-slate-100",
           )}
@@ -750,7 +756,7 @@ export default function LeadsTable({ title = "Today's Leads" }) {
             </div>
           ) : (
             <>
-              <div className="px-3 py-2 bg-slate-50/70 border-y border-slate-200">
+              <div className="px-3 py-2 bg-slate-50/70 border-y border-slate-200 overflow-auto">
                 <div
                   className={cx(
                     "grid items-center gap-4 text-[11px] font-bold tracking-wide text-slate-500 uppercase",
@@ -763,6 +769,8 @@ export default function LeadsTable({ title = "Today's Leads" }) {
                   <div className="text-center">Closer</div>
                   <div className="text-center">Book Date</div>
                   <div className="text-center">Call Date</div>
+                  <div className="text-center">Outcome</div>
+                  <div className="text-center">Price</div>
                   <div className="text-center">Status</div>
                   <div className="text-center">Response</div>
                   <div className="text-center">Notes</div>
@@ -773,17 +781,17 @@ export default function LeadsTable({ title = "Today's Leads" }) {
               {dataState?.loading ? (
                 <TableSkeletonRows subTab={subTab} count={8} />
               ) : (
-                sortedLeads.map((l) => (
+                sortedLeads.map( ( l ) => (
                   <LeadRow
                     key={l.id}
                     lead={l}
-                    setterName={dataState?.setterMap?.[String(l.setter_id)] || l?.setters?.name}
-                    closerName={dataState?.closerMap?.[String(l.closer_id)] || l?.closers?.name}
+                    setterName={dataState?.setterMap?.[ String( l.setter_id ) ] || l?.setters?.name}
+                    closerName={dataState?.closerMap?.[ String( l.closer_id ) ] || l?.closers?.name}
                     setterMap={dataState?.setterMap || {}}
                     closerList={dataState?.closerList || []}
                     useCompactStatusBadges
                   />
-                ))
+                ) )
               )}
             </>
           )}

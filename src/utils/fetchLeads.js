@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { runAnalysis } from '../pages/reactionTime';
-import { getDayBoundsLocal } from '../utils/dateHelpers';
+import { getDayBoundsUTC } from '../utils/dateHelpers';
 import { subDays, addDays } from 'date-fns'; 
 
 
@@ -35,8 +35,8 @@ if (filters?.purchased) {
   // Use regular join for others
   // Note: A call can only have ONE outcome_log entry, so it's either 'follow_up' OR 'lock_in'
   const outcomeLogSelect = activeTab === 'follow ups' 
-    ? `outcome_log!inner!call_id (id, outcome)`
-    : `outcome_log!call_id (id, outcome)`;
+    ? `outcome_log!inner!call_id (id, outcome, offers!offer_id(price))`
+    : `outcome_log!call_id (id, outcome, offers!offer_id(price))`;
 
 let query = supabase
   .from('calls')
@@ -55,7 +55,13 @@ let query = supabase
   if (activeTab === 'no shows') {
     query = query.eq('confirmed', true).eq('showed_up', false);
     if (filters?.noShowState) {
-      query = query.eq('no_show_state', filters.noShowState);
+      if (filters.noShowState === 'rebooked') {
+        query = query.eq('recovered', true);
+      } else if (filters.noShowState === 'no_show') {
+        query = query.or('no_show_state.is.null,no_show_state.eq.no_show');
+      } else {
+        query = query.eq('no_show_state', filters.noShowState);
+      }
     }
     // Apply date range when provided; otherwise no date filter (like 'all') so it always shows results
     if (startDate) {
@@ -93,11 +99,11 @@ let query = supabase
   } else if (activeTab !== 'all' && activeTab !== 'no shows') {
     // Use local timezone day bounds for tabs (Today, Yesterday, etc.) so users see their local day
     const now = new Date();
-    const { dayStart: todayStart, dayEnd: todayEnd } = getDayBoundsLocal(now);
-    const { dayStart: yesterdayStart, dayEnd: yesterdayEnd } = getDayBoundsLocal(subDays(now, 1));
-    const { dayStart: tomorrowStart } = getDayBoundsLocal(addDays(now, 1));
-    const { dayStart: dayAfterTomorrowStart } = getDayBoundsLocal(addDays(now, 2));
-    const { dayStart: dayAfterTomorrowPlusOneStart } = getDayBoundsLocal(addDays(now, 3));
+    const { dayStart: todayStart, dayEnd: todayEnd } = getDayBoundsUTC(now);
+    const { dayStart: yesterdayStart, dayEnd: yesterdayEnd } = getDayBoundsUTC(subDays(now, 1));
+    const { dayStart: tomorrowStart } = getDayBoundsUTC(addDays(now, 1));
+    const { dayStart: dayAfterTomorrowStart } = getDayBoundsUTC(addDays(now, 2));
+    const { dayStart: dayAfterTomorrowPlusOneStart } = getDayBoundsUTC(addDays(now, 3));
 
     if (activeTab === 'today') {
       query = query
@@ -110,13 +116,13 @@ let query = supabase
         .lte(dateField, yesterdayEnd.toISOString());
       updateDataState({ currentDate: yesterdayStart.toISOString().slice(0, 10) });
     } else if (activeTab === 'tomorrow') {
-      const { dayEnd: tomorrowEnd } = getDayBoundsLocal(addDays(now, 1));
+      const { dayEnd: tomorrowEnd } = getDayBoundsUTC(addDays(now, 1));
       query = query
         .gte(dateField, tomorrowStart.toISOString())
         .lte(dateField, tomorrowEnd.toISOString());
       updateDataState({ currentDate: tomorrowStart.toISOString().slice(0, 10) });
     } else if (activeTab === 'tomorrow + 1') {
-      const { dayEnd: dayAfterTomorrowEnd } = getDayBoundsLocal(addDays(now, 2));
+      const { dayEnd: dayAfterTomorrowEnd } = getDayBoundsUTC(addDays(now, 2));
       query = query
         .gte(dateField, dayAfterTomorrowStart.toISOString())
         .lte(dateField, dayAfterTomorrowEnd.toISOString());
@@ -180,8 +186,9 @@ if (searchTerm) {
       console.log("Filtering by closer_id:", closerFilter);
     }
 
-  // Only apply limit if no email filter and showing 'all' or 'no shows' (without date range)
-  if (!searchTerm && (activeTab === 'all' || (activeTab === 'no shows' && !startDate && !endDate))) {
+  // Only cap the broad "all" view. No Shows needs the full cohort because its
+  // state chips are exact operational queues, not previews.
+  if (!searchTerm && activeTab === 'all') {
     query = query.limit(100);
   }
 
