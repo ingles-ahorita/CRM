@@ -1169,6 +1169,10 @@ export default function CloserTodaysLeads ( {
   onTabChange,
   searchTerm = "",
   onSearchChange,
+  sortOrder: controlledSortOrder,
+  onSortOrderChange,
+  noShowStateFilter: controlledNoShowStateFilter,
+  onNoShowStateFilterChange,
 } ) {
   const safeLeads = Array.isArray( leads ) ? leads : [];
   const tabValue = useMemo( () => activeTab || "today", [ activeTab ] );
@@ -1200,7 +1204,7 @@ export default function CloserTodaysLeads ( {
   const payoffCountForDisplay = payoffList.length;
 
   // HeaderTabsAndToolbar-style filters (local, for this table)
-  const [ sortOrder, setSortOrder ] = useState( "asc" ); // Earliest first by default
+  const [ localSortOrder, setLocalSortOrder ] = useState( "asc" ); // Earliest first by default
   const [ showFilterPanel, setShowFilterPanel ] = useState( false );
   const [ showSearch, setShowSearch ] = useState( false );
   const [ startDate, setStartDate ] = useState( "" );
@@ -1210,7 +1214,22 @@ export default function CloserTodaysLeads ( {
     noManyChatId: false,
     lockIn: false,
   } );
-  const [ noShowStateFilter, setNoShowStateFilter ] = useState( "" );
+  const [ localNoShowStateFilter, setLocalNoShowStateFilter ] = useState( "" );
+  const sortOrder = controlledSortOrder ?? localSortOrder;
+  const noShowStateFilter = controlledNoShowStateFilter ?? localNoShowStateFilter;
+  const setSortOrder = ( updater ) => {
+    const next = typeof updater === "function" ? updater( sortOrder ) : updater;
+    if ( controlledSortOrder === undefined ) setLocalSortOrder( next );
+    onSortOrderChange?.( next );
+  };
+  const setNoShowStateFilter = ( updater ) => {
+    const next =
+      typeof updater === "function" ? updater( noShowStateFilter ) : updater;
+    if ( controlledNoShowStateFilter === undefined ) {
+      setLocalNoShowStateFilter( next );
+    }
+    onNoShowStateFilterChange?.( next );
+  };
 
   const filteredLeads = useMemo( () => {
     const term = String( searchTerm || "" ).trim().toLowerCase();
@@ -1239,7 +1258,14 @@ export default function CloserTodaysLeads ( {
       }
 
       if ( tabValue === "no shows" && noShowStateFilter ) {
-        if ( String( l?.no_show_state || "" ) !== noShowStateFilter ) return false;
+        if ( noShowStateFilter === "rebooked" ) {
+          if ( l?.recovered !== true ) return false;
+        } else if ( noShowStateFilter === "no_show" ) {
+          const state = String( l?.no_show_state || "" );
+          if ( state && state !== "no_show" ) return false;
+        } else if ( String( l?.no_show_state || "" ) !== noShowStateFilter ) {
+          return false;
+        }
       }
 
       // Date range is only used on broader views, matching Header behavior
@@ -1770,7 +1796,7 @@ export default function CloserTodaysLeads ( {
           <div
             className={cx(
               safeLeads.length
-                ? "min-w-[1100px] [@media(min-width:1565px)]:min-w-0"
+                ? "min-w-[1100px]"
                 : null,
               "divide-y divide-slate-100",
             )}

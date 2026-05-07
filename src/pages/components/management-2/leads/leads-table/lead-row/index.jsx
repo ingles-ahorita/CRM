@@ -10,22 +10,22 @@ import {
   getCountryFromPhone,
 } from "../../../../../../utils/phoneNumberParser";
 
-function cx(...p) {
-  return p.filter(Boolean).join(" ");
+function cx ( ...p ) {
+  return p.filter( Boolean ).join( " " );
 }
 
 // Same colour mapping as CloserTodaysLeads `callTimeColor`.
-function callTimeColor(time, isRescheduled, called) {
-  if (time === undefined) return "#e5e7eb";
-  if (isRescheduled && !called) return "#dd86ddff";
-  if (!called) return "#cfcfcfff";
-  if (time < 6) return "#88ff2dff";
-  if (time < 15) return "#fdd329ff";
-  if (time >= 15) return "#ff8b8bff";
+function callTimeColor ( time, isRescheduled, called ) {
+  if ( time === undefined ) return "#e5e7eb";
+  if ( isRescheduled && !called ) return "#dd86ddff";
+  if ( !called ) return "#cfcfcfff";
+  if ( time < 6 ) return "#88ff2dff";
+  if ( time < 15 ) return "#fdd329ff";
+  if ( time >= 15 ) return "#ff8b8bff";
   return "#e5e7eb";
 }
 
-function ResponsePill({ lead }) {
+function ResponsePill ( { lead } ) {
   return (
     <span
       className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[12px] font-semibold"
@@ -45,33 +45,33 @@ function ResponsePill({ lead }) {
 }
 
 const GRID_CLASS_ALL =
-  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
 const GRID_CLASS_DEFAULT =
-  "grid-cols-[24px_minmax(170px,1fr)_120px_120px_150px_150px_170px_110px_86px_56px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
 
-function StatusBadge({ value, label, title, outcomeLog }) {
+function StatusBadge ( { value, label, title, outcomeLog } ) {
   const getColor = () => {
-    const isDontQualify = Array.isArray(outcomeLog)
-      ? outcomeLog.some((ol) => ol?.outcome === "dont_qualify")
+    const isDontQualify = Array.isArray( outcomeLog )
+      ? outcomeLog.some( ( ol ) => ol?.outcome === "dont_qualify" )
       : outcomeLog?.outcome === "dont_qualify";
-    if (isDontQualify && label === "$") return "#000000";
+    if ( isDontQualify && label === "$" ) return "#000000";
 
-    if (label === "$") {
-      const isLockIn = Array.isArray(outcomeLog)
-        ? outcomeLog.some((ol) => ol?.outcome === "lock_in")
+    if ( label === "$" ) {
+      const isLockIn = Array.isArray( outcomeLog )
+        ? outcomeLog.some( ( ol ) => ol?.outcome === "lock_in" )
         : outcomeLog?.outcome === "lock_in";
-      const isFollowUp = Array.isArray(outcomeLog)
-        ? outcomeLog.some((ol) => ol?.outcome === "follow_up")
+      const isFollowUp = Array.isArray( outcomeLog )
+        ? outcomeLog.some( ( ol ) => ol?.outcome === "follow_up" )
         : outcomeLog?.outcome === "follow_up";
-      if (isLockIn || isFollowUp) return "#9333ea";
+      if ( isLockIn || isFollowUp ) return "#9333ea";
     }
 
-    if (value) return "#10b981";
-    if (value === false || value === "false") return "#ef4444";
+    if ( value ) return "#10b981";
+    if ( value === false || value === "false" ) return "#ef4444";
     return "#f59e0b";
   };
 
-  const isPurchasedTBD = label === "$" && (value == null || value === "null");
+  const isPurchasedTBD = label === "$" && ( value == null || value === "null" );
   const displayTitle = isPurchasedTBD ? "Purchased: TBD" : title;
 
   return (
@@ -85,7 +85,7 @@ function StatusBadge({ value, label, title, outcomeLog }) {
   );
 }
 
-export default function LeadRow({
+export default function LeadRow ( {
   lead,
   setterName,
   closerName,
@@ -93,34 +93,34 @@ export default function LeadRow({
   closerList = [],
   useCompactStatusBadges = true,
   mode = "full",
-}) {
+} ) {
   const { setter: routeSetterId } = useParams();
-  const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [showNoteModal, setShowNoteModal] = useState(false);
-  const [modeState, setModeState] = useState(mode);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [showRecoverModal, setShowRecoverModal] = useState(false);
-  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
-  const [, setSetter] = useState(
-    lead?.setter_id != null ? String(lead.setter_id) : "",
+  const [ viewModalOpen, setViewModalOpen ] = useState( false );
+  const [ showNoteModal, setShowNoteModal ] = useState( false );
+  const [ modeState, setModeState ] = useState( mode );
+  const [ isModalOpen, setIsModalOpen ] = useState( false );
+  const [ showRecoverModal, setShowRecoverModal ] = useState( false );
+  const [ toast, setToast ] = useState( { show: false, message: "", type: "success" } );
+  const [ , setSetter ] = useState(
+    lead?.setter_id != null ? String( lead.setter_id ) : "",
   );
 
-  useEffect(() => {
-    setModeState(mode);
-  }, [mode]);
+  useEffect( () => {
+    setModeState( mode );
+  }, [ mode ] );
 
-  useEffect(() => {
-    setSetter(lead?.setter_id != null ? String(lead.setter_id) : "");
-  }, [lead?.setter_id]);
+  useEffect( () => {
+    setSetter( lead?.setter_id != null ? String( lead.setter_id ) : "" );
+  }, [ lead?.setter_id ] );
 
-  const showToast = (message, type = "success") => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: "", type: "success" }), 3000);
+  const showToast = ( message, type = "success" ) => {
+    setToast( { show: true, message, type } );
+    setTimeout( () => setToast( { show: false, message: "", type: "success" } ), 3000 );
   };
 
   const setterOptions = useMemo(
-    () => Object.entries(setterMap || {}).map(([id, name]) => ({ id, name })),
-    [setterMap],
+    () => Object.entries( setterMap || {} ).map( ( [ id, name ] ) => ( { id, name } ) ),
+    [ setterMap ],
   );
 
   const isAllLayout = true;
@@ -129,34 +129,34 @@ export default function LeadRow({
   const email = profile?.email || "—";
   const phone = profile?.phone || "—";
 
-  const manyChatUrl = useMemo(() => {
-    if (!phone || phone === "—") return null;
-    const digits = String(phone).replace(/\D/g, "");
-    if (!digits) return null;
+  const manyChatUrl = useMemo( () => {
+    if ( !phone || phone === "—" ) return null;
+    const digits = String( phone ).replace( /\D/g, "" );
+    if ( !digits ) return null;
     const template =
       "https://app.manychat.com/signin?return=%2Ffb1237190%2Fchat%2F256311379";
-    return template.replace(/(chat%2F)\d+$/, `$1${encodeURIComponent(digits)}`);
-  }, [phone]);
+    return template.replace( /(chat%2F)\d+$/, `$1${encodeURIComponent( digits )}` );
+  }, [ phone ] );
 
-  const kajabiContactsUrl = useMemo(() => {
+  const kajabiContactsUrl = useMemo( () => {
     const e = profile?.email;
-    if (!e) return null;
+    if ( !e ) return null;
     return `https://app.kajabi.com/admin/sites/2147813413/contacts?page=1&search=${encodeURIComponent(
       e,
     )}`;
-  }, [profile?.email]);
+  }, [ profile?.email ] );
 
-  const emojiStack = (() => {
+  const emojiStack = ( () => {
     const callSource = lead?.source_type || profile?.source || "organic";
-    const isAds = String(callSource).toLowerCase().includes("ad");
+    const isAds = String( callSource ).toLowerCase().includes( "ad" );
     const callCampaign = lead?.utm_campaign;
     return (
       <>
         <span className="text-[16px] leading-4">{isAds ? "💰" : "🌱"}</span>
-        {(callCampaign === "dm-setter" || callCampaign === "ai-setting") && (
+        {( callCampaign === "dm-setter" || callCampaign === "ai-setting" ) && (
           <span className="text-[16px] leading-4">💬</span>
         )}
-        {(lead?.recovered || lead?.is_reschedule) && (
+        {( lead?.recovered || lead?.is_reschedule ) && (
           <span
             className="text-[16px] leading-4"
             title={lead?.recovered ? "Recovered lead" : "Reschedule"}
@@ -167,26 +167,41 @@ export default function LeadRow({
         {lead?.cancelled && <span className="text-[16px] leading-4">❌</span>}
       </>
     );
-  })();
+  } )();
 
-  const formatDateTime = (iso) => {
-    if (!iso) return "—";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "—";
-    return `${d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}, ${d.toLocaleTimeString(undefined, {
+  const formatDateTime = ( iso ) => {
+    if ( !iso ) return "—";
+    const d = new Date( iso );
+    if ( Number.isNaN( d.getTime() ) ) return "—";
+    return `${d.toLocaleDateString( "en-US", { month: "2-digit", day: "2-digit", year: "numeric" } )}, ${d.toLocaleTimeString( undefined, {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    })}`;
+    } )}`;
   };
-  const bookDateLabel = formatDateTime(lead?.book_date);
-  const callDateLabel = formatDateTime(lead?.call_date);
+  const bookDateLabel = formatDateTime( lead?.book_date );
+  const callDateLabel = formatDateTime( lead?.call_date );
+
+  const outcomeLog = lead?.outcome_log;
+  const outcome = Array.isArray( outcomeLog ) ? outcomeLog[ 0 ]?.outcome : outcomeLog?.outcome;
+  const price = Array.isArray( outcomeLog ) ? outcomeLog[ 0 ]?.offers?.price : outcomeLog?.offers?.price;
+
+  const outcomeLabel = useMemo( () => {
+    if ( !outcome ) return "—";
+    return String( outcome )
+      .split( "_" )
+      .map( ( w ) => w.charAt( 0 ).toUpperCase() + w.slice( 1 ) )
+      .join( " " );
+  }, [ outcome ] );
+
+  const isNoShow = lead?.confirmed === true && lead?.showed_up === false;
+  const isCancelled = lead?.cancelled === true || lead?.confirmed === false;
 
   return (
     <div
       className={cx(
-        "px-3",
-        lead?.cancelled ? "bg-red-500/5 text-slate-500" : null,
+        "px-3 transition-colors",
+        isCancelled ? "bg-red-500/5 text-slate-500" : isNoShow ? "bg-amber-500/5" : null,
       )}
     >
       <div
@@ -212,7 +227,7 @@ export default function LeadRow({
                   rel="noreferrer"
                   className="hover:underline underline-offset-2 text-slate-900"
                   title="Open in Kajabi"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={( e ) => e.stopPropagation()}
                 >
                   {email}
                 </a>
@@ -227,16 +242,16 @@ export default function LeadRow({
                     rel="noreferrer"
                     className="hover:underline underline-offset-2 text-slate-900"
                     title="Open in ManyChat"
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={( e ) => e.stopPropagation()}
                   >
                     {phone}
                   </a>
                 ) : (
                   phone
                 )}
-                {phone && getCountryFlagFromPhone(phone) ? (
-                  <span className="ml-1" title={getCountryFromPhone(phone)}>
-                    {getCountryFlagFromPhone(phone)}
+                {phone && getCountryFlagFromPhone( phone ) ? (
+                  <span className="ml-1" title={getCountryFromPhone( phone )}>
+                    {getCountryFlagFromPhone( phone )}
                   </span>
                 ) : null}
               </div>
@@ -300,6 +315,14 @@ export default function LeadRow({
           {callDateLabel}
         </div>
 
+        <div className="text-center text-[11px] font-bold text-slate-700 truncate" title={outcomeLabel}>
+          {outcomeLabel}
+        </div>
+
+        <div className="text-center text-[11px] font-bold text-slate-700 tabular-nums">
+          {price != null ? `$${Number( price ).toLocaleString()}` : "—"}
+        </div>
+
         <div className="flex items-center justify-center">
           <div className="flex items-center gap-1.5">
             <StatusBadge
@@ -335,14 +358,14 @@ export default function LeadRow({
           </div>
         ) : null}
 
-        <div className="flex items-center justify-center gap-1">
+        <div className="flex items-center justify-center gap-2">
           <div className="flex items-center justify-center w-full">
             <button
               type="button"
               className="h-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 inline-flex items-center gap-1.5 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
               aria-label="Add note"
               title="Add note"
-              onClick={() => setViewModalOpen(true)}
+              onClick={() => setViewModalOpen( true )}
             >
               <StickyNote size={14} className="text-slate-500" />
               Note
@@ -351,15 +374,15 @@ export default function LeadRow({
 
           <div className="flex items-center justify-end [&_button]:leading-none">
             <ThreeDotsMenu
-              onEdit={() => setIsModalOpen(true)}
-              onDelete={() => console.log("Delete")}
+              onEdit={() => setIsModalOpen( true )}
+              onDelete={() => console.log( "Delete" )}
               onDeleteCall={async () => {
                 try {
-                  await deleteCallWithDependencies(lead.id);
-                  showToast("Call deleted", "success");
-                } catch (err) {
-                  console.error("Error deleting call:", err);
-                  showToast(err?.message || "Failed to delete call", "error");
+                  await deleteCallWithDependencies( lead.id );
+                  showToast( "Call deleted", "success" );
+                } catch ( err ) {
+                  console.error( "Error deleting call:", err );
+                  showToast( err?.message || "Failed to delete call", "error" );
                 }
               }}
               mode={mode}
@@ -368,7 +391,7 @@ export default function LeadRow({
               lead={lead}
               showToast={showToast}
               closerList={closerList}
-              onRecoverLead={() => setShowRecoverModal(true)}
+              onRecoverLead={() => setShowRecoverModal( true )}
             />
           </div>
         </div>
@@ -376,7 +399,7 @@ export default function LeadRow({
 
       <NotesModal
         isOpen={showNoteModal}
-        onClose={() => setShowNoteModal(false)}
+        onClose={() => setShowNoteModal( false )}
         lead={lead}
         callId={lead.id}
         mode={modeState}
@@ -384,27 +407,27 @@ export default function LeadRow({
 
       <ViewNotesModal
         isOpen={viewModalOpen}
-        onClose={() => setViewModalOpen(false)}
+        onClose={() => setViewModalOpen( false )}
         lead={lead}
         callId={lead?.id}
       />
 
       <TransferSetterModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => setIsModalOpen( false )}
         lead={lead}
         setterOptions={setterOptions}
         currentUserId={routeSetterId ?? null}
-        onTransfer={(newSetterId) => setSetter(newSetterId)}
+        onTransfer={( newSetterId ) => setSetter( newSetterId )}
       />
 
       <RecoverLeadModal
         isOpen={showRecoverModal}
-        onClose={() => setShowRecoverModal(false)}
+        onClose={() => setShowRecoverModal( false )}
         lead={lead}
         closerList={closerList}
         mode={mode}
-        onSuccess={(msg) => showToast(msg || "Calendar event created", "success")}
+        onSuccess={( msg ) => showToast( msg || "Calendar event created", "success" )}
       />
 
       {toast.show ? (

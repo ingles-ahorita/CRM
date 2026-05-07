@@ -311,18 +311,18 @@ export default function CloserComparisonTable() {
         };
         const commissionForSale = (sale) => {
           const offer = sale?.offers || null;
-          const inst = Number(offer?.installments);
-          const isPifOffer = Number.isFinite(inst) && inst === 0;
           const base = adjustedBase(offer, sale?.discount);
           if (base == null) return Number(sale?.commission) || 0;
-          if (
-            (isPifOffer || (sale?.kajabi_payoff_id && !sale?.payoff_date)) &&
-            offer?.payoff_commission != null
-          ) {
+          
+          let sum = base;
+          // Add payoff increment if paid in full upfront
+          if (sale?.kajabi_payoff_id && !sale?.payoff_date && offer?.payoff_commission != null) {
             const payoff = Number(offer.payoff_commission);
-            if (Number.isFinite(payoff)) return payoff;
+            if (Number.isFinite(payoff)) {
+              sum += (payoff - base);
+            }
           }
-          return base * 2;
+          return sum;
         };
 
         for (const sale of salesRows || []) {

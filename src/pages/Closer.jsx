@@ -1624,6 +1624,15 @@ export default function Closer() {
           onTabChange={(tab) => setHeaderState((p) => ({ ...p, activeTab: tab }))}
           searchTerm={headerState.searchTerm}
           onSearchChange={(term) => setHeaderState((p) => ({ ...p, searchTerm: term }))}
+          sortOrder={headerState.sortOrder}
+          onSortOrderChange={(sortOrder) => setHeaderState((p) => ({ ...p, sortOrder }))}
+          noShowStateFilter={headerState.filters.noShowState}
+          onNoShowStateFilterChange={(noShowState) =>
+            setHeaderState((p) => ({
+              ...p,
+              filters: { ...p.filters, noShowState },
+            }))
+          }
           payoffLoading={payoffOpps.loading}
           payoffEntries={payoffOpps.entries}
           onLeadDeleted={(callId) => {

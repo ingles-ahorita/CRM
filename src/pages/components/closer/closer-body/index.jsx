@@ -37,6 +37,10 @@ const CloserBody = (props) => {
         onTabChange={props?.onTabChange}
         searchTerm={props?.searchTerm}
         onSearchChange={props?.onSearchChange}
+        sortOrder={props?.sortOrder}
+        onSortOrderChange={props?.onSortOrderChange}
+        noShowStateFilter={props?.noShowStateFilter}
+        onNoShowStateFilterChange={props?.onNoShowStateFilterChange}
         payoffLoading={props?.payoffLoading}
         payoffEntries={props?.payoffEntries}
         onLeadDeleted={props?.onLeadDeleted}
