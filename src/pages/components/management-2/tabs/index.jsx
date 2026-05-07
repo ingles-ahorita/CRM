@@ -8,6 +8,9 @@ const TABS = [
   { id: "closer", label: "Closer" },
   { id: "leads", label: "Leads" },
   { id: "setter", label: "Setter" },
+  { id: "metrics", label: "Metrics" },
+  { id: "sales", label: "Sales" },
+  { id: "performance", label: "Performance" },
 ];
 
 function cx(...c) {

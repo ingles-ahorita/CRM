@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
 import * as DateHelpers from "../../../../utils/dateHelpers";
 import { getConfirmationColor, getShowUpColor } from "../../../../utils/performanceBenchmarks";
-import SegmentedTabs from "../segmented-tabs";
 
 function cx ( ...parts ) {
   return parts.filter( Boolean ).join( " " );
@@ -21,7 +20,7 @@ function pct ( num, den ) {
 
 const TIME_RANGE_ITEMS = [
   { id: "mtd", label: "MTD", title: "This month (MTD)" },
-  { id: "lastMonth", label: "Last mo", title: "Last month" },
+  { id: "lastMonth", label: "Last Month", title: "Last month" },
 ];
 
 function getSnapshotRange ( range ) {
@@ -129,6 +128,33 @@ function BarChartCard ( { title, data, colorClass, customStyle, kind, animate } 
           ) )}
         </div>
       )}
+    </div>
+  );
+}
+
+function TimeRangeTabs ( { value, onChange } ) {
+  return (
+    <div className="inline-flex max-w-full flex-nowrap items-stretch gap-2 rounded-md border border-slate-200/90 bg-slate-100/80 p-0.5 shadow-inner">
+      {TIME_RANGE_ITEMS.map( ( item ) => {
+        const active = item.id === value;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            title={item.title}
+            onClick={() => onChange( item.id )}
+            aria-current={active ? "page" : undefined}
+            className={cx(
+              "relative shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold leading-tight transition-all duration-200 select-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 !outline-none",
+              active
+                ? "!bg-sky-100 text-blue-700 shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-sky-200/80"
+                : "bg-slate-100/70 text-slate-600 hover:bg-white/70 hover:text-slate-900",
+            )}
+          >
+            {item.label}
+          </button>
+        );
+      } )}
     </div>
   );
 }
@@ -251,15 +277,8 @@ export default function Setter () {
           <h2 className="text-[20px] font-bold tracking-tight text-[#0f172a]">Setter performance snapshot</h2>
           <p className="text-[12px] font-medium text-slate-500">{rangeLabel} · live from database</p>
         </div>
-        <div className="w-full max-w-[190px]">
-          <SegmentedTabs
-            items={TIME_RANGE_ITEMS}
-            activeId={range}
-            onChange={setRange}
-            size="xs"
-            className="border-slate-200/90 bg-slate-100/80 [&>button+button]:ml-1.5"
-            activeClassName="!bg-sky-100 !text-blue-700 !ring-sky-200/80"
-          />
+        <div className="shrink-0">
+          <TimeRangeTabs value={range} onChange={setRange} />
         </div>
       </div>
 
