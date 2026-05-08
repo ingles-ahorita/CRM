@@ -37,6 +37,7 @@
     "react-dom": "^19.1.1",
     "react-is": "^19.2.5",
     "react-router-dom": "^7.9.3",
+    "react-svg-worldmap": "^2.0.2",
     "recharts": "^3.7.0",
     "zod": "^4.4.3"
   },

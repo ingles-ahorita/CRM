@@ -21,9 +21,9 @@ function shimmer ( className = "" ) {
 }
 
 const GRID_CLASS_ALL =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
 const GRID_CLASS_DEFAULT =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
 
 function TableSkeletonRows ( { subTab, count = 8 } ) {
   const gridClass = subTab === "all" ? GRID_CLASS_ALL : GRID_CLASS_DEFAULT;
@@ -51,12 +51,6 @@ function TableSkeletonRows ( { subTab, count = 8 } ) {
             </div>
             <div className="flex justify-center">
               {shimmer( "h-4 w-[92%] max-w-[132px]" )}
-            </div>
-            <div className="flex justify-center">
-              {shimmer( "h-4 w-[85%] max-w-[100px]" )}
-            </div>
-            <div className="flex justify-center">
-              {shimmer( "h-4 w-[75%] max-w-[70px]" )}
             </div>
             <div className="flex justify-center gap-1.5">
               {shimmer( "h-[25px] w-[25px] rounded-md" )}
@@ -769,8 +763,6 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
                   <div className="text-center">Closer</div>
                   <div className="text-center">Book Date</div>
                   <div className="text-center">Call Date</div>
-                  <div className="text-center">Outcome</div>
-                  <div className="text-center">Price</div>
                   <div className="text-center">Status</div>
                   <div className="text-center">Response</div>
                   <div className="text-center">Notes</div>

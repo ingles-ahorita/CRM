@@ -45,9 +45,9 @@ function ResponsePill ( { lead } ) {
 }
 
 const GRID_CLASS_ALL =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
 const GRID_CLASS_DEFAULT =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_100px_80px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
 
 function StatusBadge ( { value, label, title, outcomeLog } ) {
   const getColor = () => {
@@ -182,18 +182,6 @@ export default function LeadRow ( {
   const bookDateLabel = formatDateTime( lead?.book_date );
   const callDateLabel = formatDateTime( lead?.call_date );
 
-  const outcomeLog = lead?.outcome_log;
-  const outcome = Array.isArray( outcomeLog ) ? outcomeLog[ 0 ]?.outcome : outcomeLog?.outcome;
-  const price = Array.isArray( outcomeLog ) ? outcomeLog[ 0 ]?.offers?.price : outcomeLog?.offers?.price;
-
-  const outcomeLabel = useMemo( () => {
-    if ( !outcome ) return "—";
-    return String( outcome )
-      .split( "_" )
-      .map( ( w ) => w.charAt( 0 ).toUpperCase() + w.slice( 1 ) )
-      .join( " " );
-  }, [ outcome ] );
-
   const isNoShow = lead?.confirmed === true && lead?.showed_up === false;
   const isCancelled = lead?.cancelled === true || lead?.confirmed === false;
 
@@ -313,14 +301,6 @@ export default function LeadRow ( {
 
         <div className="text-center text-[11px] font-semibold text-slate-700 truncate">
           {callDateLabel}
-        </div>
-
-        <div className="text-center text-[11px] font-bold text-slate-700 truncate" title={outcomeLabel}>
-          {outcomeLabel}
-        </div>
-
-        <div className="text-center text-[11px] font-bold text-slate-700 tabular-nums">
-          {price != null ? `$${Number( price ).toLocaleString()}` : "—"}
         </div>
 
         <div className="flex items-center justify-center">
