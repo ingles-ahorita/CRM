@@ -37,6 +37,30 @@ body {
   width: 100%;
 }
 
+.management-country-map,
+.management-country-map .worldmap__figure-container,
+.management-country-map svg {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.management-country-map {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.management-country-map .worldmap__figure-container {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.management-country-map-region.worldmap__region--hover {
+  stroke: #334155 !important;
+  stroke-width: 1.4 !important;
+  stroke-opacity: 1 !important;
+}
+
 
 
 
@@ -92,4 +116,3 @@ button:focus-visible {
 .closer-dashboard-cards .closer-dashboard-stats-btn:hover svg {
   stroke: #4b5563 !important;
 }
-

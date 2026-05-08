@@ -1,11 +1,65 @@
+import { useEffect, useState } from "react";
+import * as DateHelpers from "../../../../utils/dateHelpers";
+import { supabase } from "../../../../lib/supabaseClient";
 import {
   Bar,
   BarChart,
+  Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+
+const INCOME_SOURCE_DEFS = [
+  {
+    key: "new",
+    label: "New income",
+    color: "#10B981",
+    note: "First-time cash from purchases started this month",
+  },
+  {
+    key: "old",
+    label: "Old income",
+    color: "#2563EB",
+    note: "Cash from earlier purchases collected this month",
+  },
+  {
+    key: "subscriptions",
+    label: "Subscriptions",
+    color: "#F59E0B",
+    note: "Recurring subscription product charges",
+  },
+];
+
+const REVENUE_FORECAST_CARDS = [
+  {
+    label: "Rest of month",
+    value: "$30,639",
+    valueClass: "text-emerald-600",
+    note: "47 expected payments",
+  },
+  {
+    label: "Next 7 days",
+    value: "$7,434",
+    valueClass: "text-blue-600",
+    note: "11 expected payments",
+  },
+  {
+    label: "Next 30 days",
+    value: "$36,647",
+    valueClass: "text-indigo-600",
+    note: "59 expected payments",
+  },
+  {
+    label: "Next 90 days",
+    value: "$102,066",
+    valueClass: "text-amber-600",
+    note: "166 expected payments across 67 active plans",
+  },
+];
 
 const REVENUE_CARDS = [
   {
@@ -143,6 +197,15 @@ function cx(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
+function formatCents(value) {
+  return formatUsd((Number(value) || 0) / 100);
+}
+
+function pct(value, total) {
+  if (!Number.isFinite(Number(value)) || !Number.isFinite(Number(total)) || Number(total) <= 0) return 0;
+  return Math.round(((Number(value) / Number(total)) * 1000)) / 10;
+}
+
 function SectionBadge({ children }) {
   return (
     <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-[10px] font-extrabold uppercase tracking-[0.1em] text-slate-500 shadow-sm">
@@ -244,6 +307,216 @@ function PaymentPlanPanel() {
   );
 }
 
+function IncomeMixThisMonth() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [monthLabel, setMonthLabel] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const monthRange = DateHelpers.getMonthRangeInTimezone(new Date(), DateHelpers.DEFAULT_TIMEZONE);
+        if (!monthRange) throw new Error("Invalid month range");
+        const start = monthRange.startDate.toISOString();
+        const end = monthRange.endDate.toISOString();
+        const label = DateHelpers.formatInTimeZone(monthRange.startDate, DateHelpers.DEFAULT_TIMEZONE, "MMMM yyyy");
+
+        const [offersResult, purchasesResult, txResult] = await Promise.all([
+          supabase.from("offers").select("kajabi_id, is_subscription"),
+          supabase
+            .from("kajabi_purchases")
+            .select("kajabi_purchase_id, kajabi_offer_id, payment_type, created_at_kajabi"),
+          supabase
+            .from("kajabi_transactions")
+            .select("kajabi_transaction_id, kajabi_purchase_id, kajabi_offer_id, action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at")
+            .or(`and(effective_date.gte.${start},effective_date.lte.${end}),and(payment_resolved_at.gte.${start},payment_resolved_at.lte.${end})`)
+            .order("effective_date", { ascending: false }),
+        ]);
+
+        if (offersResult.error) throw offersResult.error;
+        if (purchasesResult.error) throw purchasesResult.error;
+        if (txResult.error) throw txResult.error;
+
+        const offersById = {};
+        for (const offer of offersResult.data || []) {
+          if (offer?.kajabi_id == null) continue;
+          offersById[String(offer.kajabi_id)] = offer;
+        }
+
+        const purchasesById = {};
+        for (const purchase of purchasesResult.data || []) {
+          if (purchase?.kajabi_purchase_id == null) continue;
+          purchasesById[String(purchase.kajabi_purchase_id)] = purchase;
+        }
+
+        const totals = { new: 0, old: 0, subscriptions: 0 };
+        for (const tx of txResult.data || []) {
+          const action = tx.action ?? (tx.amount_in_cents >= 0 ? "charge" : "refund");
+          const isRefund = action === "refund" || tx.amount_in_cents < 0;
+          const isDispute = action === "dispute";
+          const isFailed = isDispute || (tx.state != null && !["paid", "successful", "success", "complete", "completed", "succeeded"].includes(String(tx.state).toLowerCase()));
+          if (isRefund || isFailed) continue;
+
+          const purchase = tx.kajabi_purchase_id != null ? purchasesById[String(tx.kajabi_purchase_id)] ?? null : null;
+          const offerId = purchase?.kajabi_offer_id ?? tx.kajabi_offer_id ?? null;
+          const offer = offerId != null ? offersById[String(offerId)] ?? null : null;
+          const paymentType = String(purchase?.payment_type || "").toLowerCase();
+          const purchaseCreated = purchase?.created_at_kajabi ? new Date(purchase.created_at_kajabi) : null;
+          const isSubscription =
+            offer?.is_subscription === true ||
+            offer?.is_subscription === "true" ||
+            paymentType.includes("subscription");
+
+          const isNew =
+            !isSubscription &&
+            purchaseCreated != null &&
+            !Number.isNaN(purchaseCreated.getTime()) &&
+            purchaseCreated >= monthRange.startDate &&
+            purchaseCreated <= monthRange.endDate;
+
+          const bucket = isSubscription ? "subscriptions" : isNew ? "new" : "old";
+          totals[bucket] += Math.abs(Number(tx.amount_in_cents) || 0);
+        }
+
+        const nextRows = INCOME_SOURCE_DEFS.map((def) => ({
+          ...def,
+          valueCents: totals[def.key] || 0,
+        }));
+
+        if (!cancelled) {
+          setRows(nextRows);
+          setMonthLabel(label);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err?.message || "Failed to load income mix");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const totalCents = rows.reduce((sum, row) => sum + row.valueCents, 0);
+  const chartData = rows.map((row) => ({
+    name: row.label,
+    value: row.valueCents,
+    color: row.color,
+  }));
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h3 className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+            Income source mix {monthLabel ? `· ${monthLabel}` : ""}
+          </h3>
+          <p className="mt-2 text-[12px] font-semibold text-slate-500">
+            New income shows current-month sales. Old income is cash from earlier sales. Subscriptions are recurring subscription charges.
+          </p>
+        </div>
+        <SectionBadge>Kajabi revenue mix</SectionBadge>
+      </div>
+
+      {loading ? (
+        <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-[12px] font-semibold text-slate-500">
+          Loading income mix...
+        </div>
+      ) : error ? (
+        <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-[12px] font-semibold text-red-700">
+          {error}
+        </div>
+      ) : totalCents === 0 ? (
+        <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-[12px] font-semibold text-slate-500">
+          No current-month income found yet.
+        </div>
+      ) : (
+        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={60}
+                  outerRadius={92}
+                  paddingAngle={2}
+                  stroke="none"
+                >
+                  {chartData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value, name) => [formatCents(value), name]}
+                  wrapperStyle={{ outline: "none" }}
+                  contentStyle={{
+                    border: "1px solid #e2e8f0",
+                    borderRadius: "10px",
+                    backgroundColor: "#fff",
+                    boxShadow: "0 8px 24px rgba(15,23,42,0.14)",
+                    fontSize: "12px",
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="flex min-w-0 flex-col justify-center">
+            <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-4">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+                Total income this month
+              </p>
+              <p className="mt-2 text-[28px] font-extrabold leading-none text-slate-950">
+                {formatCents(totalCents)}
+              </p>
+              <p className="mt-2 text-[12px] font-semibold text-slate-500">
+                This splits current cash into new, old, and subscription revenue.
+              </p>
+            </div>
+
+            <div className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
+              {rows.map((row) => {
+                const percent = pct(row.valueCents, totalCents);
+                return (
+                  <div key={row.key} className="flex items-start justify-between gap-4 px-4 py-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-slate-800">{row.label}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{row.note}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[13px] font-extrabold tabular-nums text-slate-950">
+                        {formatCents(row.valueCents)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
+                        {percent.toFixed(1)}%
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function formatUsd(value) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -275,7 +548,7 @@ function DailySalesTrend() {
   return (
     <section>
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-[24px] font-extrabold leading-tight tracking-normal text-slate-950">
+        <h2 className="text-[18px] font-extrabold leading-tight tracking-normal text-slate-950">
           Daily Sales Trend
         </h2>
         <SectionBadge>Last 30 days</SectionBadge>
@@ -351,7 +624,7 @@ function TopSalesSnapshot() {
     <section className="grid grid-cols-1 items-stretch gap-5 2xl:grid-cols-[minmax(0,1fr)_520px]">
       <div className="flex min-w-0 flex-col">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-[24px] font-extrabold leading-tight tracking-normal text-slate-950">
+          <h1 className="text-[18px] font-extrabold leading-tight tracking-normal text-slate-950">
             Revenue Snapshot
           </h1>
           <SectionBadge>MTD · Goal $55,000</SectionBadge>
@@ -366,7 +639,7 @@ function TopSalesSnapshot() {
 
       <div className="flex min-w-0 flex-col">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-[24px] font-extrabold leading-tight tracking-normal text-slate-950">
+          <h2 className="text-[18px] font-extrabold leading-tight tracking-normal text-slate-950">
             Refunds, Chargebacks &amp; Outstanding
           </h2>
           <SectionBadge>Risk</SectionBadge>
@@ -384,25 +657,57 @@ function TopSalesSnapshot() {
 
 export default function Sales() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <TopSalesSnapshot />
+
+      <IncomeMixThisMonth />
+
+      <section className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h3 className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+              Payment plan payments over time
+            </h3>
+            <p className="mt-2 text-[12px] font-semibold text-slate-500">
+              Forecasted from active Kajabi payment plans using the next installment date for each plan. This is expected cash, not collected cash.
+            </p>
+          </div>
+          <SectionBadge>Kajabi forecast</SectionBadge>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {REVENUE_FORECAST_CARDS.map((card) => (
+            <article
+              key={card.label}
+              className="min-h-[104px] rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-[0_1px_3px_rgba(15,23,42,0.05)]"
+            >
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+                {card.label}
+              </p>
+              <div className={cx("mt-2 text-[24px] font-extrabold leading-none tracking-normal", card.valueClass)}>
+                {card.value}
+              </div>
+              <p className="mt-3 text-[11px] font-semibold text-slate-500">{card.note}</p>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-[24px] font-extrabold leading-tight tracking-normal text-slate-950">
+            <h2 className="text-[18px] font-extrabold leading-tight tracking-normal text-slate-950">
               Sales by Product / Offer
             </h2>
-            <p className="mt-4 text-[12px] font-semibold italic text-slate-500">
+            <p className="mt-3 text-[12px] font-semibold italic text-slate-500">
               Helps decide which offer to push, which to retire, and where to upsell.
             </p>
           </div>
           <SectionBadge>What's Selling</SectionBadge>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <div className="mt-4">
           <RevenueMixPanel />
-          <PaymentPlanPanel />
         </div>
       </section>
 

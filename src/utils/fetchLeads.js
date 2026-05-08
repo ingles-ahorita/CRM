@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { runAnalysis } from '../pages/reactionTime';
-import { getDayBoundsUTC } from '../utils/dateHelpers';
+import { getDayBoundsLocal } from '../utils/dateHelpers';
 import { subDays, addDays } from 'date-fns'; 
 
 
@@ -97,13 +97,13 @@ let query = supabase
       query = query.lte(dateField, end.toISOString());
     }
   } else if (activeTab !== 'all' && activeTab !== 'no shows') {
-    // Use local timezone day bounds for tabs (Today, Yesterday, etc.) so users see their local day
+    // Use the user's local timezone for tab day boundaries.
     const now = new Date();
-    const { dayStart: todayStart, dayEnd: todayEnd } = getDayBoundsUTC(now);
-    const { dayStart: yesterdayStart, dayEnd: yesterdayEnd } = getDayBoundsUTC(subDays(now, 1));
-    const { dayStart: tomorrowStart } = getDayBoundsUTC(addDays(now, 1));
-    const { dayStart: dayAfterTomorrowStart } = getDayBoundsUTC(addDays(now, 2));
-    const { dayStart: dayAfterTomorrowPlusOneStart } = getDayBoundsUTC(addDays(now, 3));
+    const { dayStart: todayStart, dayEnd: todayEnd } = getDayBoundsLocal(now);
+    const { dayStart: yesterdayStart, dayEnd: yesterdayEnd } = getDayBoundsLocal(subDays(now, 1));
+    const { dayStart: tomorrowStart } = getDayBoundsLocal(addDays(now, 1));
+    const { dayStart: dayAfterTomorrowStart } = getDayBoundsLocal(addDays(now, 2));
+    const { dayStart: dayAfterTomorrowPlusOneStart } = getDayBoundsLocal(addDays(now, 3));
 
     if (activeTab === 'today') {
       query = query
@@ -116,13 +116,13 @@ let query = supabase
         .lte(dateField, yesterdayEnd.toISOString());
       updateDataState({ currentDate: yesterdayStart.toISOString().slice(0, 10) });
     } else if (activeTab === 'tomorrow') {
-      const { dayEnd: tomorrowEnd } = getDayBoundsUTC(addDays(now, 1));
+      const { dayEnd: tomorrowEnd } = getDayBoundsLocal(addDays(now, 1));
       query = query
         .gte(dateField, tomorrowStart.toISOString())
         .lte(dateField, tomorrowEnd.toISOString());
       updateDataState({ currentDate: tomorrowStart.toISOString().slice(0, 10) });
     } else if (activeTab === 'tomorrow + 1') {
-      const { dayEnd: dayAfterTomorrowEnd } = getDayBoundsUTC(addDays(now, 2));
+      const { dayEnd: dayAfterTomorrowEnd } = getDayBoundsLocal(addDays(now, 2));
       query = query
         .gte(dateField, dayAfterTomorrowStart.toISOString())
         .lte(dateField, dayAfterTomorrowEnd.toISOString());

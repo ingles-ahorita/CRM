@@ -220,7 +220,7 @@ function cx ( ...classes ) {
 
 function SectionBadge ( { children } ) {
   return (
-    <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-[10px] font-extrabold uppercase tracking-[0.1em] text-slate-500 shadow-sm">
+    <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 shadow-sm">
       {children}
     </span>
   );
@@ -230,7 +230,7 @@ function DashboardPanel ( { children, className = "" } ) {
   return (
     <section
       className={cx(
-        "rounded-2xl border border-slate-200 bg-white/55 p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]",
+        "rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]",
         className,
       )}
     >
@@ -247,14 +247,14 @@ function MetricCard ( { metric, compact = false } ) {
         compact ? "min-h-[82px] px-2.5 py-2.5" : "min-h-[132px] px-4 py-4 sm:px-5",
       )}
     >
-      <p className={cx( "font-extrabold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px]" : "text-[11px]" )}>
+      <p className={cx( "font-semibold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px]" : "text-[11px]" )}>
         {metric.label}
       </p>
-      <div className={cx( compact ? "mt-1.5 text-[22px]" : "mt-3 text-[30px]", "font-black leading-none tracking-normal", metric.valueClass )}>
+      <div className={cx( compact ? "mt-1.5 text-[22px]" : "mt-3 text-[30px]", "font-semibold leading-none tracking-normal", metric.valueClass )}>
         {metric.value}
       </div>
       <div className={compact ? "mt-1.5" : "mt-3"}>
-        <span className={cx( "inline-flex rounded-md px-2 py-1 font-extrabold leading-none", compact ? "text-[9px]" : "text-[11px]", metric.badgeClass )}>
+        <span className={cx( "inline-flex rounded-md px-2 py-1 font-semibold leading-none", compact ? "text-[9px]" : "text-[11px]", metric.badgeClass )}>
           {metric.badge}
         </span>
       </div>
@@ -279,10 +279,10 @@ function AlertRow ( { alert } ) {
         aria-hidden
       />
       <div className="min-w-0">
-        <h3 className="text-[13px] font-extrabold leading-snug text-slate-950">
+        <h3 className="text-[13px] font-semibold leading-snug text-slate-950">
           {alert.title}
         </h3>
-        <p className="mt-0.5 text-[12px] font-semibold leading-snug text-slate-600">
+        <p className="mt-0.5 text-[12px] font-medium leading-snug text-slate-600">
           {alert.body}
         </p>
       </div>
@@ -290,53 +290,113 @@ function AlertRow ( { alert } ) {
   );
 }
 
-function FunnelRow ( { row } ) {
+function FunnelRow ( { row, onHover, onLeave } ) {
   return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)_54px] items-center gap-3">
-      <div className="text-[12px] font-bold text-slate-700">{row.label}</div>
-      <div className="relative h-[18px] overflow-hidden rounded-md bg-slate-100">
+    <div className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2">
+      <div className="text-[11px] font-medium text-slate-700 truncate">{row.label}</div>
+      <div
+        className="relative h-[22px] cursor-pointer overflow-hidden rounded-md bg-slate-100 transition-[box-shadow,filter] hover:shadow-[inset_0_0_0_1px_rgba(59,130,246,0.22)] hover:brightness-[0.99]"
+        onMouseEnter={( event ) => onHover( row, event.currentTarget )}
+        onMouseMove={( event ) => onHover( row, event.currentTarget )}
+        onMouseLeave={onLeave}
+      >
         <div
-          className={cx( "flex h-full min-w-[8px] items-center rounded-md px-2", row.colorClass )}
-          style={{ width: `${row.width}%` }}
+          className={cx( "flex h-full min-w-[12px] items-center justify-end rounded-md pr-1.5", row.colorClass )}
+          style={{ width: `${Math.max( row.width, 4 )}%` }}
         >
-          <span className="truncate text-[10px] font-black leading-none text-white">
-            {row.value}
+          <span className="text-[9px] font-semibold leading-none text-white whitespace-nowrap">
+            {row.percent}
           </span>
         </div>
       </div>
-      <div className="text-right text-[12px] font-bold text-slate-700">{row.percent}</div>
     </div>
   );
 }
 
 function FunnelSection () {
+  const [ hoveredRow, setHoveredRow ] = useState( null );
+
+  const handleRowHover = ( row, target ) => {
+    const panel = target.closest( "[data-funnel-panel]" );
+    const panelRect = panel?.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+
+    setHoveredRow( {
+      row,
+      x: panelRect ? targetRect.left - panelRect.left + targetRect.width / 2 : 0,
+      y: panelRect ? targetRect.top - panelRect.top : 0,
+    } );
+  };
+
   return (
-    <section>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-[24px] font-extrabold leading-tight tracking-normal text-slate-950">
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-col items-start gap-2">
+        <div className="min-w-0">
+          <h2 className="max-w-full text-[18px] font-semibold leading-tight tracking-normal text-slate-950">
             Funnel Conversion Rates — Live
           </h2>
-          <p className="mt-4 text-[11px] font-semibold italic text-slate-500">
-            Where are we losing people? Step-by-step drop-off so I know exactly which leak to fix first.
-          </p>
         </div>
-        <SectionBadge>Visitor → Customer</SectionBadge>
+        <div className="flex w-full items-center justify-between gap-2">
+          <SectionBadge>Visitor → Customer</SectionBadge>
+          <span className="shrink-0 text-[11px] font-semibold text-slate-900">
+            0.29%
+          </span>
+        </div>
       </div>
 
-      <div className="mt-4 rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-        <div className="space-y-2">
+      <div className="relative mt-3 rounded-lg border border-slate-200 bg-white p-3" data-funnel-panel>
+        <div className="space-y-1.5">
           {FUNNEL_ROWS.map( ( row ) => (
-            <FunnelRow key={row.label} row={row} />
+            <FunnelRow
+              key={row.label}
+              row={row}
+              onHover={handleRowHover}
+              onLeave={() => setHoveredRow( null )}
+            />
           ) )}
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-3">
-          <span className="inline-flex rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-extrabold text-violet-600">
+        {hoveredRow ? (
+          <div
+            className="pointer-events-none absolute z-20 w-[166px] rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
+            style={{
+              left: Math.min( Math.max( hoveredRow.x, 88 ), 184 ),
+              top: hoveredRow.y < 86 ? hoveredRow.y + 28 : hoveredRow.y - 86,
+              transform: "translateX(-50%)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-[11px] font-semibold text-slate-950">
+                {hoveredRow.row.label}
+              </p>
+              <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-blue-700">
+                {hoveredRow.row.percent}
+              </span>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+              <div>
+                <p className="text-[8px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                  Count
+                </p>
+                <p className="mt-0.5 text-[12px] font-semibold leading-none text-slate-900">
+                  {hoveredRow.row.value}
+                </p>
+              </div>
+              <div>
+                <p className="text-[8px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                  Share
+                </p>
+                <p className="mt-0.5 text-[12px] font-semibold leading-none text-slate-900">
+                  {hoveredRow.row.percent}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-3 flex flex-col gap-2">
+          <span className="inline-flex max-w-full rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-[10px] font-semibold leading-snug text-violet-600">
             ⚠ Biggest leak: Opt-in → Booked (only 11.8%)
-          </span>
-          <span className="text-[12px] font-black text-slate-900">
-            Visitor → Customer: 0.29%
           </span>
         </div>
       </div>
@@ -352,13 +412,13 @@ function SmallMetricCard ( { card, compact = false } ) {
         compact ? "min-h-[76px] px-2.5 py-2.5" : "min-h-[106px] px-4 py-4",
       )}
     >
-      <p className={cx( "font-extrabold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px]" : "text-[10px]" )}>
+      <p className={cx( "font-semibold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px]" : "text-[10px]" )}>
         {card.label}
       </p>
-      <div className={cx( compact ? "mt-2 text-[20px]" : "mt-4 text-[25px]", "font-black leading-none tracking-normal", card.valueClass )}>
+      <div className={cx( compact ? "mt-2 text-[20px]" : "mt-4 text-[25px]", "font-semibold leading-none tracking-normal", card.valueClass )}>
         {card.value}
       </div>
-      <p className={cx( compact ? "mt-1.5 text-[9px]" : "mt-3 text-[11px]", "font-semibold text-slate-500" )}>{card.note}</p>
+      <p className={cx( compact ? "mt-1.5 text-[9px]" : "mt-3 text-[11px]", "font-medium text-slate-500" )}>{card.note}</p>
     </article>
   );
 }
@@ -369,7 +429,7 @@ function CardGridSection ( { title, badge, cards, compact = false } ) {
       <div className={cx(
         compact ? "flex flex-col items-start gap-2" : "flex items-center justify-between gap-4",
       )}>
-        <h2 className={cx( compact ? "text-[17px]" : "text-[24px]", "font-extrabold leading-tight tracking-normal text-slate-950" )}>
+        <h2 className={cx( compact ? "text-[17px]" : "text-[24px]", "font-semibold leading-tight tracking-normal text-slate-950" )}>
           {title}
         </h2>
         <SectionBadge>{badge}</SectionBadge>
@@ -389,19 +449,19 @@ function NorthStarSection () {
     <DashboardPanel>
       <div className="flex flex-col items-start gap-2">
         <div className="min-w-0">
-          <h1 className="text-[20px] font-extrabold leading-tight tracking-normal text-slate-950">
+          <h1 className="text-[20px] font-semibold leading-tight tracking-normal text-slate-950">
             North-Star Metrics
           </h1>
           {/* <p className="mt-2 text-[10px] font-semibold italic leading-snug text-slate-500">
             The 4 numbers I (as owner) want to see the second I open the CRM. They tell me if we're on track to hit $55K monthly goal.
           </p> */}
         </div>
-        <div className="flex w-full justify-end">
+        <div className="flex w-full ">
           <SectionBadge>Live · Today · May 6</SectionBadge>
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2">
         {METRIC_CARDS.map( ( metric ) => (
           <MetricCard key={metric.label} metric={metric} compact />
         ) )}
@@ -415,10 +475,10 @@ function HealthAlertsSection () {
     <DashboardPanel className="p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[24px] font-extrabold leading-tight tracking-normal text-slate-950">
+          <h2 className="text-[24px] font-semibold leading-tight tracking-normal text-slate-950">
             Health Alerts &amp; Anomalies
           </h2>
-          <p className="mt-4 text-[13px] font-semibold italic text-slate-500">
+          <p className="mt-4 text-[13px] font-medium italic text-slate-500">
             Surface what's broken, what's winning, what needs attention NOW.
           </p>
         </div>
@@ -496,7 +556,7 @@ function ActivityHeatmapSection () {
   return (
     <section>
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-[24px] font-extrabold leading-tight tracking-normal text-slate-950">
+        <h2 className="text-[24px] font-semibold leading-tight tracking-normal text-slate-950">
           Activity Heatmap — Conversion by hour
         </h2>
         <SectionBadge>Last 7 days</SectionBadge>
@@ -506,7 +566,7 @@ function ActivityHeatmapSection () {
         className="relative mt-4 rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]"
         data-heatmap-panel
       >
-        <p className="text-[11px] font-semibold italic text-slate-500">
+        <p className="text-[11px] font-medium italic text-slate-500">
           Helps schedule setter shifts &amp; ad campaigns at peak hours.
         </p>
 
@@ -514,7 +574,7 @@ function ActivityHeatmapSection () {
           <div className="min-w-[768px] space-y-0">
             {HEATMAP_DAYS.map( ( row ) => (
               <div key={row.day} className="grid grid-cols-[48px_1fr] items-center gap-0">
-                <div className="text-[11px] font-bold text-slate-500">{row.day}</div>
+                <div className="text-[11px] font-medium text-slate-500">{row.day}</div>
                 <div className="grid grid-cols-[repeat(24,30px)] gap-0">
                   {row.cells.map( ( level, hour ) => (
                     <HeatmapCell
@@ -543,27 +603,27 @@ function ActivityHeatmapSection () {
             }}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[11px] font-black text-slate-950">
+              <p className="text-[11px] font-semibold text-slate-950">
                 {hoveredCell.day} · {hoveredCell.hourLabel}
               </p>
-              <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase leading-none text-blue-700">
+              <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase leading-none text-blue-700">
                 {hoveredCell.levelLabel}
               </span>
             </div>
             <div className="mt-1.5 grid grid-cols-2 gap-2">
               <div>
-                <p className="text-[8px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+                <p className="text-[8px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                   Conversion
                 </p>
-                <p className="mt-0.5 text-[13px] font-black leading-none text-slate-900">
+                <p className="mt-0.5 text-[13px] font-semibold leading-none text-slate-900">
                   {hoveredCell.conversionRate}%
                 </p>
               </div>
               <div>
-                <p className="text-[8px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+                <p className="text-[8px] font-semibold uppercase tracking-[0.12em] text-slate-400">
                   Booked
                 </p>
-                <p className="mt-0.5 text-[13px] font-black leading-none text-slate-900">
+                <p className="mt-0.5 text-[13px] font-semibold leading-none text-slate-900">
                   {hoveredCell.bookedCalls} calls
                 </p>
               </div>
@@ -579,13 +639,13 @@ function ActivityHeatmapSection () {
               [ "High", 3 ],
               [ "Peak", 5 ],
             ].map( ( [ label, level ] ) => (
-              <span key={label} className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+              <span key={label} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
                 <span className={cx( "h-2.5 w-2.5 rounded-[2px]", HEATMAP_COLORS[ level ] )} />
                 {label}
               </span>
             ) )}
           </div>
-          <p className="text-[11px] font-extrabold text-slate-500">
+          <p className="text-[11px] font-medium text-slate-500">
             Insight: Tue/Thu 9-11 AM = highest conversion hours.
           </p>
         </div>
@@ -596,24 +656,23 @@ function ActivityHeatmapSection () {
 
 export default function Metrics () {
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_280px] xl:items-start">
-      <div className="min-w-0">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-8 xl:items-start">
+      <div className="min-w-0 xl:col-span-2">
         <NorthStarSection />
+        <div className="mt-4">
+          <FunnelSection />
+        </div>
       </div>
 
-      <div className="min-w-0 space-y-4">
+      <div className="min-w-0 space-y-4 xl:col-span-4">
         <HealthAlertsSection />
-
-        <DashboardPanel className="p-4">
-          <FunnelSection />
-        </DashboardPanel>
 
         <DashboardPanel className="p-4">
           <ActivityHeatmapSection />
         </DashboardPanel>
       </div>
 
-      <div className="min-w-0">
+      <div className="min-w-0 xl:col-span-2">
         <ValueVelocityPanel />
       </div>
     </div>
