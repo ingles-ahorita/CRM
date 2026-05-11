@@ -41,6 +41,20 @@ export const PERFORMANCE_BG_CLASSES = {
   GREAT: "bg-emerald-800",
 };
 
+export const PERFORMANCE_SOFT_BG_CLASSES = {
+  BAD: "bg-rose-100 text-rose-700 border-rose-200",
+  OK: "bg-amber-100 text-amber-700 border-amber-200",
+  GOOD: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  GREAT: "bg-emerald-900 text-white border-emerald-900",
+};
+
+export const PERFORMANCE_LABELS = {
+  BAD: "Below target",
+  OK: "Near target",
+  GOOD: "On target",
+  GREAT: "Above target",
+};
+
 /**
  * Get color based on Confirmation Rate
  */
@@ -50,6 +64,10 @@ export function getConfirmationColor(pct) {
 
 export function getConfirmationClass(pct) {
   return pct < BENCHMARKS.CONFIRMATION ? PERFORMANCE_TEXT_CLASSES.BAD : PERFORMANCE_TEXT_CLASSES.GOOD;
+}
+
+export function getConfirmationBgClass(pct) {
+  return pct < BENCHMARKS.CONFIRMATION ? PERFORMANCE_BG_CLASSES.BAD : PERFORMANCE_BG_CLASSES.GOOD;
 }
 
 /**
@@ -69,6 +87,13 @@ export function getShowUpClass(pct) {
   return PERFORMANCE_TEXT_CLASSES.GREAT;
 }
 
+export function getShowUpBgClass(pct) {
+  if (pct < 45) return PERFORMANCE_BG_CLASSES.BAD;
+  if (pct < 55) return PERFORMANCE_BG_CLASSES.OK;
+  if (pct < 65) return PERFORMANCE_BG_CLASSES.GOOD;
+  return PERFORMANCE_BG_CLASSES.GREAT;
+}
+
 /**
  * Get color based on Conversion Rate
  */
@@ -84,6 +109,13 @@ export function getConversionClass(pct) {
   if (pct < 30) return PERFORMANCE_TEXT_CLASSES.OK;
   if (pct < 35) return PERFORMANCE_TEXT_CLASSES.GOOD;
   return PERFORMANCE_TEXT_CLASSES.GREAT;
+}
+
+export function getConversionBgClass(pct) {
+  if (pct < 25) return PERFORMANCE_BG_CLASSES.BAD;
+  if (pct < 30) return PERFORMANCE_BG_CLASSES.OK;
+  if (pct < 35) return PERFORMANCE_BG_CLASSES.GOOD;
+  return PERFORMANCE_BG_CLASSES.GREAT;
 }
 
 /**
@@ -103,6 +135,13 @@ export function getSuccessClass(pct) {
   return PERFORMANCE_TEXT_CLASSES.GREAT;
 }
 
+export function getSuccessBgClass(pct) {
+  if (pct < 9) return PERFORMANCE_BG_CLASSES.BAD;
+  if (pct < 12) return PERFORMANCE_BG_CLASSES.OK;
+  if (pct < 15) return PERFORMANCE_BG_CLASSES.GOOD;
+  return PERFORMANCE_BG_CLASSES.GREAT;
+}
+
 /**
  * Get color based on PIF Rate
  */
@@ -120,6 +159,13 @@ export function getPifClass(pct) {
   return PERFORMANCE_TEXT_CLASSES.GREAT;
 }
 
+export function getPifBgClass(pct) {
+  if (pct < 20) return PERFORMANCE_BG_CLASSES.BAD;
+  if (pct < 25) return PERFORMANCE_BG_CLASSES.OK;
+  if (pct < 30) return PERFORMANCE_BG_CLASSES.GOOD;
+  return PERFORMANCE_BG_CLASSES.GREAT;
+}
+
 /**
  * Get color based on AOV
  */
@@ -135,4 +181,11 @@ export function getAovClass(val) {
   if (val < 875) return PERFORMANCE_TEXT_CLASSES.OK;
   if (val < 1000) return PERFORMANCE_TEXT_CLASSES.GOOD;
   return PERFORMANCE_TEXT_CLASSES.GREAT;
+}
+
+export function getAovBgClass(val) {
+  if (val < 750) return PERFORMANCE_BG_CLASSES.BAD;
+  if (val < 875) return PERFORMANCE_BG_CLASSES.OK;
+  if (val < 1000) return PERFORMANCE_BG_CLASSES.GOOD;
+  return PERFORMANCE_BG_CLASSES.GREAT;
 }

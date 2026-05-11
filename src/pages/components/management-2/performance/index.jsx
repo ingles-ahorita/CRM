@@ -24,6 +24,14 @@ const TOP_LINE_CARDS = [
     note: "Unique visitors: 31,440",
   },
   {
+    label: "VSL watched",
+    value: "15,420",
+    valueClass: "text-indigo-600",
+    badge: "▲ 5.2%",
+    badgeClass: "bg-emerald-100 text-emerald-700",
+    note: "Watch rate: 32% of views",
+  },
+  {
     label: "Opt-ins",
     value: "3,124",
     valueClass: "text-violet-600",
@@ -232,9 +240,13 @@ const FUNNEL_DRILLDOWN_ROWS = [
     code: "MX",
     country: "Mexico",
     viewsToOptIn: "7.0%",
+    optIns: "1,284",
     optInToBook: "13.1%",
+    bookings: "168",
     bookToShow: "62%",
+    shows: "104",
     showToClose: "14%",
+    closes: "15",
     endToEnd: "0.080%",
     endClass: "bg-emerald-100 text-emerald-700",
     aov: "$615",
@@ -243,9 +255,13 @@ const FUNNEL_DRILLDOWN_ROWS = [
     code: "US",
     country: "USA",
     viewsToOptIn: "6.9%",
+    optIns: "912",
     optInToBook: "14.5%",
+    bookings: "132",
     bookToShow: "68%",
+    shows: "90",
     showToClose: "16%",
+    closes: "14",
     endToEnd: "0.109%",
     endClass: "bg-emerald-100 text-emerald-700",
     aov: "$735",
@@ -254,9 +270,13 @@ const FUNNEL_DRILLDOWN_ROWS = [
     code: "CO",
     country: "Colombia",
     viewsToOptIn: "6.4%",
+    optIns: "492",
     optInToBook: "10.6%",
+    bookings: "52",
     bookToShow: "54%",
+    shows: "28",
     showToClose: "11%",
+    closes: "3",
     endToEnd: "0.040%",
     endClass: "bg-amber-100 text-amber-700",
     aov: "$485",
@@ -265,9 +285,13 @@ const FUNNEL_DRILLDOWN_ROWS = [
     code: "EC",
     country: "Ecuador",
     viewsToOptIn: "6.4%",
+    optIns: "284",
     optInToBook: "12.0%",
+    bookings: "34",
     bookToShow: "58%",
+    shows: "20",
     showToClose: "12%",
+    closes: "2",
     endToEnd: "0.054%",
     endClass: "bg-amber-100 text-amber-700",
     aov: "$510",
@@ -276,9 +300,13 @@ const FUNNEL_DRILLDOWN_ROWS = [
     code: "AR",
     country: "Argentina",
     viewsToOptIn: "5.9%",
+    optIns: "148",
     optInToBook: "10.8%",
+    bookings: "16",
     bookToShow: "48%",
+    shows: "8",
     showToClose: "9%",
+    closes: "1",
     endToEnd: "0.028%",
     endClass: "bg-red-100 text-red-600",
     aov: "$420",
@@ -287,9 +315,13 @@ const FUNNEL_DRILLDOWN_ROWS = [
     code: "ES",
     country: "Spain",
     viewsToOptIn: "6.3%",
+    optIns: "104",
     optInToBook: "9.6%",
+    bookings: "10",
     bookToShow: "44%",
+    shows: "4",
     showToClose: "8%",
+    closes: "1",
     endToEnd: "0.021%",
     endClass: "bg-red-100 text-red-600",
     aov: "$510",
@@ -755,7 +787,7 @@ function FunnelDrilldown () {
       </div>
 
       <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-        <div className="grid grid-cols-[112px_repeat(5,minmax(56px,1fr))_58px] items-end gap-2 border-b border-slate-200 pb-3 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+        <div className="grid grid-cols-[100px_repeat(4,minmax(80px,1fr))_64px_58px] items-end gap-2 border-b border-slate-200 pb-3 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
           <div>Country</div>
           <div className=" leading-tight">
             <span className="block">Views</span>
@@ -788,24 +820,32 @@ function FunnelDrilldown () {
           {FUNNEL_DRILLDOWN_ROWS.map( ( row ) => (
             <div
               key={row.country}
-              className="grid grid-cols-[112px_repeat(5,minmax(56px,1fr))_58px] items-center gap-2 py-3"
+              className="grid grid-cols-[100px_repeat(4,minmax(80px,1fr))_64px_58px] items-center gap-2 py-3"
             >
-              <div className="min-w-0 truncate text-[12px] font-medium text-slate-700">
-                <span className="mr-1.5 text-[13px]" aria-hidden="true">
+              <div className="min-w-0 truncate text-[11px] font-medium text-slate-700">
+                <span className="mr-1.5 text-[12px]" aria-hidden="true">
                   {COUNTRY_FLAGS[ row.code ]}
                 </span>
                 {row.country}
               </div>
-              <div className="text-[12px] font-medium text-slate-700">{row.viewsToOptIn}</div>
-              <div className="text-[12px] font-medium text-slate-700">{row.optInToBook}</div>
-              <div className="text-[12px] font-medium text-slate-700">{row.bookToShow}</div>
-              <div className="text-[12px] font-medium text-slate-700">{row.showToClose}</div>
+              <div className="text-[11px] font-medium text-slate-700 tabular-nums">
+                {row.optIns}({row.viewsToOptIn})
+              </div>
+              <div className="text-[11px] font-medium text-slate-700 tabular-nums">
+                {row.bookings}({row.optInToBook})
+              </div>
+              <div className="text-[11px] font-medium text-slate-700 tabular-nums">
+                {row.shows}({row.bookToShow})
+              </div>
+              <div className="text-[11px] font-medium text-slate-700 tabular-nums">
+                {row.closes}({row.showToClose})
+              </div>
               <div>
-                <span className={cx( "inline-flex rounded-full px-1.5 py-1 text-[10px] font-semibold", row.endClass )}>
+                <span className={cx( "inline-flex rounded-full px-1.5 py-1 text-[9px] font-semibold", row.endClass )}>
                   {row.endToEnd}
                 </span>
               </div>
-              <div className="text-[12px] font-medium text-slate-700">{row.aov}</div>
+              <div className="text-[11px] font-medium text-slate-700">{row.aov}</div>
             </div>
           ) )}
         </div>
