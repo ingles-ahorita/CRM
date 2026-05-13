@@ -718,7 +718,7 @@ const totalPurchased = purchasedCalls.length;
     country.pickUpRate = country.bookingsMadeInPeriod > 0 
       ? (country.pickedUpFromBookings / country.bookingsMadeInPeriod) * 100 
       : 0;
-    country.showUpRate = country.totalBooked > 0 ? (country.totalShowedUp / country.totalBooked) * 100 : 0;
+    country.showUpRate = country.totalConfirmed > 0 ? (country.totalShowedUp / country.totalConfirmed) * 100 : 0;
     country.confirmationRate = (country.bookingsForConfirmation ?? 0) > 0
       ? ((country.confirmedFromBookings ?? 0) / country.bookingsForConfirmation) * 100
       : 0;
