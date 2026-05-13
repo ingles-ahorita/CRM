@@ -167,8 +167,7 @@ export default function CloserMetricsTable({
 
   const showUpTone = (pct) => {
     if (!Number.isFinite(pct)) return "neutral";
-    if (pct < 45) return "bad";
-    if (pct < 55) return "warn";
+    if (pct < 55) return "bad";
     if (pct < 65) return "good";
     return "great";
   };
@@ -294,14 +293,14 @@ export default function CloserMetricsTable({
           />
           <DataCell
             top={pctText(showUpMtd.showed, showUpMtd.confirmed)}
-            benchmarkLabel="Bad: <45% / Ok: 45–55% / Good: 55–65% / Great: 65%+"
+            benchmarkLabel="Bad: <55% / Good: 55–65% / Great: 65%+"
             mid={`${showUpMtd.showed} / ${showUpMtd.confirmed}`}
             midTone={showUpMtdTone}
             topClassName={showUpTopClass(showUpMtdTone)}
           />
           <DataCell
             top={pctText(showUpHist.showed, showUpHist.confirmed)}
-            benchmarkLabel="Bad: <45% / Ok: 45–55% / Good: 55–65% / Great: 65%+"
+            benchmarkLabel="Bad: <55% / Good: 55–65% / Great: 65%+"
             mid={`${showUpHist.showed} / ${showUpHist.confirmed}`}
             midTone={showUpHistTone}
             topClassName={showUpTopClass(showUpHistTone)}
