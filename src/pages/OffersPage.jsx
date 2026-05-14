@@ -44,7 +44,29 @@ export default function OffersPage() {
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-      setOffers(data || []);
+      const rows = data || [];
+      // #region agent log
+      fetch("http://127.0.0.1:7823/ingest/14419534-cddc-4300-86cb-ca37589b397e", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73f40b" },
+        body: JSON.stringify({
+          sessionId: "73f40b",
+          location: "OffersPage.jsx:fetchOffers",
+          message: "Offers page /offers table load",
+          data: {
+            total: rows.length,
+            activeStrictEqTrue: rows.filter((o) => o?.active === true).length,
+            activeTruthy: rows.filter((o) => !!o?.active).length,
+            nonBooleanActiveCount: rows.filter(
+              (o) => o?.active != null && typeof o?.active !== "boolean",
+            ).length,
+          },
+          timestamp: Date.now(),
+          hypothesisId: "A",
+        }),
+      }).catch(() => {});
+      // #endregion
+      setOffers(rows);
     } catch (error) {
       console.error('Error fetching offers:', error);
       alert('Error loading offers: ' + error.message);

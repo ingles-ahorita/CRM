@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import * as DateHelpers from "../../../../utils/dateHelpers";
+import { useRevenueGoal } from "../../../../hooks/useRevenueGoal";
 import { supabase } from "../../../../lib/supabaseClient";
+import { LOCK_IN_OFFER_DB_ID, PAYOFF_OFFER_DB_ID } from "../../../../lib/specialOffers";
+import SegmentedTabs from "../segmented-tabs";
 import {
   Bar,
   BarChart,
@@ -18,26 +21,97 @@ import {
   PERFORMANCE_SOFT_BG_CLASSES,
 } from "../../../../utils/performanceBenchmarks";
 
-const INCOME_SOURCE_DEFS = [
-  {
-    key: "new",
-    label: "New income",
-    color: "#10B981",
-    note: "First-time cash from purchases started this month",
-  },
-  {
-    key: "old",
-    label: "Old income",
-    color: "#2563EB",
-    note: "Cash from earlier purchases collected this month",
-  },
-  {
-    key: "subscriptions",
-    label: "Subscriptions",
-    color: "#F59E0B",
-    note: "Recurring subscription product charges",
-  },
+const MONEY_AGE_DEFS = [
+  { key: "new", label: "New income", color: PERFORMANCE_COLORS.GOOD },
+  { key: "old", label: "Old income", color: PERFORMANCE_COLORS.OK },
 ];
+
+const NEW_INCOME_TYPE_DEFS = [
+  { key: "pif", label: "PIF", color: PERFORMANCE_COLORS.GOOD },
+  { key: "pip", label: "PIP", color: PERFORMANCE_COLORS.OK },
+  { key: "paymentPlan", label: "Payment plan", color: PERFORMANCE_COLORS.BAD },
+  { key: "payoff", label: "Payoff", color: PERFORMANCE_COLORS.GREAT },
+  { key: "other", label: "Other", color: "#64748B" },
+];
+
+const TIME_RANGE_ITEMS = [
+  { id: "mtd", label: "MTD", title: "This month (MTD)" },
+  { id: "lastMonth", label: "Last mo", title: "Last month" },
+  { id: "last7", label: "7 days", title: "Last 7 days" },
+  { id: "lastWeek", label: "Last wk", title: "Last week" },
+  { id: "custom", label: "Custom", title: "Custom date range" },
+];
+
+const FORECAST_RANGE_ITEMS = [
+  { id: "mtd", label: "MTD" },
+  { id: "next7", label: "Next 7 days" },
+  { id: "nextWeek", label: "Next wk" },
+  { id: "nextMonth", label: "Next mo" },
+  { id: "custom", label: "Custom" },
+];
+
+const DAILY_SALES_RANGE_ITEMS = [
+  { id: "last30", label: "Last 30 days" },
+  { id: "mtd", label: "MTD" },
+  { id: "last7", label: "Last 7 days" },
+  { id: "lastWeek", label: "Last wk" },
+  { id: "lastMonth", label: "Last mo" },
+  { id: "custom", label: "Custom" },
+];
+
+const PRODUCT_STATUS_ITEMS = [
+  { id: "active", label: "Active" },
+  { id: "all", label: "All offers" },
+  { id: "inactive", label: "Inactive" },
+];
+
+const PRODUCT_DATE_ITEMS = [
+  { id: "mtd", label: "MTD" },
+  { id: "last7", label: "Last 7 days" },
+  { id: "lastWeek", label: "Last wk" },
+  { id: "lastMonth", label: "Last mo" },
+  { id: "custom", label: "Custom" },
+];
+
+/** Short label for revenue snapshot goal pill (uppercased in UI). */
+const SNAPSHOT_RANGE_BADGE = {
+  last30: "30d",
+  mtd: "MTD",
+  last7: "7d",
+  lastWeek: "Last wk",
+  lastMonth: "Last mo",
+  custom: "Custom",
+};
+
+function getSnapshotRangeBounds(range, customStart, customEnd) {
+  if (range === "custom") {
+    return normalizeCustomBounds(customStart, customEnd);
+  }
+
+  const bounds = getDailySalesRangeBounds(range);
+  if (range !== "mtd") return bounds;
+
+  const now = new Date();
+  return {
+    start: bounds.start,
+    end: now < bounds.end ? now : bounds.end,
+  };
+}
+
+function calculateSnapshotGoalUsd(monthlyGoal, start, end) {
+  let total = 0;
+
+  for (const dayKey of listDaysISO(startOfUTCDate(start), startOfUTCDate(end))) {
+    const monthRange = DateHelpers.getMonthRangeInTimezone(
+      new Date(`${dayKey}T12:00:00.000Z`),
+      DateHelpers.DEFAULT_TIMEZONE,
+    );
+    const daysInMonth = monthRange?.endDate?.getUTCDate?.() || 30;
+    total += monthlyGoal / daysInMonth;
+  }
+
+  return Math.max(1, Math.round(total));
+}
 
 const SUCCESS_STATES = new Set([
   "paid",
@@ -77,6 +151,29 @@ function txAmountUsd(row) {
   return Math.abs(Number(row?.amount_in_cents || 0)) / 100;
 }
 
+function isChargeInRange(row, startISO, endISO) {
+  const resolvedInRange =
+    row?.payment_resolved_at != null &&
+    row.payment_resolved_at >= startISO &&
+    row.payment_resolved_at <= endISO &&
+    (row.effective_date == null || row.effective_date < startISO || row.effective_date > endISO);
+  const inRange =
+    (row?.effective_date >= startISO && row.effective_date <= endISO) ||
+    resolvedInRange;
+  if (!inRange) return false;
+
+  const action = resolvedInRange
+    ? "charge"
+    : String(row?.action || (Number(row?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
+  const isRefund = action === "refund" || Number(row?.amount_in_cents || 0) < 0;
+  if (isRefund) return false;
+  return resolvedInRange || !isFailedTransaction(row, action);
+}
+
+function transactionCashDate(row) {
+  return row?.payment_resolved_at || row?.effective_date || row?.created_at_kajabi || null;
+}
+
 function sumGrossTransactions(rows, startISO, endISO) {
   return (rows || []).reduce((sum, row) => {
     if (!row?.created_at_kajabi || row.created_at_kajabi < startISO || row.created_at_kajabi > endISO) return sum;
@@ -108,7 +205,197 @@ function sumNetTransactions(rows, startISO, endISO) {
   }, 0);
 }
 
-const MONTHLY_GOAL_USD = 55000;
+const PAYOFF_OFFER_IDS = new Set(["2150799973"]);
+
+/** Hex for mini goal pies — same thresholds as snapshot badges (on / near / behind pace). */
+function paceProgressFill(actual, target) {
+  const a = Number(actual) || 0;
+  const t = Number(target) || 0;
+  if (t <= 0) return PERFORMANCE_COLORS.BAD;
+  if (a >= t) return PERFORMANCE_COLORS.GOOD;
+  if (a >= t * 0.9) return PERFORMANCE_COLORS.OK;
+  return PERFORMANCE_COLORS.BAD;
+}
+
+function buildGoalPieSlices(mainUsd, capUsd, accentFill) {
+  const main = Math.max(0, Number(mainUsd) || 0);
+  const cap = Math.max(0, Number(capUsd) || 0);
+  const slate = "#e2e8f0";
+  if (cap <= 0) {
+    return [{ key: "empty", value: 1, fill: slate }];
+  }
+  const filled = Math.min(main, cap);
+  const rest = Math.max(0, cap - main);
+  if (filled <= 0) {
+    return [{ key: "track", value: cap, fill: slate }];
+  }
+  if (rest <= 0) {
+    return [{ key: "full", value: Math.max(filled, 1), fill: accentFill }];
+  }
+  return [
+    { key: "progress", value: filled, fill: accentFill },
+    { key: "remaining", value: rest, fill: slate },
+  ];
+}
+
+function startOfUTCDate(d) {
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0),
+  );
+}
+
+function endOfUTCDate(d) {
+  return new Date(
+    Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      d.getUTCDate(),
+      23,
+      59,
+      59,
+      999,
+    ),
+  );
+}
+
+function getRangeBounds(range) {
+  const now = new Date();
+  if (range === "lastWeek") {
+    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset(1);
+    return { start: weekStart, end: weekEnd };
+  }
+  if (range === "last7") {
+    const end = endOfUTCDate(now);
+    const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
+    return { start: startOfUTCDate(start), end };
+  }
+  if (range === "lastMonth") {
+    const prevMonthDate = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15),
+    );
+    const monthRange = DateHelpers.getMonthRangeInTimezone(
+      prevMonthDate,
+      DateHelpers.DEFAULT_TIMEZONE,
+    );
+    return { start: monthRange.startDate, end: monthRange.endDate };
+  }
+  if (range === "custom") {
+    const end = endOfUTCDate(now);
+    const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
+    return { start: startOfUTCDate(start), end };
+  }
+  const currentRange = DateHelpers.getMonthRangeInTimezone(
+    now,
+    DateHelpers.DEFAULT_TIMEZONE,
+  );
+  return { start: currentRange.startDate, end: currentRange.endDate };
+}
+
+function getForecastRangeBounds(range) {
+  const now = new Date();
+  if (range === "next7") {
+    const start = startOfUTCDate(now);
+    const end = endOfUTCDate(new Date(start.getTime() + 6 * 24 * 60 * 60 * 1000));
+    return { start, end };
+  }
+  if (range === "nextWeek") {
+    const currentDay = now.getUTCDay();
+    const daysUntilNextMonday = ((8 - currentDay) % 7) || 7;
+    const nextMonday = startOfUTCDate(new Date(now.getTime() + daysUntilNextMonday * 24 * 60 * 60 * 1000));
+    const nextSunday = endOfUTCDate(new Date(nextMonday.getTime() + 6 * 24 * 60 * 60 * 1000));
+    return { start: nextMonday, end: nextSunday };
+  }
+  if (range === "nextMonth") {
+    const nextMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 15));
+    const monthRange = DateHelpers.getMonthRangeInTimezone(
+      nextMonthDate,
+      DateHelpers.DEFAULT_TIMEZONE,
+    );
+    return { start: monthRange.startDate, end: monthRange.endDate };
+  }
+  return getRangeBounds(range);
+}
+
+function getDailySalesRangeBounds(range) {
+  const now = new Date();
+  if (range === "last30") {
+    const end = endOfUTCDate(now);
+    const start = new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000);
+    return { start: startOfUTCDate(start), end };
+  }
+  return getRangeBounds(range);
+}
+
+function listDaysISO(start, end) {
+  const days = [];
+  let cursor = startOfUTCDate(start);
+  const last = startOfUTCDate(end);
+
+  while (cursor <= last) {
+    days.push(cursor.toISOString().slice(0, 10));
+    cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  return days;
+}
+
+/** Same calendar length immediately before `start` (for period-over-period gross). */
+function priorPeriodBoundsInclusive(start, end) {
+  const s = startOfUTCDate(start);
+  const e = startOfUTCDate(end);
+  const n = Math.max(1, listDaysISO(s, e).length);
+  const msDay = 24 * 60 * 60 * 1000;
+  const priorEnd = new Date(s.getTime() - msDay);
+  const priorStart = new Date(priorEnd.getTime() - (n - 1) * msDay);
+  return { start: startOfUTCDate(priorStart), end: endOfUTCDate(priorEnd) };
+}
+
+function formatShortUtcRange(start, end) {
+  const opts = { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" };
+  return `${start.toLocaleDateString("en-US", opts)} – ${end.toLocaleDateString("en-US", opts)}`;
+}
+
+function transactionTouchesWindow(tx, startISO, endISO) {
+  const c = tx?.created_at_kajabi;
+  const e = tx?.effective_date;
+  const p = tx?.payment_resolved_at;
+  return (
+    (c != null && c >= startISO && c <= endISO) ||
+    (e != null && e >= startISO && e <= endISO) ||
+    (p != null && p >= startISO && p <= endISO)
+  );
+}
+
+function normalizeCustomBounds(startDateText, endDateText) {
+  const fallback = getRangeBounds("custom");
+  if (!startDateText || !endDateText) return fallback;
+  const start = new Date(`${startDateText}T00:00:00.000Z`);
+  const end = new Date(`${endDateText}T23:59:59.999Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return fallback;
+  if (start > end) return fallback;
+  return { start, end };
+}
+
+function rangeTitle(range, customStart, customEnd) {
+  if (range === "lastMonth") return "Last month";
+  if (range === "last30") return "Last 30 days";
+  if (range === "last7") return "Last 7 days";
+  if (range === "next7") return "Next 7 days";
+  if (range === "lastWeek") return "Last week";
+  if (range === "nextWeek") return "Next week";
+  if (range === "nextMonth") return "Next month";
+  if (range === "custom") return `${customStart || "Custom"} to ${customEnd || "Custom"}`;
+  return "Month to date";
+}
+
+function addMonthsClamped(date, monthsToAdd) {
+  const source = new Date(date);
+  const day = source.getUTCDate();
+  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + monthsToAdd, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target;
+}
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -120,6 +407,61 @@ function shimmer(className = "") {
   );
 }
 
+/** Placeholder bars for payment-plan per-day chart loading state (heights % of chart area). */
+const FORECAST_DAILY_CHART_SHIMMER_HEIGHTS = [38, 62, 45, 72, 55, 80, 48, 66, 52, 74, 42, 58];
+
+function PaymentPlanDailyChartShimmer() {
+  return (
+    <div className="mt-3" aria-hidden>
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        {shimmer("h-2.5 w-40")}
+        {shimmer("h-2.5 w-24")}
+      </div>
+      <div
+        className="flex h-[140px] items-end justify-between gap-1 rounded-lg border border-slate-100 bg-slate-50/80 px-1.5 pb-0.5 pt-2"
+        role="presentation"
+      >
+        {FORECAST_DAILY_CHART_SHIMMER_HEIGHTS.map((pct, i) => (
+          <div key={i} className="flex min-h-0 min-w-0 flex-1 flex-col justify-end">
+            <div
+              className="w-full min-h-[8px] animate-pulse rounded-sm bg-slate-200/70"
+              style={{ height: `${pct}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      {shimmer("mt-2 h-2.5 w-44")}
+    </div>
+  );
+}
+
+function PaymentPlanDailyTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  const amount = Number(row?.amount ?? payload[0]?.value ?? 0);
+  const count = Number(row?.paymentCount ?? 0) || 0;
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_24px_rgba(15,23,42,0.14)]">
+      <p className="text-[11px] font-extrabold text-slate-950">
+        {row?.date || label}
+      </p>
+      <p className="mt-1 text-[12px] font-extrabold text-emerald-600">
+        {formatUsd(amount)}
+      </p>
+      <p className="mt-0.5 text-[10px] font-semibold text-slate-500">
+        {count === 1 ? "1 expected payment" : `${count} expected payments`}
+      </p>
+    </div>
+  );
+}
+
+function forecastDayBarFill(amount) {
+  const a = Number(amount);
+  if (!Number.isFinite(a) || a <= 0) return "#E2E8F0";
+  return PERFORMANCE_COLORS.GOOD;
+}
+
 function RevenueCardShimmer() {
   return (
     <article className="min-h-[110px] rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
@@ -128,6 +470,24 @@ function RevenueCardShimmer() {
       {shimmer("mt-3 h-3 w-40")}
       <div className="mt-4 flex gap-2">
         {shimmer("h-4 w-16")}
+      </div>
+    </article>
+  );
+}
+
+function RevenueSnapshotCardShimmer() {
+  return (
+    <article className="min-h-[110px] rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="flex gap-2.5">
+        <div className="min-w-0 flex-1">
+          {shimmer("h-2.5 w-24")}
+          {shimmer("mt-3 h-7 w-32")}
+          {shimmer("mt-3 h-3 w-40")}
+          <div className="mt-4 flex gap-2">
+            {shimmer("h-4 w-16")}
+          </div>
+        </div>
+        {shimmer("mt-0.5 h-[50px] w-[50px] shrink-0 rounded-full")}
       </div>
     </article>
   );
@@ -145,9 +505,50 @@ function formatCents(value) {
   return formatUsd((Number(value) || 0) / 100);
 }
 
+function dailySalesBarBenchmarkHint(monthlyGoal) {
+  const g = monthlyGoal / 30;
+  const on = Math.round(g);
+  const near = Math.round(g * 0.7);
+  return `Daily bar: ≥ ${formatUsd(on)} · ≥ ${formatUsd(near)} · else behind (month goal ÷ 30 per day).`;
+}
+
 function pct(value, total) {
   if (!Number.isFinite(Number(value)) || !Number.isFinite(Number(total)) || Number(total) <= 0) return 0;
   return Math.round(((Number(value) / Number(total)) * 1000)) / 10;
+}
+
+function rowsFromTotals(defs, totals) {
+  return defs.map((def) => ({
+    ...def,
+    valueCents: Math.round((Number(totals?.[def.key]) || 0) * 100),
+  }));
+}
+
+function buildIncomeMixCharts({
+  newIncomeByType = {},
+  allIncomeByAge = {},
+  payoffIncomeByAge = {},
+} = {}) {
+  return [
+    {
+      key: "new-income",
+      title: "New income mix",
+      subtitle: "Agreements started in this range: PIF, PIP, plans, payoffs.",
+      rows: rowsFromTotals(NEW_INCOME_TYPE_DEFS, newIncomeByType),
+    },
+    {
+      key: "all-income",
+      title: "All income mix",
+      subtitle: "All collected revenue split by new vs old agreement money.",
+      rows: rowsFromTotals(MONEY_AGE_DEFS, allIncomeByAge),
+    },
+    {
+      key: "payoff-income",
+      title: "Payoff income mix",
+      subtitle: "Payoff revenue split by original agreement date.",
+      rows: rowsFromTotals(MONEY_AGE_DEFS, payoffIncomeByAge),
+    },
+  ];
 }
 
 function SectionBadge({ children }) {
@@ -158,40 +559,88 @@ function SectionBadge({ children }) {
   );
 }
 
+function HelpTooltip({ text, className = "" }) {
+  return (
+    <span className={cx("group relative inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[10px] font-extrabold leading-none text-slate-400 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600", className)}>
+      ?
+      <span className="pointer-events-none absolute right-0 top-5 z-30 hidden w-56 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-medium leading-snug text-slate-600 shadow-[0_10px_28px_rgba(15,23,42,0.16)] group-hover:block">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function RevenueMiniPie({ mainUsd, capUsd, accentFill }) {
+  const chartData = buildGoalPieSlices(mainUsd, capUsd, accentFill);
+  const size = 50;
+  return (
+    <div className="mt-0.5 h-[50px] w-[50px] shrink-0" aria-hidden>
+      <PieChart width={size} height={size}>
+        <Pie
+          data={chartData}
+          dataKey="value"
+          nameKey="key"
+          cx="50%"
+          cy="50%"
+          innerRadius={13}
+          outerRadius={21}
+          paddingAngle={0}
+          stroke="none"
+          isAnimationActive={false}
+        >
+          {chartData.map((entry) => (
+            <Cell key={entry.key} fill={entry.fill} />
+          ))}
+        </Pie>
+      </PieChart>
+    </div>
+  );
+}
+
 function RevenueCard({ card, loading }) {
   return (
-    <article className="min-h-[110px] rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
-        {card.label}
-      </p>
-      {loading ? (
-        <div className="mt-2 h-7 w-24 animate-pulse rounded bg-slate-100" />
-      ) : (
-        <div className={cx("mt-2 text-[24px] font-extrabold leading-none tracking-normal", card.valueClass)}>
-          {card.value}
-        </div>
-      )}
-      <p className="mt-2 text-[11px] font-semibold text-slate-500">{card.note}</p>
-      {card.progress ? (
-        <div className="mt-3">
-          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full bg-emerald-500"
-              style={{ width: `${card.progress}%` }}
-            />
-          </div>
-          <p className="mt-1.5 text-[11px] font-semibold text-slate-500">
-            {card.progressNote}
+    <article className="relative min-h-[110px] rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="flex gap-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+            {card.label}
           </p>
+          {loading ? (
+            <div className="mt-2 h-7 w-24 animate-pulse rounded bg-slate-100" />
+          ) : (
+            <div className={cx("mt-2 text-[24px] font-extrabold leading-none tracking-normal", card.valueClass)}>
+              {card.value}
+            </div>
+          )}
+          <p className="mt-2 text-[11px] font-semibold text-slate-500">{card.note}</p>
+          {card.progress ? (
+            <div className="mt-3">
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${card.progress}%`,
+                    backgroundColor: card.progressFill || PERFORMANCE_COLORS.GOOD,
+                  }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] font-semibold text-slate-500">
+                {card.progressNote}
+              </p>
+            </div>
+          ) : null}
+          {card.badge ? (
+            <div className="mt-2">
+              <span className={cx("inline-flex rounded-md px-2 py-1 text-[10px] font-extrabold leading-none", card.badgeClass)}>
+                {card.badge}
+              </span>
+            </div>
+          ) : null}
         </div>
-      ) : null}
-      {card.badge ? (
-        <div className="mt-2">
-          <span className={cx("inline-flex rounded-md px-2 py-1 text-[10px] font-extrabold leading-none", card.badgeClass)}>
-            {card.badge}
-          </span>
-        </div>
-      ) : null}
+        {!loading && card.pie ? (
+          <RevenueMiniPie mainUsd={card.pie.mainUsd} capUsd={card.pie.capUsd} accentFill={card.pie.accentFill} />
+        ) : null}
+      </div>
     </article>
   );
 }
@@ -214,34 +663,129 @@ function RiskCard({ card, loading }) {
   );
 }
 
-function RevenueSnapshotPanel({ cards, loading }) {
+function RevenueSnapshotPanel({
+  cards,
+  loading,
+  snapshotGoal,
+  range,
+  setRange,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+}) {
+  const badgeKey = SNAPSHOT_RANGE_BADGE[range] ? range : "mtd";
+  const badgeSlice = SNAPSHOT_RANGE_BADGE[badgeKey].toUpperCase();
+
   return (
-    <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-      <div className="flex items-start justify-between gap-2 pb-3">
-        <div className="text-[13px] font-bold uppercase tracking-wide text-slate-900">
+    <div className="flex flex-col overflow-visible rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <div className="relative pb-">
+        <div className="pr-[8.5rem] text-[13px] font-bold uppercase tracking-wide text-slate-900">
           Revenue Snapshot
         </div>
-        <SectionBadge>MTD · Goal {formatUsd(MONTHLY_GOAL_USD)}</SectionBadge>
+        <div className="absolute right-0 -top-1">
+          <SectionBadge>
+            {badgeSlice} · Goal {formatUsd(snapshotGoal)}
+          </SectionBadge>
+        </div>
+        <div className="mt-3 mb-2">
+          <select
+            value={range}
+            onChange={(e) => setRange(e.target.value)}
+            className="h-7 w-full max-w-[11rem] rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+            aria-label="Revenue snapshot range"
+          >
+            {DAILY_SALES_RANGE_ITEMS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-
+      {range === "custom" ? (
+        <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+        </div>
+      ) : null}
       <div className="flex flex-col gap-2">
         {loading
-          ? [1, 2, 3].map((i) => <RevenueCardShimmer key={i} />)
+          ? [1, 2, 3].map((i) => <RevenueSnapshotCardShimmer key={i} />)
           : cards.map((card) => <RevenueCard key={card.label} card={card} />)}
       </div>
     </div>
   );
 }
 
-function RefundsPanel({ cards, loading }) {
+function RefundsPanel({
+  cards,
+  loading,
+  error = null,
+  range,
+  setRange,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+}) {
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-      <div className="flex items-start justify-between gap-2 pb-3">
-        <div className="text-[13px] font-bold uppercase tracking-wide text-slate-900">
+      <div className="relative pb-2">
+        <div className="pr-14 text-[13px] font-bold uppercase tracking-wide text-slate-900">
           Refunds, Chargebacks & Outstanding
         </div>
-        <SectionBadge>Risk</SectionBadge>
+        <div className="absolute right-0 top-0">
+          <SectionBadge>Risk</SectionBadge>
+        </div>
+        <div className="mt-2">
+          <select
+            value={range}
+            onChange={(e) => setRange(e.target.value)}
+            className="h-7 w-full max-w-[11rem] rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+            aria-label="Refunds and risk range"
+          >
+            {DAILY_SALES_RANGE_ITEMS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
+      {range === "custom" ? (
+        <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+        </div>
+      ) : null}
+      {error ? (
+        <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-700">
+          {error}
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         {loading
@@ -258,43 +802,41 @@ function RefundsPanel({ cards, loading }) {
   );
 }
 
-function IncomeMixThisMonth({ rows, monthLabel, loading, error }) {
+function IncomeMixCard({ title, subtitle, rows, loading, error }) {
   const totalCents = rows.reduce((sum, row) => sum + row.valueCents, 0);
-  const chartData = rows.map((row) => ({
+  const visibleRows = totalCents > 0 ? rows.filter((row) => row.valueCents > 0) : rows;
+  const chartData = visibleRows.map((row) => ({
     name: row.label,
     value: row.valueCents,
     color: row.color,
   }));
 
   return (
-    <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-      <div className="flex flex-col gap-1 pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="text-[13px] font-bold uppercase tracking-wide text-slate-900">
-            Income source mix {monthLabel ? `· ${monthLabel}` : ""}
-          </div>
-          <SectionBadge>Kajabi revenue mix</SectionBadge>
+    <div className="flex min-h-[290px] flex-col rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <div className="flex min-h-[54px] flex-col gap-1 pb-2">
+        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-900">
+          {title}
         </div>
-        <p className="text-[11px] font-medium text-slate-500 leading-snug">
-          New income shows current-month sales. Old income is cash from earlier sales. Subscriptions are recurring subscription charges.
+        <p className="text-[10px] font-medium text-slate-500 leading-snug">
+          {subtitle}
         </p>
       </div>
 
       {loading ? (
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[200px_minmax(0,1fr)]">
-          <div className="flex h-[180px] items-center justify-center">
-            {shimmer("h-32 w-32 rounded-full")}
+        <div className="mt-2 flex flex-1 flex-col gap-2">
+          <div className="flex h-[112px] items-center justify-center">
+            {shimmer("h-24 w-24 rounded-full")}
           </div>
-          <div className="flex flex-col justify-center gap-4">
-            <div className="space-y-2">
-              {shimmer("h-3 w-32")}
-              {shimmer("h-7 w-48")}
+          <div className="flex flex-col justify-center gap-2">
+            <div className="space-y-1.5">
+              {shimmer("h-2.5 w-28")}
+              {shimmer("h-6 w-32")}
             </div>
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => (
+            <div className="space-y-2">
+              {[1, 2].map(i => (
                 <div key={i} className="flex justify-between">
-                  {shimmer("h-3 w-24")}
-                  {shimmer("h-3 w-16")}
+                  {shimmer("h-2.5 w-20")}
+                  {shimmer("h-2.5 w-12")}
                 </div>
               ))}
             </div>
@@ -306,20 +848,20 @@ function IncomeMixThisMonth({ rows, monthLabel, loading, error }) {
         </div>
       ) : totalCents === 0 ? (
         <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-[12px] font-semibold text-slate-500">
-          No current-month income found yet.
+          No income found in selected range.
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[200px_minmax(0,1fr)]">
-          <div className="h-[180px]">
+        <div className="mt-2 flex flex-1 flex-col gap-2">
+          <div className="mx-auto flex h-[112px] w-[112px] items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={chartData}
                   dataKey="value"
                   nameKey="name"
-                  innerRadius={50}
-                  outerRadius={80}
-                  paddingAngle={2}
+                  innerRadius={30}
+                  outerRadius={52}
+                  paddingAngle={1.5}
                   stroke="none"
                 >
                   {chartData.map((entry) => (
@@ -342,28 +884,27 @@ function IncomeMixThisMonth({ rows, monthLabel, loading, error }) {
           </div>
 
           <div className="flex min-w-0 flex-col justify-center">
-            <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-              <p className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
-                Total income this month
+            <div className="min-h-[48px] rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+              <p className="text-[8px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+                Total income in range
               </p>
-              <p className="mt-0.5 text-[20px] font-extrabold leading-none text-slate-950">
+              <p className="mt-0.5 text-[18px] font-extrabold leading-none text-slate-950">
                 {formatCents(totalCents)}
               </p>
             </div>
 
-            <div className="mt-2 divide-y divide-slate-100 rounded-xl border border-slate-100">
-              {rows.map((row) => {
-                const percent = pct(row.valueCents, totalCents);
+            <div className="mt-2 min-h-[56px] divide-y divide-slate-100 rounded-xl border border-slate-100">
+              {visibleRows.map((row) => {
                 return (
                   <div key={row.key} className="flex items-start justify-between gap-3 px-2 py-1.5">
                     <div className="flex min-w-0 items-start gap-2">
                       <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
                       <div className="min-w-0">
-                        <p className="text-[11px] font-semibold text-slate-800 leading-none">{row.label}</p>
+                        <p className="text-[10px] font-semibold text-slate-800 leading-none">{row.label}</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-[11px] font-extrabold tabular-nums text-slate-950 leading-none">
+                      <p className="text-[10px] font-extrabold tabular-nums text-slate-950 leading-none">
                         {formatCents(row.valueCents)}
                       </p>
                     </div>
@@ -378,9 +919,84 @@ function IncomeMixThisMonth({ rows, monthLabel, loading, error }) {
   );
 }
 
-function RevenueMixPanel({ data, rows, loading }) {
+function IncomeMixPanel({
+  charts,
+  range,
+  setRange,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+  loading,
+  error,
+}) {
   return (
-    <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+    <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start justify-between gap-2 pb-2">
+        <div className="text-[13px] font-bold uppercase tracking-wide text-slate-900">
+          Income Source Mix
+        </div>
+        <SectionBadge>Kajabi revenue mix</SectionBadge>
+      </div>
+      <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+        <SegmentedTabs
+          items={TIME_RANGE_ITEMS}
+          activeId={range}
+          onChange={setRange}
+          size="xs"
+          className="w-max border-slate-200/90 bg-slate-100/80"
+          activeClassName="!bg-sky-100 !text-blue-700 !ring-sky-200/80"
+        />
+      </div>
+      {range === "custom" ? (
+        <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+        </div>
+      ) : null}
+
+      <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-3">
+        {charts.map((chart) => (
+          <IncomeMixCard
+            key={chart.key}
+            title={chart.title}
+            subtitle={chart.subtitle}
+            rows={chart.rows}
+            loading={loading}
+            error={error}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RevenueMixPanel({
+  rows,
+  loading,
+  error,
+  statusFilter,
+  setStatusFilter,
+  dateFilter,
+  setDateFilter,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+}) {
+  return (
+    <div className="flex max-h-[400px] flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
       <div className="flex flex-col gap-1 pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="text-[13px] font-bold uppercase tracking-wide text-slate-900">
@@ -393,67 +1009,164 @@ function RevenueMixPanel({ data, rows, loading }) {
         </p>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-7 max-w-full shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+            aria-label="Offer status filter"
+          >
+            {PRODUCT_STATUS_ITEMS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="h-7 max-w-full shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+            aria-label="Offer sales date filter"
+          >
+            {PRODUCT_DATE_ITEMS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {!loading && !error ? (
+          <div className="text-right text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+            <div>{rows.length} offer row{rows.length !== 1 ? "s" : ""}</div>
+          </div>
+        ) : null}
+      </div>
+      {dateFilter === "custom" ? (
+        <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="mt-2 h-[30px] w-full animate-pulse rounded bg-slate-100" />
-      ) : (
-        <div className="mt-2 flex h-[30px] overflow-hidden rounded-md">
-          {data.map((segment) => (
-            <div
-              key={segment.label}
-              className={cx("flex h-full items-center justify-center text-[9px] font-extrabold text-white overflow-hidden", segment.className)}
-              style={{ width: `${segment.width}%` }}
-              title={segment.label}
-            >
-              <span className="truncate px-1">{segment.label}</span>
-            </div>
-          ))}
+      ) : error ? (
+        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-[11px] font-semibold text-red-700">
+          {error}
         </div>
-      )}
+      ) : null}
 
-      <div className="mt-3 divide-y divide-slate-100">
+      <div className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 divide-y divide-slate-100 [scrollbar-width:thin]">
         {loading ? (
-          [1, 2, 3, 4].map((i) => (
+          [1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="flex items-center justify-between gap-4 py-2.5">
               {shimmer("h-3 w-32")}
               {shimmer("h-3 w-20")}
             </div>
           ))
-        ) : rows.length === 0 ? (
-          <p className="py-4 text-center text-[12px] font-semibold text-slate-500">No sales this month yet.</p>
+        ) : error ? null : rows.length === 0 ? (
+          <p className="py-4 text-center text-[12px] font-semibold text-slate-500">No offers found.</p>
         ) : (
-          rows.map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between gap-4 py-2">
-              <span className="text-[12px] font-semibold text-slate-700 truncate">{label}</span>
-              <span className="text-[12px] font-extrabold text-slate-950 shrink-0">{value}</span>
+          <div className="min-w-[560px]">
+            <div className="grid grid-cols-[minmax(170px,1.5fr)_80px_90px_90px_90px] gap-3 border-b border-slate-100 px-1 pb-2 text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-400">
+              <span>Name</span>
+              <span className="text-right">Status</span>
+              <span className="text-right">Installments</span>
+              <span className="text-right">Price</span>
+              <span className="text-right">Total</span>
             </div>
-          ))
+            {rows.map((row, index) => (
+              <div key={row.id} className="grid grid-cols-[minmax(170px,1.5fr)_80px_90px_90px_90px] items-center gap-3 border-b border-slate-100 px-1 py-2.5 last:border-b-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[10px] font-extrabold text-slate-500">
+                    {index + 1}
+                  </span>
+                  <span className="block truncate text-[12px] font-bold text-slate-800">{row.name}</span>
+                </div>
+                <span className={cx(
+                  "text-right text-[10px] font-extrabold uppercase tracking-[0.06em]",
+                  row.active ? "text-emerald-600" : "text-slate-400",
+                )}>
+                  {row.active ? "Active" : "Inactive"}
+                </span>
+                <span className="text-right text-[11px] font-bold text-slate-600">
+                  {row.installmentsLabel}
+                </span>
+                <span className="text-right text-[11px] font-bold text-slate-600">
+                  {row.priceLabel}
+                </span>
+                <span className="text-right text-[11px] font-extrabold text-slate-950">
+                  {row.totalLabel}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function DailySalesTooltip({ active, payload, label }) {
+function dailySalesBarColor(revenue, monthlyGoal) {
+  const r = Number(revenue);
+  if (!Number.isFinite(r)) return PERFORMANCE_COLORS.BAD;
+  const dailyTarget = monthlyGoal / 30;
+  if (r >= dailyTarget) return PERFORMANCE_COLORS.GOOD;
+  if (r >= dailyTarget * 0.7) return PERFORMANCE_COLORS.OK;
+  return PERFORMANCE_COLORS.BAD;
+}
+
+function DailySalesTooltip({ active, payload, label, monthlyGoal }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
+  const revenue = row?.revenue ?? payload[0]?.value;
+  const barHex = dailySalesBarColor(revenue, monthlyGoal);
 
   return (
     <div className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_24px_rgba(15,23,42,0.14)]">
       <p className="text-[11px] font-extrabold text-slate-950">
         {row?.date || label}
       </p>
-      <p className="mt-1 text-[12px] font-extrabold text-emerald-600">
+      <p className="mt-1 text-[12px] font-extrabold" style={{ color: barHex }}>
         {formatUsd(payload[0]?.value)}
       </p>
       <p className="mt-0.5 text-[10px] font-semibold text-slate-500">
         Daily revenue
       </p>
+      <p className="mt-2 border-t border-slate-100 pt-2 text-[9px] font-medium leading-snug text-slate-500">
+        {dailySalesBarBenchmarkHint(monthlyGoal)}
+      </p>
     </div>
   );
 }
 
-function DailySalesTrend({ data, stats, loading }) {
+function DailySalesTrend({
+  data,
+  stats,
+  loading,
+  monthlyGoal,
+  error,
+  range,
+  setRange,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+}) {
   const maxRevenue = Math.max(...data.map(d => d.revenue), 1000);
+  const tickStep = Math.max(1, Math.ceil(data.length / 5));
   
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
@@ -461,8 +1174,41 @@ function DailySalesTrend({ data, stats, loading }) {
         <div className="text-[13px] font-bold uppercase tracking-wide text-slate-900">
           Daily Sales Trend
         </div>
-        <SectionBadge>Last 30 days</SectionBadge>
+        <select
+          value={range}
+          onChange={(e) => setRange(e.target.value)}
+          className="h-7 max-w-full shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+          aria-label="Daily sales range"
+        >
+          {DAILY_SALES_RANGE_ITEMS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </div>
+      {range === "custom" ? (
+        <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+        </div>
+      ) : null}
+      {error ? (
+        <div className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-[11px] font-semibold text-red-700">
+          {error}
+        </div>
+      ) : null}
 
       <div className="mt-1 h-[140px]">
         {loading ? (
@@ -479,8 +1225,12 @@ function DailySalesTrend({ data, stats, loading }) {
                   axisLine={{ stroke: "#E2E8F0" }}
                   tickLine={false}
                   tickFormatter={(val, i) => {
-                    // Show label only every 7 days (index 1, 8, 15, 22, 29) to match "last 30 days" view
-                    return (data.length - 1 - i) % 7 === 1 ? new Date(val).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "";
+                    if (i !== 0 && i !== data.length - 1 && i % tickStep !== 0) return "";
+                    return new Date(`${val}T00:00:00.000Z`).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      timeZone: "UTC",
+                    });
                   }}
                   tick={{
                     fill: "#94A3B8",
@@ -491,7 +1241,7 @@ function DailySalesTrend({ data, stats, loading }) {
                 />
                 <YAxis hide domain={[0, maxRevenue * 1.1]} />
                 <Tooltip
-                  content={<DailySalesTooltip />}
+                  content={<DailySalesTooltip monthlyGoal={monthlyGoal} />}
                   cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
                   wrapperStyle={{ outline: "none" }}
                 />
@@ -501,14 +1251,9 @@ function DailySalesTrend({ data, stats, loading }) {
                   maxBarSize={38}
                   isAnimationActive={false}
                 >
-                  {data.map((entry, index) => {
-                    const dailyTarget = MONTHLY_GOAL_USD / 30;
-                    let fill = PERFORMANCE_COLORS.BAD;
-                    if (entry.revenue >= dailyTarget) fill = PERFORMANCE_COLORS.GOOD;
-                    else if (entry.revenue >= dailyTarget * 0.7) fill = PERFORMANCE_COLORS.OK;
-                    
-                    return <Cell key={`cell-${index}`} fill={fill} />;
-                  })}
+                  {data.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={dailySalesBarColor(entry.revenue, monthlyGoal)} />
+                  ))}
                 </Bar>
               </BarChart>
           </ResponsiveContainer>
@@ -516,27 +1261,43 @@ function DailySalesTrend({ data, stats, loading }) {
       </div>
 
       {!loading && (
-        <div className="mt-3 flex items-center justify-between gap-4">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
-            <span className="h-3 w-3 rounded-[2px] bg-emerald-500" />
-            Daily revenue ($)
-          </span>
-          <span className="text-[11px] font-extrabold text-slate-500">
-            Best day: {stats.best} · Worst: {stats.worst}
-          </span>
-        </div>
+        <p className="mt-3 text-[10px] font-medium leading-snug text-slate-500">
+          <span className="text-slate-400">Gross per UTC day</span>
+          {stats.best !== "—" && stats.worst !== "—" ? (
+            <span className="text-slate-600">
+              {" · "}
+              max {stats.best}
+              <span className="text-slate-300"> · </span>
+              min {stats.worst}
+            </span>
+          ) : null}
+        </p>
       )}
       {loading && (
-        <div className="mt-3 flex items-center justify-between gap-4">
-          {shimmer("h-3 w-32")}
-          {shimmer("h-3 w-48")}
-        </div>
+        <div className="mt-3 max-w-sm">{shimmer("h-2.5 w-full")}</div>
       )}
     </div>
   );
 }
 
-function PaymentPlanForecastPanel({ cards, loading }) {
+function PaymentPlanForecastPanel({
+  cards,
+  dailySeries,
+  loading,
+  error,
+  range,
+  setRange,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+}) {
+  const maxDayAmount = Math.max(
+    ...(dailySeries || []).map((d) => Number(d?.amount) || 0),
+    1,
+  );
+  const tickStep = Math.max(1, Math.ceil((dailySeries || []).length / 5));
+
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
       <div className="flex flex-col gap-1 pb-3">
@@ -547,23 +1308,135 @@ function PaymentPlanForecastPanel({ cards, loading }) {
           <SectionBadge>Kajabi forecast</SectionBadge>
         </div>
         <p className="text-[11px] font-medium text-slate-500 leading-snug">
-          Forecasted from active Kajabi payment plans using the next installment date for each plan. Expected cash.
+          Expected installment cash from active Kajabi payment plans due in the selected range.
         </p>
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+        <select
+          value={range}
+          onChange={(e) => setRange(e.target.value)}
+          className="h-7 max-w-full shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+          aria-label="Payment plan forecast range"
+        >
+          {FORECAST_RANGE_ITEMS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {range === "custom" ? (
+        <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+          />
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-[11px] font-semibold text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {!error && loading ? <PaymentPlanDailyChartShimmer /> : null}
+      {!error && !loading && (dailySeries || []).length > 0 ? (
+        <div className="mt-3 flex flex-col gap-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+              Expected per day
+            </span>
+            <span className="text-[9px] font-semibold text-slate-400">UTC</span>
+          </div>
+          <div className="h-[140px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={dailySeries}
+                margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+                barCategoryGap="18%"
+              >
+                <XAxis
+                  dataKey="date"
+                  axisLine={{ stroke: "#E2E8F0" }}
+                  tickLine={false}
+                  tickFormatter={(val, i) => {
+                    const len = dailySeries.length;
+                    if (i !== 0 && i !== len - 1 && i % tickStep !== 0) return "";
+                    return new Date(`${val}T00:00:00.000Z`).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      timeZone: "UTC",
+                    });
+                  }}
+                  tick={{
+                    fill: "#94A3B8",
+                    fontSize: 10,
+                    fontWeight: 700,
+                  }}
+                  height={22}
+                />
+                <YAxis hide domain={[0, maxDayAmount * 1.1]} />
+                <Tooltip
+                  content={<PaymentPlanDailyTooltip />}
+                  cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
+                  wrapperStyle={{ outline: "none" }}
+                />
+                <Bar
+                  dataKey="amount"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={38}
+                  isAnimationActive={false}
+                >
+                  {(dailySeries || []).map((entry, index) => (
+                    <Cell key={`fc-${entry.date}-${index}`} fill={forecastDayBarFill(entry.amount)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+              <span className="h-3 w-3 rounded-[2px] bg-emerald-500" />
+              Expected cash due ($)
+            </span>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex flex-col gap-2">
         {loading
-          ? [1, 2, 3, 4].map((i) => <RevenueCardShimmer key={i} />)
+          ? [1, 2].map((i) => <RevenueCardShimmer key={i} />)
           : cards.map((card) => (
               <article
                 key={card.label}
-                className="min-h-[90px] rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]"
+                className="min-h-[82px] rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]"
               >
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
                   {card.label}
                 </p>
-                <div className={cx("mt-1.5 text-[20px] font-extrabold leading-none tracking-normal", card.valueClass)}>
-                  {card.value}
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <div className={cx("text-[20px] font-extrabold leading-none tracking-normal", card.valueClass)}>
+                    {card.value}
+                  </div>
+                  {card.info ? (
+                    <span className="group relative inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] font-extrabold leading-none text-slate-400 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600">
+                      ?
+                      <span className="pointer-events-none absolute right-0 top-6 z-20 hidden w-52 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-medium leading-snug text-slate-600 shadow-[0_10px_28px_rgba(15,23,42,0.16)] group-hover:block">
+                        {card.info}
+                      </span>
+                    </span>
+                  ) : null}
                 </div>
                 <p className="mt-2 text-[10px] font-semibold text-slate-500">{card.note}</p>
               </article>
@@ -574,212 +1447,276 @@ function PaymentPlanForecastPanel({ cards, loading }) {
 }
 
 export default function Sales() {
-  const [loading, setLoading] = useState(true);
+  const { monthlyRevenueGoal } = useRevenueGoal();
+  const customFallback = getRangeBounds("custom");
+  const [range, setRange] = useState("mtd");
+  const [customStart, setCustomStart] = useState(
+    customFallback.start.toISOString().slice(0, 10),
+  );
+  const [customEnd, setCustomEnd] = useState(
+    customFallback.end.toISOString().slice(0, 10),
+  );
+  const [forecastRange, setForecastRange] = useState("mtd");
+  const [forecastCustomStart, setForecastCustomStart] = useState(
+    customFallback.start.toISOString().slice(0, 10),
+  );
+  const [forecastCustomEnd, setForecastCustomEnd] = useState(
+    customFallback.end.toISOString().slice(0, 10),
+  );
+  const dailyFallback = getDailySalesRangeBounds("last30");
+  const [dailyRange, setDailyRange] = useState("last30");
+  const [dailyCustomStart, setDailyCustomStart] = useState(
+    dailyFallback.start.toISOString().slice(0, 10),
+  );
+  const [dailyCustomEnd, setDailyCustomEnd] = useState(
+    dailyFallback.end.toISOString().slice(0, 10),
+  );
+  const snapshotFallback = getDailySalesRangeBounds("mtd");
+  const [snapshotRange, setSnapshotRange] = useState("mtd");
+  const [snapshotCustomStart, setSnapshotCustomStart] = useState(
+    snapshotFallback.start.toISOString().slice(0, 10),
+  );
+  const [snapshotCustomEnd, setSnapshotCustomEnd] = useState(
+    snapshotFallback.end.toISOString().slice(0, 10),
+  );
+  const riskFallback = getDailySalesRangeBounds("mtd");
+  const [riskRange, setRiskRange] = useState("mtd");
+  const [riskCustomStart, setRiskCustomStart] = useState(
+    riskFallback.start.toISOString().slice(0, 10),
+  );
+  const [riskCustomEnd, setRiskCustomEnd] = useState(
+    riskFallback.end.toISOString().slice(0, 10),
+  );
+  const [revenueLoading, setRevenueLoading] = useState(true);
+  const [riskLoading, setRiskLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [data, setData] = useState({
-    revenueCards: [],
-    riskCards: [],
-    incomeMixRows: [],
-    revenueMixData: [],
-    offerRows: [],
-    dailySales: [],
-    dailyStats: { best: "—", worst: "—" },
-    forecastCards: [],
-    monthLabel: "",
-  });
+  const [riskError, setRiskError] = useState(null);
+  const [mixLoading, setMixLoading] = useState(true);
+  const [mixError, setMixError] = useState(null);
+  const [forecastLoading, setForecastLoading] = useState(true);
+  const [forecastError, setForecastError] = useState(null);
+  const [productLoading, setProductLoading] = useState(true);
+  const [productError, setProductError] = useState(null);
+  const [productStatusFilter, setProductStatusFilter] = useState("active");
+  const [productDateFilter, setProductDateFilter] = useState("mtd");
+  const [productCustomStart, setProductCustomStart] = useState(
+    customFallback.start.toISOString().slice(0, 10),
+  );
+  const [productCustomEnd, setProductCustomEnd] = useState(
+    customFallback.end.toISOString().slice(0, 10),
+  );
+  const [dailyLoading, setDailyLoading] = useState(true);
+  const [dailyError, setDailyError] = useState(null);
+  const [incomeMixCharts, setIncomeMixCharts] = useState(() => buildIncomeMixCharts());
+  const [forecastCards, setForecastCards] = useState([]);
+  const [forecastDailySeries, setForecastDailySeries] = useState([]);
+  const [productRows, setProductRows] = useState([]);
+  const [dailySales, setDailySales] = useState([]);
+  const [dailyStats, setDailyStats] = useState({ best: "—", worst: "—" });
+  const [revenueCards, setRevenueCards] = useState([]);
+  const [riskCards, setRiskCards] = useState([]);
+  const snapshotBounds = getSnapshotRangeBounds(
+    snapshotRange,
+    snapshotCustomStart,
+    snapshotCustomEnd,
+  );
+  const snapshotGoalUsd = calculateSnapshotGoalUsd(
+    monthlyRevenueGoal,
+    snapshotBounds.start,
+    snapshotBounds.end,
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadSalesData() {
-      setLoading(true);
+    async function loadRevenueSnapshot() {
+      setRevenueLoading(true);
       setError(null);
 
       try {
-        const now = new Date();
-        const monthRange = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
-        if (!monthRange) throw new Error("Invalid month range");
-        const start = monthRange.startDate.toISOString();
-        const end = monthRange.endDate.toISOString();
-        const monthLabel = DateHelpers.formatInTimeZone(monthRange.startDate, DateHelpers.DEFAULT_TIMEZONE, "MMMM yyyy");
+        const { start, end } = getSnapshotRangeBounds(
+          snapshotRange,
+          snapshotCustomStart,
+          snapshotCustomEnd,
+        );
+        const mainStartISO = start.toISOString();
+        const mainEndISO = end.toISOString();
+        const prior = priorPeriodBoundsInclusive(start, end);
+        const priorStartISO = prior.start.toISOString();
+        const priorEndISO = prior.end.toISOString();
 
-        const lMonthToday = new Date(now);
-        lMonthToday.setMonth(lMonthToday.getMonth() - 1);
-        const lMonthRange = DateHelpers.getMonthRangeInTimezone(lMonthToday, DateHelpers.DEFAULT_TIMEZONE);
-        const lStart = lMonthRange.startDate.toISOString();
-        const lEnd = lMonthToday.toISOString(); 
+        const queryStartISO = [mainStartISO, priorStartISO].sort()[0];
+        const queryEndISO = [mainEndISO, priorEndISO].sort().slice(-1)[0];
 
-        const [txResult, lastTxResult, offersResult, purchasesResult] = await Promise.all([
-          supabase
-            .from("kajabi_transactions")
-            .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, kajabi_offer_id, kajabi_purchase_id")
-            .or(`and(created_at_kajabi.gte.${start},created_at_kajabi.lte.${end}),and(effective_date.gte.${start},effective_date.lte.${end}),and(payment_resolved_at.gte.${start},payment_resolved_at.lte.${end})`),
-          supabase
-            .from("kajabi_transactions")
-            .select("action, state, amount_in_cents, payment_resolved_at, effective_date, created_at_kajabi")
-            .or(`and(created_at_kajabi.gte.${lStart},created_at_kajabi.lte.${lEnd}),and(effective_date.gte.${lStart},effective_date.lte.${lEnd}),and(payment_resolved_at.gte.${lStart},payment_resolved_at.lte.${lEnd})`),
-          supabase.from("offers").select("kajabi_id, name, price, is_subscription, installments"),
-          supabase
-            .from("kajabi_purchases")
-            .select("kajabi_purchase_id, kajabi_offer_id, payment_type, created_at_kajabi, deactivated_at, multipay_payments_made"),
-        ]);
+        const txResult = await supabase
+          .from("kajabi_transactions")
+          .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, kajabi_offer_id, kajabi_purchase_id")
+          .or(`and(created_at_kajabi.gte.${queryStartISO},created_at_kajabi.lte.${queryEndISO}),and(effective_date.gte.${queryStartISO},effective_date.lte.${queryEndISO}),and(payment_resolved_at.gte.${queryStartISO},payment_resolved_at.lte.${queryEndISO})`);
 
         if (txResult.error) throw txResult.error;
-        if (offersResult.error) throw offersResult.error;
-        if (purchasesResult.error) throw purchasesResult.error;
 
-        const offersById = {};
-        for (const o of offersResult.data || []) offersById[String(o.kajabi_id)] = o;
-        
-        const purchasesById = {};
-        for (const p of purchasesResult.data || []) purchasesById[String(p.kajabi_purchase_id)] = p;
+        const rangeDayCount = listDaysISO(startOfUTCDate(start), startOfUTCDate(end)).length;
+        const paceTargetSafe = calculateSnapshotGoalUsd(monthlyRevenueGoal, start, end);
 
-        const grossUsd = sumGrossTransactions(txResult.data, start, end);
-        const netUsd = sumNetTransactions(txResult.data, start, end);
-        
-        let refundUsd = 0;
-        let failedCount = 0;
-        let failedUsd = 0;
-        const incomeMixTotals = { new: 0, old: 0, subscriptions: 0 };
-        const offerSales = {}; 
-        const dailyMap = {}; 
+        const grossUsd = sumGrossTransactions(txResult.data, mainStartISO, mainEndISO);
+        const netUsd = sumNetTransactions(txResult.data, mainStartISO, mainEndISO);
+        const lastGrossUsd = sumGrossTransactions(txResult.data, priorStartISO, priorEndISO);
 
-        for (const tx of txResult.data || []) {
-          const actionRaw = tx.action ?? (tx.amount_in_cents >= 0 ? "charge" : "refund");
-          const amount = txAmountUsd(tx);
-          const isFailed = isFailedTransaction(tx);
-          
-          if (isFailed) {
-            failedCount++;
-            failedUsd += amount;
-          }
-
-          const resolvedInRange = tx.payment_resolved_at != null && tx.payment_resolved_at >= start && tx.payment_resolved_at <= end && (tx.effective_date == null || tx.effective_date < start || tx.effective_date > end);
-          const inNetRange = (tx.effective_date >= start && tx.effective_date <= end) || resolvedInRange;
-          
-          if (inNetRange && !isFailed) {
-            const action = resolvedInRange ? 'charge' : actionRaw;
-            const isRefund = String(action).toLowerCase() === 'refund' || tx.amount_in_cents < 0;
-            
-            if (isRefund) {
-              refundUsd += amount;
-            } else {
-              const p = tx.kajabi_purchase_id ? purchasesById[String(tx.kajabi_purchase_id)] : null;
-              const oid = String(p?.kajabi_offer_id || tx.kajabi_offer_id || "unknown");
-              if (!offerSales[oid]) offerSales[oid] = { gross: 0, count: 0 };
-              offerSales[oid].gross += amount;
-              offerSales[oid].count++;
-
-              const offer = offersById[oid] || KAJABI_OFFER_FALLBACKS[oid];
-              const paymentType = String(p?.payment_type || "").toLowerCase();
-              const purchaseCreated = p?.created_at_kajabi ? new Date(p.created_at_kajabi) : null;
-              const isSubscription = offer?.is_subscription || paymentType.includes("subscription");
-              const isNew = !isSubscription && purchaseCreated && purchaseCreated >= monthRange.startDate && purchaseCreated <= monthRange.endDate;
-              const bucket = isSubscription ? "subscriptions" : isNew ? "new" : "old";
-              incomeMixTotals[bucket] += amount;
-            }
-
-            const targetDateStr = resolvedInRange ? tx.payment_resolved_at : (tx.effective_date || tx.created_at_kajabi);
-            const dateStr = String(targetDateStr || "").slice(0, 10);
-            if (dateStr) {
-              dailyMap[dateStr] = (dailyMap[dateStr] || 0) + (isRefund ? 0 : amount);
-            }
-          }
-        }
-
-        const lastGrossUsd = sumGrossTransactions(lastTxResult.data, lStart, lEnd);
         const grossChangeValue = Math.round(pct(grossUsd - lastGrossUsd, lastGrossUsd));
 
-        const dayOfMonth = now.getUTCDate();
-        const daysInMonth = monthRange.endDate.getUTCDate();
-        const forecastedNetUsd = (netUsd / dayOfMonth) * daysInMonth;
+        const monthAtEnd = DateHelpers.getMonthRangeInTimezone(end, DateHelpers.DEFAULT_TIMEZONE);
+        if (!monthAtEnd) throw new Error("Invalid month range");
+        const daysInForecastMonth = monthAtEnd.endDate.getUTCDate();
+        const avgDaily = rangeDayCount > 0 ? netUsd / rangeDayCount : 0;
+        const forecastedNetUsd = avgDaily * daysInForecastMonth;
 
-        let restOfMonth = 0, next7 = 0, next30 = 0;
-        let restCount = 0, next7Count = 0, next30Count = 0;
-        
-        const activePlans = (purchasesResult.data || []).filter(p => 
-          !p.deactivated_at && (p.payment_type === "multipay" || p.payment_type === "payment plan")
-        );
-
-        for (const p of activePlans) {
-          const oid = String(p.kajabi_offer_id);
-          const offer = offersById[oid] || KAJABI_OFFER_FALLBACKS[oid];
-          const totalInstallments = Number(offer?.installments) || 0;
-          if (totalInstallments <= 1) continue;
-
-          const made = Number(p.multipay_payments_made) || 1;
-          const remaining = totalInstallments - made;
-          if (remaining <= 0) continue;
-
-          const perInstallment = (Number(offer?.price) || 0) / (totalInstallments || 1);
-          const created = new Date(p.created_at_kajabi);
-          const payDay = created.getUTCDate();
-          
-          for (let i = 1; i <= remaining; i++) {
-            const nextDate = new Date(now.getFullYear(), now.getMonth(), payDay);
-            nextDate.setMonth(nextDate.getMonth() + i);
-            const diffDays = Math.floor((nextDate - now) / (1000 * 60 * 60 * 24));
-
-            if (nextDate.getMonth() === now.getMonth() && nextDate.getFullYear() === now.getFullYear() && nextDate > now) {
-              restOfMonth += perInstallment; restCount++;
-            }
-            if (diffDays <= 7 && diffDays > 0) { next7 += perInstallment; next7Count++; }
-            if (diffDays <= 30 && diffDays > 0) { next30 += perInstallment; next30Count++; }
-          }
-        }
-
-        const expectedTarget = Math.round((MONTHLY_GOAL_USD * dayOfMonth) / daysInMonth);
-        
         function getRevenueStatus(val, target) {
           const isGood = val >= target;
           const isOk = val >= target * 0.9;
-          
+
           return {
             textClass: isGood ? PERFORMANCE_TEXT_CLASSES.GOOD : isOk ? PERFORMANCE_TEXT_CLASSES.OK : PERFORMANCE_TEXT_CLASSES.BAD,
             badgeClass: isGood ? PERFORMANCE_SOFT_BG_CLASSES.GOOD : isOk ? PERFORMANCE_SOFT_BG_CLASSES.OK : PERFORMANCE_SOFT_BG_CLASSES.BAD,
-            label: isGood ? "On pace" : isOk ? "Near target" : "Behind pace"
+            label: isGood ? "On pace" : isOk ? "Near target" : "Behind pace",
           };
         }
 
-        const netStatus = getRevenueStatus(netUsd, expectedTarget);
-        const forecastStatus = getRevenueStatus(forecastedNetUsd, MONTHLY_GOAL_USD);
-        const grossStatus = getRevenueStatus(grossUsd, expectedTarget);
+        const netStatus = getRevenueStatus(netUsd, paceTargetSafe);
+        const forecastStatus = getRevenueStatus(forecastedNetUsd, monthlyRevenueGoal);
+        const grossStatus = getRevenueStatus(grossUsd, paceTargetSafe);
 
-        const revenueCards = [
+        const grossTitle = snapshotRange === "mtd" ? "Gross revenue MTD" : "Gross revenue";
+        const netTitle = snapshotRange === "mtd" ? "Net revenue MTD" : "Net revenue";
+
+        const nextRevenueCards = [
           {
-            label: "Gross revenue MTD",
+            label: grossTitle,
             value: formatUsd(grossUsd),
             valueClass: grossStatus.textClass,
-            badge: `${grossChangeValue >= 0 ? "▲" : "▼"} ${Math.abs(grossChangeValue)}% vs last month`,
+            badge: `${grossChangeValue >= 0 ? "▲" : "▼"} ${Math.abs(grossChangeValue)}% vs prior ${rangeDayCount}d`,
             badgeClass: grossChangeValue >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
-            note: `Day ${dayOfMonth}/${daysInMonth}`,
+            note: `${rangeDayCount}d · ${formatShortUtcRange(start, end)}`,
+            pie: {
+              mainUsd: grossUsd,
+              capUsd: paceTargetSafe,
+              accentFill: paceProgressFill(grossUsd, paceTargetSafe),
+            },
           },
           {
-            label: "Net revenue MTD",
+            label: netTitle,
             value: formatUsd(netUsd),
             valueClass: netStatus.textClass,
             note: "After refunds & failed charges",
-            progress: Math.min(100, Math.round(pct(netUsd, MONTHLY_GOAL_USD))),
-            progressNote: `${Math.round(pct(netUsd, MONTHLY_GOAL_USD))}% of ${formatUsd(MONTHLY_GOAL_USD)} goal`,
+            progress: Math.min(100, Math.round(pct(netUsd, paceTargetSafe))),
+            progressNote: `${Math.round(pct(netUsd, paceTargetSafe))}% of ${formatUsd(paceTargetSafe)} pace`,
+            progressFill: paceProgressFill(netUsd, paceTargetSafe),
             badge: netStatus.label,
             badgeClass: netStatus.badgeClass,
+            pie: {
+              mainUsd: netUsd,
+              capUsd: paceTargetSafe,
+              accentFill: paceProgressFill(netUsd, paceTargetSafe),
+            },
           },
           {
             label: "Forecasted month-end",
             value: formatUsd(forecastedNetUsd),
             valueClass: forecastStatus.textClass,
-            note: "Based on current run-rate",
+            note: `Run-rate in ${end.toISOString().slice(0, 7)} (${daysInForecastMonth}d month)`,
             badge: forecastStatus.label,
             badgeClass: forecastStatus.badgeClass,
+            pie: {
+              mainUsd: forecastedNetUsd,
+              capUsd: monthlyRevenueGoal,
+              accentFill: paceProgressFill(forecastedNetUsd, monthlyRevenueGoal),
+            },
           },
         ];
 
+        if (!cancelled) {
+          setRevenueCards(nextRevenueCards);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRevenueCards([]);
+          setError(err?.message || "Failed to load revenue snapshot");
+        }
+      } finally {
+        if (!cancelled) setRevenueLoading(false);
+      }
+    }
+
+    loadRevenueSnapshot();
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotRange, snapshotCustomStart, snapshotCustomEnd, monthlyRevenueGoal]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRiskPanelMtd() {
+      setRiskLoading(true);
+      setRiskError(null);
+
+      try {
+        const { start, end } =
+          riskRange === "custom"
+            ? normalizeCustomBounds(riskCustomStart, riskCustomEnd)
+            : getDailySalesRangeBounds(riskRange);
+        const mainStartISO = start.toISOString();
+        const mainEndISO = end.toISOString();
+
+        const txResult = await supabase
+          .from("kajabi_transactions")
+          .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, kajabi_offer_id, kajabi_purchase_id")
+          .or(`and(created_at_kajabi.gte.${mainStartISO},created_at_kajabi.lte.${mainEndISO}),and(effective_date.gte.${mainStartISO},effective_date.lte.${mainEndISO}),and(payment_resolved_at.gte.${mainStartISO},payment_resolved_at.lte.${mainEndISO})`);
+
+        if (txResult.error) throw txResult.error;
+
+        const grossUsd = sumGrossTransactions(txResult.data, mainStartISO, mainEndISO);
+
+        let refundUsd = 0;
+        let failedCount = 0;
+        let failedUsd = 0;
+
+        for (const tx of txResult.data || []) {
+          if (!transactionTouchesWindow(tx, mainStartISO, mainEndISO)) continue;
+
+          const actionRaw = tx.action ?? (tx.amount_in_cents >= 0 ? "charge" : "refund");
+          const amount = txAmountUsd(tx);
+          const isFailed = isFailedTransaction(tx);
+
+          if (isFailed) {
+            failedCount++;
+            failedUsd += amount;
+          }
+
+          const resolvedInRange =
+            tx.payment_resolved_at != null &&
+            tx.payment_resolved_at >= mainStartISO &&
+            tx.payment_resolved_at <= mainEndISO &&
+            (tx.effective_date == null || tx.effective_date < mainStartISO || tx.effective_date > mainEndISO);
+          const inNetRange =
+            (tx.effective_date >= mainStartISO && tx.effective_date <= mainEndISO) || resolvedInRange;
+
+          if (inNetRange && !isFailed) {
+            const action = resolvedInRange ? "charge" : actionRaw;
+            const isRefund = String(action).toLowerCase() === "refund" || tx.amount_in_cents < 0;
+
+            if (isRefund) {
+              refundUsd += amount;
+            }
+          }
+        }
+
         const refundPctValue = Math.round(pct(refundUsd, grossUsd));
         const refundStatusClass = refundPctValue > 5 ? PERFORMANCE_TEXT_CLASSES.BAD : "text-slate-900";
+        const refundsLabel = riskRange === "mtd" ? "Refunds MTD" : "Refunds";
 
-        const riskCards = [
+        const nextRiskCards = [
           {
-            label: "Refunds MTD",
+            label: refundsLabel,
             value: formatUsd(refundUsd),
             valueClass: refundStatusClass,
             note: `${refundPctValue}% of gross`,
@@ -798,87 +1735,534 @@ export default function Sales() {
           },
         ];
 
-        const sortedOffers = Object.entries(offerSales)
-          .map(([id, stats]) => ({
-            id,
-            name: offersById[id]?.name || KAJABI_OFFER_FALLBACKS[id]?.name || `Offer ${id}`,
-            gross: stats.gross,
-            count: stats.count
-          }))
-          .sort((a, b) => b.gross - a.gross);
-
-        const revenueMixData = sortedOffers.slice(0, 5).map((o, i) => ({
-          label: o.name,
-          className: ["bg-emerald-600", "bg-emerald-500", "bg-emerald-400", "bg-emerald-300", "bg-slate-300"][i] || "bg-slate-200",
-          width: pct(o.gross, grossUsd)
-        }));
-
-        const offerRows = sortedOffers.map(o => [
-          o.name,
-          `${formatUsd(o.gross)} · ${o.count} sale${o.count !== 1 ? 's' : ''}`
-        ]);
-
-        const last30Days = [];
-        const dailyTarget = MONTHLY_GOAL_USD / 30;
-
-        for (let i = 29; i >= 0; i--) {
-          const d = new Date(now);
-          d.setDate(d.getDate() - i);
-          const key = d.toISOString().slice(0, 10);
-          const label = i % 7 === 0 ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : "";
-          const rev = dailyMap[key] || 0;
-          
-          let barColor = PERFORMANCE_COLORS.BAD;
-          if (rev >= dailyTarget) barColor = PERFORMANCE_COLORS.GOOD;
-          else if (rev >= dailyTarget * 0.95) barColor = PERFORMANCE_COLORS.OK;
-
-          last30Days.push({ 
-            date: key, 
-            label, 
-            revenue: rev,
-            fill: barColor
-          });
-        }
-
-        const sortedDaily = [...last30Days].sort((a, b) => b.revenue - a.revenue);
-
-        const forecastCards = [
-          { label: "Rest of month", value: formatUsd(restOfMonth), valueClass: "text-emerald-600", note: `${restCount} expected payments` },
-          { label: "Next 7 days", value: formatUsd(next7), valueClass: "text-blue-600", note: `${next7Count} expected payments` },
-          { label: "Next 30 days", value: formatUsd(next30), valueClass: "text-indigo-600", note: `${next30Count} expected payments` },
-        ];
-
-        if (!cancelled) {
-          setData({
-            revenueCards,
-            riskCards,
-            incomeMixRows: INCOME_SOURCE_DEFS.map(def => ({ ...def, valueCents: incomeMixTotals[def.key] * 100 })),
-            revenueMixData,
-            offerRows,
-            dailySales: last30Days,
-            dailyStats: {
-              best: `${last30Days.find(d => d.revenue === sortedDaily[0].revenue)?.date || "—"} (${formatUsd(sortedDaily[0]?.revenue || 0)})`,
-              worst: `${last30Days.find(d => d.revenue === sortedDaily[sortedDaily.length-1].revenue)?.date || "—"} (${formatUsd(sortedDaily[sortedDaily.length-1]?.revenue || 0)})`
-            },
-            forecastCards,
-            monthLabel,
-          });
-        }
-
+        if (!cancelled) setRiskCards(nextRiskCards);
       } catch (err) {
-        if (!cancelled) setError(err?.message || "Failed to load sales data");
+        if (!cancelled) {
+          setRiskCards([]);
+          setRiskError(err?.message || "Failed to load refunds & risk");
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setRiskLoading(false);
       }
     }
 
-    loadSalesData();
-    return () => { cancelled = true; };
-  }, []);
+    loadRiskPanelMtd();
+    return () => {
+      cancelled = true;
+    };
+  }, [riskRange, riskCustomStart, riskCustomEnd]);
 
-  function formatPct(v) {
-    return `${v}%`;
-  }
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDailySalesData() {
+      setDailyLoading(true);
+      setDailyError(null);
+
+      try {
+        const { start, end } =
+          dailyRange === "custom"
+            ? normalizeCustomBounds(dailyCustomStart, dailyCustomEnd)
+            : getDailySalesRangeBounds(dailyRange);
+        const startISO = start.toISOString();
+        const endISO = end.toISOString();
+
+        const txResult = await supabase
+          .from("kajabi_transactions")
+          .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at")
+          .or(`and(created_at_kajabi.gte.${startISO},created_at_kajabi.lte.${endISO}),and(effective_date.gte.${startISO},effective_date.lte.${endISO}),and(payment_resolved_at.gte.${startISO},payment_resolved_at.lte.${endISO})`);
+
+        if (txResult.error) throw txResult.error;
+
+        const dailyMap = {};
+
+        for (const tx of txResult.data || []) {
+          const cashDate = transactionCashDate(tx);
+          if (!cashDate || cashDate < startISO || cashDate > endISO) continue;
+
+          const resolvedOnThisDate = tx?.payment_resolved_at === cashDate;
+          const action = resolvedOnThisDate
+            ? "charge"
+            : String(tx?.action || (Number(tx?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
+          const isRefund = action === "refund" || Number(tx?.amount_in_cents || 0) < 0;
+          if (isRefund) continue;
+          if (!resolvedOnThisDate && isFailedTransaction(tx, action)) continue;
+
+          const dayKey = cashDate.slice(0, 10);
+          dailyMap[dayKey] = (dailyMap[dayKey] || 0) + txAmountUsd(tx);
+        }
+
+        const rows = listDaysISO(start, end).map((date) => ({
+          date,
+          revenue: dailyMap[date] || 0,
+        }));
+        const sortedDaily = [...rows].sort((a, b) => b.revenue - a.revenue);
+        const best = sortedDaily[0];
+        const worst = [...rows].sort((a, b) => a.revenue - b.revenue)[0];
+
+        if (!cancelled) {
+          setDailySales(rows);
+          setDailyStats({
+            best: best ? `${best.date} (${formatUsd(best.revenue)})` : "—",
+            worst: worst ? `${worst.date} (${formatUsd(worst.revenue)})` : "—",
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setDailySales([]);
+          setDailyStats({ best: "—", worst: "—" });
+          setDailyError(err?.message || "Failed to load daily sales trend");
+        }
+      } finally {
+        if (!cancelled) setDailyLoading(false);
+      }
+    }
+
+    loadDailySalesData();
+    return () => { cancelled = true; };
+  }, [dailyRange, dailyCustomStart, dailyCustomEnd]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadIncomeMixData() {
+      setMixLoading(true);
+      setMixError(null);
+
+      try {
+        const { start, end } =
+          range === "custom"
+            ? normalizeCustomBounds(customStart, customEnd)
+            : getRangeBounds(range);
+        const startISO = start.toISOString();
+        const endISO = end.toISOString();
+
+        const [txResult, offersResult, purchasesResult] = await Promise.all([
+          supabase
+            .from("kajabi_transactions")
+            .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, kajabi_offer_id, kajabi_customer_id, kajabi_purchase_id")
+            .or(`and(created_at_kajabi.gte.${startISO},created_at_kajabi.lte.${endISO}),and(effective_date.gte.${startISO},effective_date.lte.${endISO}),and(payment_resolved_at.gte.${startISO},payment_resolved_at.lte.${endISO})`),
+          supabase
+            .from("offers")
+            .select("kajabi_id, name, price, is_subscription, installments"),
+          supabase
+            .from("kajabi_purchases")
+            .select("kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, payment_type, created_at_kajabi, deactivated_at, multipay_payments_made"),
+        ]);
+
+        if (txResult.error) throw txResult.error;
+        if (offersResult.error) throw offersResult.error;
+        if (purchasesResult.error) throw purchasesResult.error;
+
+        const offersById = {};
+        for (const offer of offersResult.data || []) {
+          if (offer?.kajabi_id != null) offersById[String(offer.kajabi_id)] = offer;
+        }
+
+        const payoffOfferIds = new Set(PAYOFF_OFFER_IDS);
+        for (const offer of offersResult.data || []) {
+          const offerName = String(offer?.name || "").toLowerCase();
+          if (offerName.includes("payoff") && offer?.kajabi_id) {
+            payoffOfferIds.add(String(offer.kajabi_id));
+          }
+        }
+
+        const purchasesById = {};
+        const purchasesByCustomerOffer = {};
+        for (const purchase of purchasesResult.data || []) {
+          const purchaseId = purchase?.kajabi_purchase_id != null ? String(purchase.kajabi_purchase_id) : null;
+          const customerId = purchase?.kajabi_customer_id != null ? String(purchase.kajabi_customer_id) : null;
+          const offerId = purchase?.kajabi_offer_id != null ? String(purchase.kajabi_offer_id) : null;
+          if (purchaseId) purchasesById[purchaseId] = purchase;
+          if (customerId && offerId) {
+            const key = `${customerId}|${offerId}`;
+            if (!purchasesByCustomerOffer[key]) purchasesByCustomerOffer[key] = [];
+            purchasesByCustomerOffer[key].push(purchase);
+          }
+        }
+        for (const matches of Object.values(purchasesByCustomerOffer)) {
+          matches.sort((a, b) => new Date(b?.created_at_kajabi || 0) - new Date(a?.created_at_kajabi || 0));
+        }
+
+        const txRows = Array.isArray(txResult.data) ? txResult.data : [];
+        const txPurchaseIds = [
+          ...new Set(txRows.map((tx) => tx?.kajabi_purchase_id).filter(Boolean).map(String)),
+        ];
+
+        const [outcomeResult, overrideResult] = txPurchaseIds.length > 0
+          ? await Promise.all([
+              supabase
+                .from("outcome_log")
+                .select("purchase_date, kajabi_purchase_id, kajabi_payoff_id, PIF")
+                .or(`kajabi_purchase_id.in.(${txPurchaseIds.join(",")}),kajabi_payoff_id.in.(${txPurchaseIds.join(",")})`),
+              supabase
+                .from("purchase_treatment_override")
+                .select("kajabi_purchase_id, treatment")
+                .in("kajabi_purchase_id", txPurchaseIds),
+            ])
+          : [{ data: [], error: null }, { data: [], error: null }];
+
+        if (outcomeResult.error) throw outcomeResult.error;
+        if (overrideResult.error) throw overrideResult.error;
+
+        const outcomeByMainPurchaseId = {};
+        const outcomeByPayoffPurchaseId = {};
+        for (const row of outcomeResult.data || []) {
+          if (row?.kajabi_purchase_id != null) {
+            outcomeByMainPurchaseId[String(row.kajabi_purchase_id)] = row;
+          }
+          if (row?.kajabi_payoff_id != null) {
+            outcomeByPayoffPurchaseId[String(row.kajabi_payoff_id)] = row;
+          }
+        }
+
+        const treatmentByPurchaseId = {};
+        for (const row of overrideResult.data || []) {
+          if (row?.kajabi_purchase_id != null && row?.treatment) {
+            treatmentByPurchaseId[String(row.kajabi_purchase_id)] = String(row.treatment).toLowerCase();
+          }
+        }
+
+        function resolvePurchase(tx) {
+          if (tx?.kajabi_purchase_id && purchasesById[String(tx.kajabi_purchase_id)]) {
+            return purchasesById[String(tx.kajabi_purchase_id)];
+          }
+
+          const customerId = tx?.kajabi_customer_id != null ? String(tx.kajabi_customer_id) : null;
+          const offerId = tx?.kajabi_offer_id != null ? String(tx.kajabi_offer_id) : null;
+          if (!customerId || !offerId) return null;
+
+          const txDate = transactionCashDate(tx);
+          const matches = purchasesByCustomerOffer[`${customerId}|${offerId}`] || [];
+          if (!txDate) return matches[0] || null;
+          return matches.find((purchase) => {
+            return purchase?.created_at_kajabi && purchase.created_at_kajabi <= txDate;
+          }) || matches[0] || null;
+        }
+
+        const newIncomeByType = { pif: 0, pip: 0, paymentPlan: 0, payoff: 0, other: 0 };
+        const allIncomeByAge = { new: 0, old: 0 };
+        const payoffIncomeByAge = { new: 0, old: 0 };
+
+        for (const tx of txRows) {
+          if (!isChargeInRange(tx, startISO, endISO)) continue;
+
+          const amount = txAmountUsd(tx);
+          const purchase = resolvePurchase(tx);
+          const purchaseId = purchase?.kajabi_purchase_id != null ? String(purchase.kajabi_purchase_id) : null;
+          const txPurchaseId = tx?.kajabi_purchase_id != null ? String(tx.kajabi_purchase_id) : null;
+          const offerId = String(purchase?.kajabi_offer_id || tx?.kajabi_offer_id || "unknown");
+          const offer = offersById[offerId] || KAJABI_OFFER_FALLBACKS[offerId] || null;
+          const paymentType = String(purchase?.payment_type || "").toLowerCase();
+          const treatment = txPurchaseId ? treatmentByPurchaseId[txPurchaseId] : null;
+          const linkedPayoffOutcome = txPurchaseId ? outcomeByPayoffPurchaseId[txPurchaseId] : null;
+          const linkedMainOutcome = purchaseId ? outcomeByMainPurchaseId[purchaseId] : null;
+          const offerName = String(offer?.name || "").toLowerCase();
+
+          const isPayoff =
+            treatment === "payoff" ||
+            Boolean(linkedPayoffOutcome) ||
+            payoffOfferIds.has(offerId);
+          const isLockIn = treatment === "lock_in" || offerName.includes("lock-in") || offerName.includes("lock in");
+          const installments = Number(offer?.installments);
+          const hasInstallments = Number.isFinite(installments) && installments > 1;
+          const isPaymentPlan = !isPayoff && (
+            paymentType.includes("multipay") ||
+            paymentType.includes("payment plan") ||
+            hasInstallments
+          );
+          const paymentsMade = Number(purchase?.multipay_payments_made);
+          const hasPaymentProgress =
+            isPaymentPlan &&
+            Number.isFinite(paymentsMade) &&
+            Number.isFinite(installments) &&
+            installments > 1;
+          const isPip = hasPaymentProgress && paymentsMade > 0 && paymentsMade < installments;
+          const isPif = !isPayoff && !isPaymentPlan && !isLockIn;
+
+          const agreementDate =
+            linkedPayoffOutcome?.purchase_date ||
+            linkedMainOutcome?.purchase_date ||
+            (!isPayoff ? purchase?.created_at_kajabi : null);
+          const agreementStartedInRange =
+            agreementDate != null &&
+            agreementDate >= startISO &&
+            agreementDate <= endISO;
+          const ageBucket = agreementStartedInRange ? "new" : "old";
+
+          allIncomeByAge[ageBucket] += amount;
+          if (isPayoff) {
+            payoffIncomeByAge[ageBucket] += amount;
+          }
+          if (agreementStartedInRange) {
+            const typeBucket = isPayoff
+              ? "payoff"
+              : isPip
+                ? "pip"
+                : isPaymentPlan
+                ? "paymentPlan"
+                : isPif
+                  ? "pif"
+                  : "other";
+            newIncomeByType[typeBucket] += amount;
+          }
+        }
+
+        if (!cancelled) {
+          setIncomeMixCharts(buildIncomeMixCharts({
+            newIncomeByType,
+            allIncomeByAge,
+            payoffIncomeByAge,
+          }));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setIncomeMixCharts(buildIncomeMixCharts());
+          setMixError(err?.message || "Failed to load income mix data");
+        }
+      } finally {
+        if (!cancelled) setMixLoading(false);
+      }
+    }
+
+    loadIncomeMixData();
+    return () => { cancelled = true; };
+  }, [range, customStart, customEnd]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProductMixData() {
+      setProductLoading(true);
+      setProductError(null);
+
+      try {
+        const { start, end } =
+          productDateFilter === "custom"
+            ? normalizeCustomBounds(productCustomStart, productCustomEnd)
+            : getRangeBounds(productDateFilter);
+        const startISO = start.toISOString();
+        const endISO = end.toISOString();
+
+        const [offersResult, txResult, purchasesResult] = await Promise.all([
+          supabase
+            .from("offers")
+            .select("id, kajabi_id, name, price, installments, active")
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("kajabi_transactions")
+            .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, kajabi_offer_id, kajabi_purchase_id")
+            .or(`and(created_at_kajabi.gte.${startISO},created_at_kajabi.lte.${endISO}),and(effective_date.gte.${startISO},effective_date.lte.${endISO}),and(payment_resolved_at.gte.${startISO},payment_resolved_at.lte.${endISO})`),
+          supabase
+            .from("kajabi_purchases")
+            .select("kajabi_purchase_id, kajabi_offer_id"),
+        ]);
+
+        if (offersResult.error) throw offersResult.error;
+        if (txResult.error) throw txResult.error;
+        if (purchasesResult.error) throw purchasesResult.error;
+
+        const purchasesById = {};
+        for (const purchase of purchasesResult.data || []) {
+          if (purchase?.kajabi_purchase_id != null) {
+            purchasesById[String(purchase.kajabi_purchase_id)] = purchase;
+          }
+        }
+
+        const salesByOfferId = {};
+        for (const tx of txResult.data || []) {
+          if (!isChargeInRange(tx, startISO, endISO)) continue;
+          const linkedPurchase = tx?.kajabi_purchase_id ? purchasesById[String(tx.kajabi_purchase_id)] : null;
+          const offerId = linkedPurchase?.kajabi_offer_id || tx?.kajabi_offer_id;
+          if (offerId == null) continue;
+          const key = String(offerId);
+          salesByOfferId[key] = (salesByOfferId[key] || 0) + txAmountUsd(tx);
+        }
+
+        const offersRaw = offersResult.data || [];
+        const specialOfferIds = new Set([LOCK_IN_OFFER_DB_ID, PAYOFF_OFFER_DB_ID]);
+        const rows = offersRaw
+          .filter((offer) => {
+            const isSpecialOffer = specialOfferIds.has(offer?.id);
+            const isActive = offer?.active === true;
+            if (productStatusFilter === "active" && (isSpecialOffer || !isActive)) return false;
+            if (productStatusFilter === "inactive" && (isSpecialOffer || isActive)) return false;
+            return true;
+          })
+          .map((offer, index) => {
+          const installments = Number(offer?.installments);
+          const price = Number(offer?.price);
+          const totalValue = salesByOfferId[String(offer?.kajabi_id)] || 0;
+          return {
+            id: offer?.kajabi_id || `${offer?.name || "offer"}-${index}`,
+            name: String(offer?.name || "Unknown offer").replace(/\s+/g, " ").trim(),
+            installmentsLabel: Number.isFinite(installments)
+              ? installments === 0 ? "Single" : String(installments)
+              : "-",
+            priceLabel: Number.isFinite(price) ? formatUsd(price) : "-",
+            totalLabel: Number.isFinite(totalValue) ? formatUsd(totalValue) : "-",
+            active: offer?.active === true,
+          };
+        });
+
+        // #region agent log
+        fetch("http://127.0.0.1:7823/ingest/14419534-cddc-4300-86cb-ca37589b397e", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73f40b" },
+          body: JSON.stringify({
+            sessionId: "73f40b",
+            location: "sales/index.jsx:loadProductMixData",
+            message: "Sales tab Sales by Product / Offer",
+            data: {
+              productStatusFilter,
+              productDateFilter,
+              offersRawCount: offersRaw.length,
+              rowsAfterStatusFilter: rows.length,
+              activeStrictEqTrue: offersRaw.filter((o) => o?.active === true).length,
+            },
+            timestamp: Date.now(),
+            hypothesisId: "A",
+          }),
+        }).catch(() => {});
+        // #endregion
+
+        if (!cancelled) {
+          setProductRows(rows);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setProductRows([]);
+          setProductError(err?.message || "Failed to load offers");
+        }
+      } finally {
+        if (!cancelled) setProductLoading(false);
+      }
+    }
+
+    loadProductMixData();
+    return () => { cancelled = true; };
+  }, [productStatusFilter, productDateFilter, productCustomStart, productCustomEnd]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadForecastData() {
+      setForecastLoading(true);
+      setForecastError(null);
+
+      try {
+        const { start, end } =
+          forecastRange === "custom"
+            ? normalizeCustomBounds(forecastCustomStart, forecastCustomEnd)
+            : getForecastRangeBounds(forecastRange);
+        const startISO = start.toISOString();
+        const endISO = end.toISOString();
+        const forecastDayKeys = listDaysISO(start, end);
+        const byForecastDay = Object.fromEntries(
+          forecastDayKeys.map((d) => [d, { amount: 0, paymentCount: 0 }]),
+        );
+
+        const [offersResult, purchasesResult] = await Promise.all([
+          supabase.from("offers").select("kajabi_id, name, price, installments"),
+          supabase
+            .from("kajabi_purchases")
+            .select("kajabi_purchase_id, kajabi_offer_id, payment_type, amount_in_cents, created_at_kajabi, deactivated_at, multipay_payments_made"),
+        ]);
+
+        if (offersResult.error) throw offersResult.error;
+        if (purchasesResult.error) throw purchasesResult.error;
+
+        const offersById = {};
+        for (const offer of offersResult.data || []) {
+          if (offer?.kajabi_id != null) offersById[String(offer.kajabi_id)] = offer;
+        }
+
+        let expectedUsd = 0;
+        let expectedPayments = 0;
+
+        for (const purchase of purchasesResult.data || []) {
+          if (purchase?.deactivated_at) continue;
+
+          const paymentType = String(purchase?.payment_type || "").toLowerCase();
+          const offerId = String(purchase?.kajabi_offer_id || "unknown");
+          const offer = offersById[offerId] || KAJABI_OFFER_FALLBACKS[offerId] || null;
+          const totalInstallments = Number(offer?.installments) || 0;
+          const isPaymentPlan =
+            paymentType.includes("multipay") ||
+            paymentType.includes("payment plan") ||
+            totalInstallments > 1;
+          if (!isPaymentPlan || totalInstallments <= 1 || !purchase?.created_at_kajabi) continue;
+
+          const madeRaw = Number(purchase?.multipay_payments_made);
+          const made = Number.isFinite(madeRaw) && madeRaw > 0 ? madeRaw : 1;
+          const remaining = totalInstallments - made;
+          if (remaining <= 0) continue;
+
+          const purchaseAmountUsd = Number(purchase?.amount_in_cents) > 0
+            ? Number(purchase.amount_in_cents) / 100
+            : null;
+          const fallbackAmountUsd = Number(offer?.price) > 0 ? Number(offer.price) : 0;
+          const perInstallmentUsd = purchaseAmountUsd ?? fallbackAmountUsd;
+          if (perInstallmentUsd <= 0) continue;
+
+          const created = new Date(purchase.created_at_kajabi);
+
+          for (let installmentNumber = made + 1; installmentNumber <= totalInstallments; installmentNumber++) {
+            const dueDate = addMonthsClamped(created, installmentNumber - 1);
+            const dueISO = dueDate.toISOString();
+            if (dueISO < startISO || dueISO > endISO) continue;
+            const dayKey = dueISO.slice(0, 10);
+            const dayBucket = byForecastDay[dayKey];
+            expectedUsd += perInstallmentUsd;
+            expectedPayments += 1;
+            if (dayBucket) {
+              dayBucket.amount += perInstallmentUsd;
+              dayBucket.paymentCount += 1;
+            }
+          }
+        }
+
+        if (!cancelled) {
+          const nextDaily = forecastDayKeys.map((date) => {
+            const b = byForecastDay[date] || { amount: 0, paymentCount: 0 };
+            return {
+              date,
+              amount: b.amount,
+              paymentCount: b.paymentCount,
+            };
+          });
+          setForecastDailySeries(nextDaily);
+          setForecastCards([
+            {
+              label: "Expected cash",
+              value: formatUsd(expectedUsd),
+              valueClass: expectedUsd > 0 ? PERFORMANCE_TEXT_CLASSES.GOOD : "text-slate-900",
+              note: `${rangeTitle(forecastRange, forecastCustomStart, forecastCustomEnd)} due window`,
+              info: "Money expected from payment-plan students during this selected period.",
+            },
+            {
+              label: "Expected payments",
+              value: String(expectedPayments),
+              valueClass: expectedPayments > 0 ? "text-blue-600" : "text-slate-900",
+              note: "Remaining installments due in range",
+              info: "How many payment-plan charges are expected during this selected period.",
+            },
+          ]);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setForecastCards([]);
+          setForecastDailySeries([]);
+          setForecastError(err?.message || "Failed to load payment plan forecast");
+        }
+      } finally {
+        if (!cancelled) setForecastLoading(false);
+      }
+    }
+
+    loadForecastData();
+    return () => { cancelled = true; };
+  }, [forecastRange, forecastCustomStart, forecastCustomEnd]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -889,21 +2273,81 @@ export default function Sales() {
       )}
       <div className="grid grid-cols-8 gap-2">
         <div className="col-span-2 flex flex-col gap-3">
-          <RevenueSnapshotPanel cards={data.revenueCards} loading={loading} />
-          <RefundsPanel cards={data.riskCards} loading={loading} />
+          <RevenueSnapshotPanel
+            cards={revenueCards}
+            loading={revenueLoading}
+            snapshotGoal={snapshotGoalUsd}
+            range={snapshotRange}
+            setRange={setSnapshotRange}
+            customStart={snapshotCustomStart}
+            setCustomStart={setSnapshotCustomStart}
+            customEnd={snapshotCustomEnd}
+            setCustomEnd={setSnapshotCustomEnd}
+          />
+          <RefundsPanel
+            cards={riskCards}
+            loading={riskLoading}
+            error={riskError}
+            range={riskRange}
+            setRange={setRiskRange}
+            customStart={riskCustomStart}
+            setCustomStart={setRiskCustomStart}
+            customEnd={riskCustomEnd}
+            setCustomEnd={setRiskCustomEnd}
+          />
         </div>
         <div className="col-span-4 flex flex-col gap-3">
-          <IncomeMixThisMonth 
-            rows={data.incomeMixRows} 
-            monthLabel={data.monthLabel} 
-            loading={loading} 
-            error={error} 
+          <IncomeMixPanel
+            charts={incomeMixCharts}
+            range={range}
+            setRange={setRange}
+            customStart={customStart}
+            setCustomStart={setCustomStart}
+            customEnd={customEnd}
+            setCustomEnd={setCustomEnd}
+            loading={mixLoading}
+            error={mixError}
           />
-          <RevenueMixPanel data={data.revenueMixData} rows={data.offerRows} loading={loading} />
-          <DailySalesTrend data={data.dailySales} stats={data.dailyStats} loading={loading} />
+          <RevenueMixPanel
+            rows={productRows}
+            loading={productLoading}
+            error={productError}
+            statusFilter={productStatusFilter}
+            setStatusFilter={setProductStatusFilter}
+            dateFilter={productDateFilter}
+            setDateFilter={setProductDateFilter}
+            customStart={productCustomStart}
+            setCustomStart={setProductCustomStart}
+            customEnd={productCustomEnd}
+            setCustomEnd={setProductCustomEnd}
+          />
+          <DailySalesTrend
+            data={dailySales}
+            stats={dailyStats}
+            loading={dailyLoading}
+            monthlyGoal={monthlyRevenueGoal}
+            error={dailyError}
+            range={dailyRange}
+            setRange={setDailyRange}
+            customStart={dailyCustomStart}
+            setCustomStart={setDailyCustomStart}
+            customEnd={dailyCustomEnd}
+            setCustomEnd={setDailyCustomEnd}
+          />
         </div>
         <div className="col-span-2 flex flex-col gap-3">
-          <PaymentPlanForecastPanel cards={data.forecastCards} loading={loading} />
+          <PaymentPlanForecastPanel
+            cards={forecastCards}
+            dailySeries={forecastDailySeries}
+            loading={forecastLoading}
+            error={forecastError}
+            range={forecastRange}
+            setRange={setForecastRange}
+            customStart={forecastCustomStart}
+            setCustomStart={setForecastCustomStart}
+            customEnd={forecastCustomEnd}
+            setCustomEnd={setForecastCustomEnd}
+          />
         </div>
       </div>
     </div>

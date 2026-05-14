@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRevenueGoal } from "../../../../hooks/useRevenueGoal";
 import { supabase } from "../../../../lib/supabaseClient";
 import { runAnalysis } from "../../../../pages/reactionTime";
 import * as DateHelpers from "../../../../utils/dateHelpers";
@@ -13,7 +14,6 @@ import {
   getSuccessClass,
 } from "../../../../utils/performanceBenchmarks";
 
-const MONTHLY_GOAL_USD = 55000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ADS_VSL_PATH = "/ads-new-masterclass-job";
 const ADS_OPT_IN_PATH = "/ads-opt-in-masterclass";
@@ -882,9 +882,6 @@ function NorthStarSection ( { metrics, loading } ) {
           <h1 className="text-[20px] font-semibold leading-tight tracking-normal text-slate-950">
             North-Star Metrics
           </h1>
-          {/* <p className="mt-2 text-[10px] font-semibold italic leading-snug text-slate-500">
-            The 4 numbers I (as owner) want to see the second I open the CRM. They tell me if we're on track to hit $55K monthly goal.
-          </p> */}
         </div>
         <div className="flex w-full ">
           <SectionBadge>Live · Today{metrics?.todayLabel ? ` · ${metrics.todayLabel}` : ""}</SectionBadge>
@@ -1111,6 +1108,7 @@ function ActivityHeatmapSection ( { heatmapDays, loading } ) {
 }
 
 export default function Metrics () {
+  const { monthlyRevenueGoal } = useRevenueGoal();
   const [ metrics, setMetrics ] = useState( EMPTY_METRICS );
   const [ loading, setLoading ] = useState( true );
   const [ error, setError ] = useState( "" );
@@ -1195,13 +1193,13 @@ export default function Metrics () {
 
         const dayOfMonth = now.getUTCDate();
         const daysInMonth = monthEnd.getUTCDate();
-        const expectedMtd = MONTHLY_GOAL_USD * ( dayOfMonth / daysInMonth );
-        const neededPerDay = Math.max( 0, ( MONTHLY_GOAL_USD - mtdNet ) / Math.max( daysInMonth - dayOfMonth + 1, 1 ) );
+        const expectedMtd = monthlyRevenueGoal * ( dayOfMonth / daysInMonth );
+        const neededPerDay = Math.max( 0, ( monthlyRevenueGoal - mtdNet ) / Math.max( daysInMonth - dayOfMonth + 1, 1 ) );
         const revenueTone = mtdNet >= expectedMtd ? "success" : mtdNet >= expectedMtd * 0.9 ? "warning" : "danger";
         const showTone = currentWeekShowRate >= 55 ? "success" : currentWeekShowRate >= 45 ? "warning" : "danger";
         const aovTone = aov.best?.aov >= 875 ? "success" : aov.best?.aov >= 750 ? "warning" : "danger";
 
-        const dailyTarget = MONTHLY_GOAL_USD / daysInMonth;
+        const dailyTarget = monthlyRevenueGoal / daysInMonth;
         const metricCards = [
           {
             label: "Net revenue today",
@@ -1248,7 +1246,7 @@ export default function Metrics () {
           },
           {
             tone: revenueTone,
-            title: `${mtdNet >= expectedMtd ? "On" : "Behind"} monthly pace — ${formatUsd( mtdNet )} of ${formatUsd( MONTHLY_GOAL_USD )} (${formatPct( pct( mtdNet, MONTHLY_GOAL_USD ) )}) on day ${dayOfMonth}/${daysInMonth}`,
+            title: `${mtdNet >= expectedMtd ? "On" : "Behind"} monthly pace — ${formatUsd( mtdNet )} of ${formatUsd( monthlyRevenueGoal )} (${formatPct( pct( mtdNet, monthlyRevenueGoal ) )}) on day ${dayOfMonth}/${daysInMonth}`,
             body: mtdNet >= expectedMtd ? "Current net revenue is pacing at or above target." : `Need ${formatUsd( neededPerDay )}/day to catch up.`,
             ...alertClasses( revenueTone ),
           },
@@ -1294,7 +1292,7 @@ export default function Metrics () {
     return () => {
       cancelled = true;
     };
-  }, [] );
+  }, [ monthlyRevenueGoal ] );
 
   return (
     <div className="grid grid-cols-1 gap-2 xl:grid-cols-8 xl:items-start">
