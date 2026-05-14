@@ -10,7 +10,6 @@ import {
   getConversionClass,
   getShowUpBgClass,
   getShowUpClass,
-  getSuccessBgClass,
   getSuccessClass,
 } from "../../../../utils/performanceBenchmarks";
 
@@ -60,6 +59,27 @@ const HEATMAP_LEVEL_LABELS = {
   4: "Peak",
 };
 
+const METRIC_RANGE_ITEMS = [
+  { id: "today", label: "Today" },
+  { id: "last7", label: "Last 7 days" },
+  { id: "mtd", label: "MTD" },
+  { id: "lastWeek", label: "Last wk" },
+  { id: "lastMonth", label: "Last mo" },
+];
+
+const COHORT_RANGE_ITEMS = [
+  { id: "last30", label: "Last 30 days" },
+  { id: "last90", label: "Last 90 days" },
+  { id: "mtd", label: "MTD" },
+  { id: "lastMonth", label: "Last mo" },
+];
+
+const HEATMAP_RANGE_ITEMS = [
+  { id: "last7", label: "Last 7 days" },
+  { id: "last14", label: "Last 14 days" },
+  { id: "last30", label: "Last 30 days" },
+];
+
 function startOfUTCDate ( date ) {
   return new Date( Date.UTC( date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0 ) );
 }
@@ -74,6 +94,53 @@ function addDays ( date, days ) {
 
 function isoDay ( date ) {
   return date.toISOString().slice( 0, 10 );
+}
+
+function getRangeBounds ( range ) {
+  const now = new Date();
+  const todayStart = startOfUTCDate( now );
+  const todayEnd = endOfUTCDate( now );
+
+  if ( range === "last14" ) {
+    return { start: addDays( todayStart, -13 ), end: todayEnd };
+  }
+  if ( range === "last30" ) {
+    return { start: addDays( todayStart, -29 ), end: todayEnd };
+  }
+  if ( range === "last90" ) {
+    return { start: addDays( todayStart, -89 ), end: todayEnd };
+  }
+  if ( range === "last7" ) {
+    return { start: addDays( todayStart, -6 ), end: todayEnd };
+  }
+  if ( range === "lastWeek" ) {
+    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset( 1 );
+    return { start: weekStart, end: weekEnd };
+  }
+  if ( range === "lastMonth" ) {
+    const previousMonth = new Date( Date.UTC( now.getUTCFullYear(), now.getUTCMonth() - 1, 15 ) );
+    const monthRange = DateHelpers.getMonthRangeInTimezone( previousMonth, DateHelpers.DEFAULT_TIMEZONE );
+    return { start: monthRange.startDate, end: monthRange.endDate };
+  }
+  if ( range === "mtd" ) {
+    const monthRange = DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE );
+    return { start: monthRange.startDate, end: now };
+  }
+  return { start: todayStart, end: todayEnd };
+}
+
+function getPriorRangeBounds ( start, end ) {
+  const startDay = startOfUTCDate( start );
+  const endDay = startOfUTCDate( end );
+  const days = Math.max( 1, Math.round( ( endDay.getTime() - startDay.getTime() ) / DAY_MS ) + 1 );
+  const priorEnd = endOfUTCDate( addDays( startDay, -1 ) );
+  const priorStart = startOfUTCDate( addDays( priorEnd, -( days - 1 ) ) );
+  return { start: priorStart, end: priorEnd };
+}
+
+function rangeLabel ( range ) {
+  const item = [ ...METRIC_RANGE_ITEMS, ...COHORT_RANGE_ITEMS, ...HEATMAP_RANGE_ITEMS ].find( ( option ) => option.id === range );
+  return item?.label || "Selected range";
 }
 
 function pct ( numerator, denominator ) {
@@ -192,6 +259,13 @@ function sumGaRows ( payload, field ) {
   return ( payload?.rows || [] ).reduce( ( sum, row ) => sum + ( Number( row?.[ field ] ) || 0 ), 0 );
 }
 
+function sumGaByPath ( payload, paths ) {
+  return ( payload?.rows || [] ).reduce( ( total, row ) => {
+    const byPath = row?.byPath || {};
+    return total + paths.reduce( ( sum, path ) => sum + ( Number( byPath[ path ] ) || 0 ), 0 );
+  }, 0 );
+}
+
 function formatHour ( hour ) {
   const suffix = hour >= 12 ? "PM" : "AM";
   const value = hour % 12 || 12;
@@ -255,42 +329,40 @@ function heatmapLevelFromConversion ( conversionRate, bookedCalls ) {
 
 async function loadGaFunnel ( start, end ) {
   const params = { startDate: isoDay( start ), endDate: isoDay( end ) };
-  const sessionParams = { ...params, metric: "sessions" };
-  const vslParams = {
-    ...params,
-    eventName: "video_progress",
-    filterDimension: "video_percent",
-    filterValue: "50"
-  };
+  const funnelPaths = `${ADS_VSL_PATH},${ORGANIC_VSL_PATH},${ADS_OPT_IN_PATH},${ORGANIC_OPT_IN_PATHS}`;
 
-  const [ adsVsl, adsOptIn, orgVsl, orgOptIn, adsViews, orgViews ] = await Promise.all( [
-    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...vslParams, pagePath: ADS_VSL_PATH } ).toString()}` ),
-    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...sessionParams, pagePath: ADS_OPT_IN_PATH } ).toString()}` ),
-    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...vslParams, pagePath: ORGANIC_VSL_PATH } ).toString()}` ),
-    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...sessionParams, pagePaths: ORGANIC_OPT_IN_PATHS } ).toString()}` ),
-    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...params, pagePath: ADS_VSL_PATH } ).toString()}` ),
-    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...params, pagePath: ORGANIC_VSL_PATH } ).toString()}` ),
+  const [ gaFunnelSessions, gaWebsiteViews, gaVslViews, gaOptInEvents ] = await Promise.all( [
+    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...params, metric: "sessions", pagePaths: funnelPaths } ).toString()}` ),
+    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...params, pagePath: "/" } ).toString()}` ),
+    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...params, pagePaths: `${ADS_VSL_PATH},${ORGANIC_VSL_PATH}` } ).toString()}` ),
+    fetchJsonOrNull( `/api/google-analytics?${new URLSearchParams( { ...params, wholeSite: "1" } ).toString()}` ),
   ] );
 
   // Reject mock data (returned when GA4_PROPERTY_ID is not configured — random numbers, not real).
   // The GA handler sets mock:true on every response when credentials are missing.
-  const anyReal = [ adsVsl, adsOptIn, orgVsl, orgOptIn, adsViews, orgViews ]
+  const anyReal = [ gaFunnelSessions, gaWebsiteViews, gaVslViews, gaOptInEvents ]
     .filter( Boolean )
     .some( ( r ) => !r.mock );
+  const vslPaths = [ ADS_VSL_PATH, ORGANIC_VSL_PATH ];
+  const optInPaths = [ ADS_OPT_IN_PATH, "/pro", "/" ];
+  const websiteViews = sumGaRows( gaWebsiteViews, "views" ) || sumGaRows( gaVslViews, "views" );
+  const optInEvents = sumGaRows( gaOptInEvents, "eventCount" );
+  const optInSessions = sumGaByPath( gaFunnelSessions, optInPaths );
 
   return {
-    visitors: anyReal ? sumGaRows( adsViews, "views" ) + sumGaRows( orgViews, "views" ) : 0,
-    vsl: anyReal ? sumGaRows( adsVsl, "eventCount" ) + sumGaRows( orgVsl, "eventCount" ) : 0,
-    optIns: anyReal ? sumGaRows( adsOptIn, "sessions" ) + sumGaRows( orgOptIn, "sessions" ) : 0,
+    visitors: anyReal ? websiteViews : 0,
+    vsl: anyReal ? sumGaByPath( gaFunnelSessions, vslPaths ) : 0,
+    optIns: anyReal ? ( optInEvents > 0 ? optInEvents : optInSessions ) : 0,
     available: anyReal,
   };
 }
 
 function buildFunnel ( ga, callsBooked, showUps, closedSales ) {
+  const optIns = ga.optIns > 0 ? ga.optIns : callsBooked;
   const counts = [
     { label: "Website Visitors", value: ga.visitors, colorClass: "bg-slate-500" },
-    { label: "VSL Watched (50%+)", value: ga.vsl, colorClass: "bg-slate-500" },
-    { label: "Opt-ins", value: ga.optIns, colorClass: "bg-slate-500" },
+    { label: "VSL Watched", value: ga.vsl, colorClass: "bg-slate-500" },
+    { label: "Opt-ins", value: optIns, colorClass: "bg-slate-500" },
     { label: "Calls Booked", value: callsBooked, colorClass: "bg-slate-500" },
     { label: "Show-ups", value: showUps, colorClass: "bg-slate-500" },
     { label: "Closed (Sale)", value: closedSales, colorClass: "bg-slate-500" },
@@ -532,7 +604,9 @@ async function buildSpeedCards ( recentStart, now ) {
 }
 
 async function buildHeatmapDays ( start, end ) {
-  const calls = await loadCallsInRange( start, end, "book_date" );
+  const startDay = startOfUTCDate( start );
+  const endDay = startOfUTCDate( end );
+  const calls = await loadCallsInRange( startDay, endOfUTCDate( endDay ), "book_date" );
   const callIds = calls.map( ( call ) => call.id ).filter( Boolean );
   const { data: outcomes, error } = callIds.length
     ? await supabase.from( "outcome_log" ).select( "id, call_id, outcome" ).in( "call_id", callIds )
@@ -545,26 +619,41 @@ async function buildHeatmapDays ( start, end ) {
     if ( !existing || row.id > existing.id ) latestByCall.set( String( row.call_id ), row );
   }
 
-  const days = [ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" ];
-  const grid = days.map( ( day ) => ( {
-    day,
-    cells: Array.from( { length: 24 }, () => ( { bookedCalls: 0, sales: 0, conversionRate: 0 } ) ),
-  } ) );
+  const dayCount = Math.max( 1, Math.round( ( endDay.getTime() - startDay.getTime() ) / DAY_MS ) + 1 );
+  const formatter = new Intl.DateTimeFormat( "en-US", {
+    month: dayCount > 7 ? "short" : undefined,
+    day: dayCount > 7 ? "numeric" : undefined,
+    weekday: dayCount <= 7 ? "short" : undefined,
+    timeZone: "UTC",
+  } );
+  const rows = Array.from( { length: dayCount }, ( _, index ) => {
+    const date = addDays( endDay, -index );
+    return {
+      day: formatter.format( date ),
+      dateKey: isoDay( date ),
+      cells: Array.from( { length: 24 }, () => ( { bookedCalls: 0, sales: 0, conversionRate: 0 } ) ),
+    };
+  } );
+  const rowsByDate = new Map( rows.map( ( row ) => [ row.dateKey, row ] ) );
 
   for ( const call of calls ) {
     const bookedAt = new Date( call.book_date );
-    const cell = grid[ bookedAt.getUTCDay() ].cells[ bookedAt.getUTCHours() ];
+    const row = rowsByDate.get( isoDay( bookedAt ) );
+    if ( !row ) continue;
+    const cell = row.cells[ bookedAt.getUTCHours() ];
     cell.bookedCalls += 1;
     if ( latestByCall.get( String( call.id ) )?.outcome === "yes" ) cell.sales += 1;
   }
 
-  for ( const row of grid ) {
+  for ( const row of rows ) {
     for ( const cell of row.cells ) {
       cell.conversionRate = round1( pct( cell.sales, cell.bookedCalls ) );
       delete cell.sales;
     }
+    delete row.dateKey;
   }
-  return grid.slice( 1 ).concat( grid.slice( 0, 1 ) );
+
+  return rows;
 }
 
 function shimmer ( className = "" ) {
@@ -578,6 +667,23 @@ function SectionBadge ( { children } ) {
     <span className="inline-flex h-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 shadow-sm">
       {children}
     </span>
+  );
+}
+
+function SectionRangeSelect ( { value, onChange, items = METRIC_RANGE_ITEMS, label } ) {
+  return (
+    <select
+      value={value}
+      onChange={( event ) => onChange( event.target.value )}
+      className="h-7 max-w-full shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+      aria-label={label}
+    >
+      {items.map( ( item ) => (
+        <option key={item.id} value={item.id}>
+          {item.label}
+        </option>
+      ) )}
+    </select>
   );
 }
 
@@ -700,7 +806,7 @@ function FunnelRow ( { row, onHover, onLeave } ) {
   );
 }
 
-function FunnelSection ( { funnel, loading } ) {
+function FunnelSection ( { funnel, loading, range, onRangeChange } ) {
   const [ hoveredRow, setHoveredRow ] = useState( null );
   const rows = funnel?.rows || [];
 
@@ -729,6 +835,13 @@ function FunnelSection ( { funnel, loading } ) {
           <span className={cx( "shrink-0 text-[11px] font-semibold", !loading && getSuccessClass( parseMetricNumber( funnel?.visitorToCustomer ) || 0 ) )}>
             {loading ? "—" : funnel?.visitorToCustomer || "—"}
           </span>
+        </div>
+        <div className="w-full">
+          <SectionRangeSelect
+            value={range}
+            onChange={onRangeChange}
+            label="Funnel conversion range"
+          />
         </div>
       </div>
 
@@ -849,7 +962,7 @@ function SmallMetricCardShimmer ( { compact = false } ) {
   );
 }
 
-function CardGridSection ( { title, badge, cards, compact = false, loading = false } ) {
+function CardGridSection ( { title, badge, cards, compact = false, loading = false, range, onRangeChange, rangeItems = METRIC_RANGE_ITEMS } ) {
   return (
     <section className={compact ? "min-w-0" : ""}>
       <div className={cx(
@@ -858,7 +971,15 @@ function CardGridSection ( { title, badge, cards, compact = false, loading = fal
         <h2 className={cx( compact ? "text-[17px]" : "text-[24px]", "font-semibold leading-tight tracking-normal text-slate-950" )}>
           {title}
         </h2>
-        <SectionBadge>{badge}</SectionBadge>
+        <div className={cx( "flex items-center gap-2", compact ? "w-full justify-between" : "" )}>
+          <SectionBadge>{badge}</SectionBadge>
+          <SectionRangeSelect
+            value={range}
+            onChange={onRangeChange}
+            items={rangeItems}
+            label={`${title} range`}
+          />
+        </div>
       </div>
 
       <div className={cx( "grid grid-cols-1", compact ? "mt-2 gap-2" : "mt-4 gap-4 md:grid-cols-3" )}>
@@ -874,7 +995,7 @@ function CardGridSection ( { title, badge, cards, compact = false, loading = fal
   );
 }
 
-function NorthStarSection ( { metrics, loading } ) {
+function NorthStarSection ( { metrics, loading, range, onRangeChange } ) {
   return (
     <DashboardPanel>
       <div className="flex flex-col items-start gap-2">
@@ -883,8 +1004,13 @@ function NorthStarSection ( { metrics, loading } ) {
             North-Star Metrics
           </h1>
         </div>
-        <div className="flex w-full ">
-          <SectionBadge>Live · Today{metrics?.todayLabel ? ` · ${metrics.todayLabel}` : ""}</SectionBadge>
+        <div className="flex w-full items-center justify-between gap-2">
+          <SectionBadge>{rangeLabel( range )}{metrics?.todayLabel ? ` · ${metrics.todayLabel}` : ""}</SectionBadge>
+          <SectionRangeSelect
+            value={range}
+            onChange={onRangeChange}
+            label="North-star metrics range"
+          />
         </div>
       </div>
 
@@ -899,7 +1025,7 @@ function NorthStarSection ( { metrics, loading } ) {
   );
 }
 
-function HealthAlertsSection ( { alerts, loading, error } ) {
+function HealthAlertsSection ( { alerts, loading, error, range, onRangeChange } ) {
   return (
     <DashboardPanel className="p-4">
       <div className="flex items-start justify-between gap-4">
@@ -911,7 +1037,14 @@ function HealthAlertsSection ( { alerts, loading, error } ) {
             Surface what's broken, what's winning, what needs attention NOW.
           </p>
         </div>
-        <SectionBadge>Auto-detected</SectionBadge>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <SectionBadge>Auto-detected</SectionBadge>
+          <SectionRangeSelect
+            value={range}
+            onChange={onRangeChange}
+            label="Health alerts range"
+          />
+        </div>
       </div>
 
       <div className="mt-4 space-y-3">
@@ -928,7 +1061,7 @@ function HealthAlertsSection ( { alerts, loading, error } ) {
   );
 }
 
-function ValueVelocityPanel ( { cohortCards, speedCards, loading } ) {
+function ValueVelocityPanel ( { cohortCards, speedCards, cohortLoading, speedLoading, cohortRange, onCohortRangeChange, speedRange, onSpeedRangeChange } ) {
   return (
     <DashboardPanel className="space-y-4">
       <CardGridSection
@@ -936,7 +1069,10 @@ function ValueVelocityPanel ( { cohortCards, speedCards, loading } ) {
         badge="Revenue Quality"
         cards={cohortCards || []}
         compact
-        loading={loading}
+        loading={cohortLoading}
+        range={cohortRange}
+        onRangeChange={onCohortRangeChange}
+        rangeItems={COHORT_RANGE_ITEMS}
       />
 
       <CardGridSection
@@ -944,7 +1080,9 @@ function ValueVelocityPanel ( { cohortCards, speedCards, loading } ) {
         badge="Operational"
         cards={speedCards || []}
         compact
-        loading={loading}
+        loading={speedLoading}
+        range={speedRange}
+        onRangeChange={onSpeedRangeChange}
       />
     </DashboardPanel>
   );
@@ -977,7 +1115,7 @@ function HeatmapCell ( { cell, day, hour, isActive, onHover, onLeave } ) {
   );
 }
 
-function ActivityHeatmapSection ( { heatmapDays, loading } ) {
+function ActivityHeatmapSection ( { heatmapDays, loading, range, onRangeChange } ) {
   const [ hoveredCell, setHoveredCell ] = useState( null );
   const rows = heatmapDays || [];
 
@@ -999,7 +1137,14 @@ function ActivityHeatmapSection ( { heatmapDays, loading } ) {
         <h2 className="text-[24px] font-semibold leading-tight tracking-normal text-slate-950">
           Activity Heatmap — Conversion by hour
         </h2>
-        <SectionBadge>Last 7 days</SectionBadge>
+        <div className="flex shrink-0 items-center gap-2">
+          <SectionRangeSelect
+            value={range}
+            onChange={onRangeChange}
+            items={HEATMAP_RANGE_ITEMS}
+            label="Activity heatmap range"
+          />
+        </div>
       </div>
 
       <div
@@ -1110,204 +1255,332 @@ function ActivityHeatmapSection ( { heatmapDays, loading } ) {
 export default function Metrics () {
   const { monthlyRevenueGoal } = useRevenueGoal();
   const [ metrics, setMetrics ] = useState( EMPTY_METRICS );
-  const [ loading, setLoading ] = useState( true );
+  const [ loading, setLoading ] = useState( {
+    northStar: true,
+    funnel: true,
+    health: true,
+    heatmap: true,
+    cohort: true,
+    speed: true,
+  } );
   const [ error, setError ] = useState( "" );
+  const [ northStarRange, setNorthStarRange ] = useState( "today" );
+  const [ funnelRange, setFunnelRange ] = useState( "mtd" );
+  const [ healthRange, setHealthRange ] = useState( "mtd" );
+  const [ heatmapRange, setHeatmapRange ] = useState( "last7" );
+  const [ cohortRange, setCohortRange ] = useState( "last90" );
+  const [ speedRange, setSpeedRange ] = useState( "last7" );
 
   useEffect( () => {
     let cancelled = false;
 
-    async function loadMetrics () {
-      setLoading( true );
-      setError( "" );
+    async function loadNorthStar () {
+      setLoading( ( previous ) => ( { ...previous, northStar: true } ) );
       try {
         const now = new Date();
-        const todayStart = startOfUTCDate( now );
-        const todayEnd = endOfUTCDate( now );
-        const yesterdayStart = addDays( todayStart, -1 );
-        const yesterdayEnd = endOfUTCDate( yesterdayStart );
-        const recentStart = addDays( todayStart, -6 );
-        const start90 = addDays( todayStart, -89 );
+        const northBounds = getRangeBounds( northStarRange );
+        const northPrior = getPriorRangeBounds( northBounds.start, northBounds.end );
         const monthRange = DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE );
-        const mtdStart = monthRange.startDate;
-        const monthEnd = monthRange.endDate;
-        const currentWeek = DateHelpers.getWeekBoundsForOffset( 0 );
-        const previousWeek = DateHelpers.getWeekBoundsForOffset( 1 );
+        const daysInMonth = monthRange.endDate.getUTCDate();
+        const dailyTarget = monthlyRevenueGoal / daysInMonth;
 
-        const [
-          todayTx,
-          yesterdayTx,
-          recentTx,
-          mtdTx,
-          todayBookings,
-          yesterdayBookings,
-          mtdBookings,
-          todayCalls,
-          yesterdayCalls,
-          mtdCalls,
-          mtdSales,
-          ga,
-          weekCalls,
-          previousWeekCalls,
-          aov,
-          cohortCards,
-          speedCards,
-          heatmapDays,
-        ] = await Promise.all( [
-          fetchTransactions( todayStart, todayEnd ),
-          fetchTransactions( yesterdayStart, yesterdayEnd ),
-          fetchTransactions( recentStart, yesterdayEnd ),
-          fetchTransactions( mtdStart, monthEnd ),
-          loadCallsInRange( todayStart, todayEnd, "book_date" ),
-          loadCallsInRange( yesterdayStart, yesterdayEnd, "book_date" ),
-          loadCallsInRange( mtdStart, monthEnd, "book_date" ),
-          loadCallsInRange( todayStart, todayEnd, "call_date" ),
-          loadCallsInRange( yesterdayStart, yesterdayEnd, "call_date" ),
-          loadCallsInRange( mtdStart, monthEnd, "call_date" ),
-          loadClosedSalesCount( mtdStart, monthEnd ),
-          loadGaFunnel( mtdStart, monthEnd ),
-          loadCallsInRange( currentWeek.weekStart, currentWeek.weekEnd, "call_date" ),
-          loadCallsInRange( previousWeek.weekStart, previousWeek.weekEnd, "call_date" ),
-          loadSalesAov( mtdStart, now ),
-          buildCohortCards( start90, now ),
-          buildSpeedCards( recentStart, now ),
-          buildHeatmapDays( recentStart, todayEnd ),
+        const [ northTx, northPriorTx, northBookings, northPriorBookings, northCalls, northPriorCalls ] = await Promise.all( [
+          fetchTransactions( northBounds.start, northBounds.end ),
+          fetchTransactions( northPrior.start, northPrior.end ),
+          loadCallsInRange( northBounds.start, northBounds.end, "book_date" ),
+          loadCallsInRange( northPrior.start, northPrior.end, "book_date" ),
+          loadCallsInRange( northBounds.start, northBounds.end, "call_date" ),
+          loadCallsInRange( northPrior.start, northPrior.end, "call_date" ),
         ] );
 
-        const todayNet = sumNetTransactions( todayTx, todayStart.toISOString(), todayEnd.toISOString() );
-        const yesterdayNet = sumNetTransactions( yesterdayTx, yesterdayStart.toISOString(), yesterdayEnd.toISOString() );
-        const todayGross = sumGrossTransactions( todayTx, todayStart.toISOString(), todayEnd.toISOString() );
-        const recentGrossAvg = sumGrossTransactions( recentTx, recentStart.toISOString(), yesterdayEnd.toISOString() ) / 6;
-        const mtdNet = sumNetTransactions( mtdTx, mtdStart.toISOString(), now.toISOString() );
-        const confirmedToday = todayCalls.filter( ( call ) => call.confirmed === true || call.confirmed === "true" ).length;
-        const organicLeads = todayBookings.filter( ( call ) => sourceBucket( call.source_type ) === "organic" ).length;
-        const paidLeads = todayBookings.filter( ( call ) => sourceBucket( call.source_type ) === "paid" ).length;
-        const showUpsMtd = mtdCalls.filter( ( call ) => call.showed_up === true || call.showed_up === "true" ).length;
-        const currentWeekShowRate = pct(
-          weekCalls.filter( ( call ) => call.showed_up === true || call.showed_up === "true" ).length,
-          weekCalls.length,
-        );
-        const previousWeekShowRate = pct(
-          previousWeekCalls.filter( ( call ) => call.showed_up === true || call.showed_up === "true" ).length,
-          previousWeekCalls.length,
-        );
+        const northStartISO = northBounds.start.toISOString();
+        const northEndISO = northBounds.end.toISOString();
+        const northPriorStartISO = northPrior.start.toISOString();
+        const northPriorEndISO = northPrior.end.toISOString();
+        const northNet = sumNetTransactions( northTx, northStartISO, northEndISO );
+        const northPriorNet = sumNetTransactions( northPriorTx, northPriorStartISO, northPriorEndISO );
+        const northGross = sumGrossTransactions( northTx, northStartISO, northEndISO );
+        const northPriorGross = sumGrossTransactions( northPriorTx, northPriorStartISO, northPriorEndISO );
+        const confirmedCalls = northCalls.filter( ( call ) => call.confirmed === true || call.confirmed === "true" ).length;
+        const organicLeads = northBookings.filter( ( call ) => sourceBucket( call.source_type ) === "organic" ).length;
+        const paidLeads = northBookings.filter( ( call ) => sourceBucket( call.source_type ) === "paid" ).length;
 
-        const dayOfMonth = now.getUTCDate();
-        const daysInMonth = monthEnd.getUTCDate();
-        const expectedMtd = monthlyRevenueGoal * ( dayOfMonth / daysInMonth );
-        const neededPerDay = Math.max( 0, ( monthlyRevenueGoal - mtdNet ) / Math.max( daysInMonth - dayOfMonth + 1, 1 ) );
-        const revenueTone = mtdNet >= expectedMtd ? "success" : mtdNet >= expectedMtd * 0.9 ? "warning" : "danger";
-        const showTone = currentWeekShowRate >= 55 ? "success" : currentWeekShowRate >= 45 ? "warning" : "danger";
-        const aovTone = aov.best?.aov >= 875 ? "success" : aov.best?.aov >= 750 ? "warning" : "danger";
-
-        const dailyTarget = monthlyRevenueGoal / daysInMonth;
         const metricCards = [
           {
-            label: "Net revenue today",
-            value: formatUsd( todayNet ),
-            valueClass: todayNet >= dailyTarget
+            label: northStarRange === "today" ? "Net revenue today" : "Net revenue",
+            value: formatUsd( northNet ),
+            valueClass: northNet >= dailyTarget
               ? "text-emerald-600"
-              : todayNet >= dailyTarget * 0.6
+              : northNet >= dailyTarget * 0.6
                 ? "text-amber-600"
                 : "text-rose-600",
-            ...metricBadge( todayNet, yesterdayNet, "yesterday" ),
-            note: `Goal-pace: ${formatUsd( dailyTarget )}/day`,
+            ...metricBadge( northNet, northPriorNet, "prior period" ),
+            note: `${rangeLabel( northStarRange )} · Goal-pace: ${formatUsd( dailyTarget )}/day`,
           },
           {
-            label: "Cash collected today",
-            value: formatUsd( todayGross ),
+            label: northStarRange === "today" ? "Cash collected today" : "Cash collected",
+            value: formatUsd( northGross ),
             valueClass: "text-blue-600",
-            ...metricBadge( todayGross, recentGrossAvg, "6-day avg" ),
+            ...metricBadge( northGross, northPriorGross, "prior period" ),
             note: "Successful Kajabi charges before refunds",
           },
           {
-            label: "New leads today",
-            value: formatInt( todayBookings.length ),
+            label: northStarRange === "today" ? "New leads today" : "New leads",
+            value: formatInt( northBookings.length ),
             valueClass: "text-violet-600",
-            badge: `${todayBookings.length - yesterdayBookings.length >= 0 ? "▲" : "▼"} ${Math.abs( todayBookings.length - yesterdayBookings.length )} vs yesterday`,
-            badgeClass: todayBookings.length >= yesterdayBookings.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
+            badge: `${northBookings.length - northPriorBookings.length >= 0 ? "▲" : "▼"} ${Math.abs( northBookings.length - northPriorBookings.length )} vs prior period`,
+            badgeClass: northBookings.length >= northPriorBookings.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
             note: `${formatInt( organicLeads )} organic · ${formatInt( paidLeads )} paid`,
           },
           {
-            label: "Booked calls today",
-            value: formatInt( todayCalls.length ),
+            label: northStarRange === "today" ? "Booked calls today" : "Booked calls",
+            value: formatInt( northCalls.length ),
             valueClass: "text-amber-600",
-            badge: `${todayCalls.length >= yesterdayCalls.length ? "▲" : "▼"} ${Math.abs( todayCalls.length - yesterdayCalls.length )} from yesterday`,
-            badgeClass: todayCalls.length >= yesterdayCalls.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
-            note: `${formatInt( confirmedToday )} confirmed · ${formatInt( Math.max( todayCalls.length - confirmedToday, 0 ) )} pending`,
+            badge: `${northCalls.length >= northPriorCalls.length ? "▲" : "▼"} ${Math.abs( northCalls.length - northPriorCalls.length )} vs prior period`,
+            badgeClass: northCalls.length >= northPriorCalls.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
+            note: `${formatInt( confirmedCalls )} confirmed · ${formatInt( Math.max( northCalls.length - confirmedCalls, 0 ) )} pending`,
           },
         ];
 
-        const alerts = [
-          {
-            tone: showTone,
-            title: `Show-up rate is ${formatPct( currentWeekShowRate )} this week (vs ${formatPct( previousWeekShowRate )} last week)`,
-            body: "Computed from calls scheduled this week with showed_up=true.",
-            ...alertClasses( showTone ),
-          },
-          {
-            tone: revenueTone,
-            title: `${mtdNet >= expectedMtd ? "On" : "Behind"} monthly pace — ${formatUsd( mtdNet )} of ${formatUsd( monthlyRevenueGoal )} (${formatPct( pct( mtdNet, monthlyRevenueGoal ) )}) on day ${dayOfMonth}/${daysInMonth}`,
-            body: mtdNet >= expectedMtd ? "Current net revenue is pacing at or above target." : `Need ${formatUsd( neededPerDay )}/day to catch up.`,
-            ...alertClasses( revenueTone ),
-          },
-          {
-            tone: aovTone,
-            title: aov.best ? `AOV leader — ${aov.best.name} closed ${formatUsd( aov.best.aov )} (team avg ${formatUsd( aov.overall )})` : "AOV unavailable — no priced sales this month",
-            body: aov.best ? "AOV uses outcome_log yes rows joined to offers.price." : "Add priced offers to closed sales to populate this alert.",
-            ...alertClasses( aovTone ),
-          },
-        ];
-
-        const json = {
+        if ( cancelled ) return;
+        setMetrics( ( previous ) => ( {
+          ...previous,
           todayLabel: new Intl.DateTimeFormat( "en-US", {
             month: "short",
             day: "numeric",
             timeZone: DateHelpers.DEFAULT_TIMEZONE,
           } ).format( now ),
           metricCards,
-          alerts,
-          funnel: buildFunnel( ga, mtdBookings.length, showUpsMtd, mtdSales ),
-          cohortCards,
-          speedCards,
-          heatmapDays,
-        };
-
-        if ( cancelled ) return;
-        setMetrics( {
-          ...EMPTY_METRICS,
-          ...json,
-          funnel: { ...EMPTY_METRICS.funnel, ...( json.funnel || {} ) },
-        } );
+        } ) );
       } catch ( err ) {
-        if ( cancelled ) return;
-        console.error( "[Management2 Metrics] load failed:", err );
-        setError( err?.message || "Failed to load metrics" );
-        setMetrics( EMPTY_METRICS );
+        if ( !cancelled ) console.error( "[Management2 Metrics] north-star load failed:", err );
       } finally {
-        if ( !cancelled ) setLoading( false );
+        if ( !cancelled ) setLoading( ( previous ) => ( { ...previous, northStar: false } ) );
       }
     }
 
-    loadMetrics();
+    loadNorthStar();
     return () => {
       cancelled = true;
     };
-  }, [ monthlyRevenueGoal ] );
+  }, [ monthlyRevenueGoal, northStarRange ] );
+
+  useEffect( () => {
+    let cancelled = false;
+
+    async function loadFunnel () {
+      setLoading( ( previous ) => ( { ...previous, funnel: true } ) );
+      try {
+        const funnelBounds = getRangeBounds( funnelRange );
+        const [ funnelBookings, funnelCalls, funnelSales, ga ] = await Promise.all( [
+          loadCallsInRange( funnelBounds.start, funnelBounds.end, "book_date" ),
+          loadCallsInRange( funnelBounds.start, funnelBounds.end, "call_date" ),
+          loadClosedSalesCount( funnelBounds.start, funnelBounds.end ),
+          loadGaFunnel( funnelBounds.start, funnelBounds.end ),
+        ] );
+        const showUpsFunnel = funnelCalls.filter( ( call ) => call.showed_up === true || call.showed_up === "true" ).length;
+        const funnel = buildFunnel( ga, funnelBookings.length, showUpsFunnel, funnelSales );
+        if ( cancelled ) return;
+        setMetrics( ( previous ) => ( {
+          ...previous,
+          funnel: { ...EMPTY_METRICS.funnel, ...funnel },
+        } ) );
+      } catch ( err ) {
+        if ( !cancelled ) console.error( "[Management2 Metrics] funnel load failed:", err );
+      } finally {
+        if ( !cancelled ) setLoading( ( previous ) => ( { ...previous, funnel: false } ) );
+      }
+    }
+
+    loadFunnel();
+    return () => {
+      cancelled = true;
+    };
+  }, [ funnelRange ] );
+
+  useEffect( () => {
+    let cancelled = false;
+
+    async function loadHealth () {
+      setLoading( ( previous ) => ( { ...previous, health: true } ) );
+      setError( "" );
+      try {
+        const now = new Date();
+        const healthBounds = getRangeBounds( healthRange );
+        const healthPrior = getPriorRangeBounds( healthBounds.start, healthBounds.end );
+        const monthRange = DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE );
+        const monthEnd = monthRange.endDate;
+
+        const [ healthTx, healthCalls, healthPriorCalls, aov ] = await Promise.all( [
+          fetchTransactions( healthBounds.start, healthBounds.end ),
+          loadCallsInRange( healthBounds.start, healthBounds.end, "call_date" ),
+          loadCallsInRange( healthPrior.start, healthPrior.end, "call_date" ),
+          loadSalesAov( healthBounds.start, healthBounds.end ),
+        ] );
+
+        const healthStartISO = healthBounds.start.toISOString();
+        const healthEndISO = healthBounds.end.toISOString();
+        const healthNet = sumNetTransactions( healthTx, healthStartISO, healthEndISO );
+        const currentShowRate = pct(
+          healthCalls.filter( ( call ) => call.showed_up === true || call.showed_up === "true" ).length,
+          healthCalls.length,
+        );
+        const previousShowRate = pct(
+          healthPriorCalls.filter( ( call ) => call.showed_up === true || call.showed_up === "true" ).length,
+          healthPriorCalls.length,
+        );
+        const dayOfMonth = now.getUTCDate();
+        const daysInMonth = monthEnd.getUTCDate();
+        const selectedDayCount = Math.max( 1, Math.round( ( startOfUTCDate( healthBounds.end ).getTime() - startOfUTCDate( healthBounds.start ).getTime() ) / DAY_MS ) + 1 );
+        const selectedGoal = healthRange === "mtd"
+          ? monthlyRevenueGoal * ( dayOfMonth / daysInMonth )
+          : monthlyRevenueGoal * ( selectedDayCount / daysInMonth );
+        const neededPerDay = Math.max( 0, ( selectedGoal - healthNet ) / selectedDayCount );
+        const revenueTone = healthNet >= selectedGoal ? "success" : healthNet >= selectedGoal * 0.9 ? "warning" : "danger";
+        const showTone = currentShowRate >= 55 ? "success" : currentShowRate >= 45 ? "warning" : "danger";
+        const aovTone = aov.best?.aov >= 875 ? "success" : aov.best?.aov >= 750 ? "warning" : "danger";
+        const alerts = [
+          {
+            tone: showTone,
+            title: `Show-up rate is ${formatPct( currentShowRate )} in ${rangeLabel( healthRange )} (vs ${formatPct( previousShowRate )} prior period)`,
+            body: "Computed from calls scheduled in the selected range with showed_up=true.",
+            ...alertClasses( showTone ),
+          },
+          {
+            tone: revenueTone,
+            title: `${healthNet >= selectedGoal ? "On" : "Behind"} pace — ${formatUsd( healthNet )} of ${formatUsd( selectedGoal )} (${formatPct( pct( healthNet, selectedGoal ) )}) in ${rangeLabel( healthRange )}`,
+            body: healthNet >= selectedGoal ? "Current net revenue is pacing at or above target." : `Need ${formatUsd( neededPerDay )}/day to catch up.`,
+            ...alertClasses( revenueTone ),
+          },
+          {
+            tone: aovTone,
+            title: aov.best ? `AOV leader — ${aov.best.name} closed ${formatUsd( aov.best.aov )} (team avg ${formatUsd( aov.overall )})` : "AOV unavailable — no priced sales in selected range",
+            body: aov.best ? "AOV uses outcome_log yes rows joined to offers.price." : "Add priced offers to closed sales to populate this alert.",
+            ...alertClasses( aovTone ),
+          },
+        ];
+
+        if ( cancelled ) return;
+        setMetrics( ( previous ) => ( { ...previous, alerts } ) );
+      } catch ( err ) {
+        if ( cancelled ) return;
+        console.error( "[Management2 Metrics] health alerts load failed:", err );
+        setError( err?.message || "Failed to load alerts" );
+      } finally {
+        if ( !cancelled ) setLoading( ( previous ) => ( { ...previous, health: false } ) );
+      }
+    }
+
+    loadHealth();
+    return () => {
+      cancelled = true;
+    };
+  }, [ healthRange, monthlyRevenueGoal ] );
+
+  useEffect( () => {
+    let cancelled = false;
+
+    async function loadHeatmap () {
+      setLoading( ( previous ) => ( { ...previous, heatmap: true } ) );
+      try {
+        const heatmapBounds = getRangeBounds( heatmapRange );
+        const heatmapDays = await buildHeatmapDays( heatmapBounds.start, heatmapBounds.end );
+        if ( cancelled ) return;
+        setMetrics( ( previous ) => ( { ...previous, heatmapDays } ) );
+      } catch ( err ) {
+        if ( !cancelled ) console.error( "[Management2 Metrics] heatmap load failed:", err );
+      } finally {
+        if ( !cancelled ) setLoading( ( previous ) => ( { ...previous, heatmap: false } ) );
+      }
+    }
+
+    loadHeatmap();
+    return () => {
+      cancelled = true;
+    };
+  }, [ heatmapRange ] );
+
+  useEffect( () => {
+    let cancelled = false;
+
+    async function loadCohorts () {
+      setLoading( ( previous ) => ( { ...previous, cohort: true } ) );
+      try {
+        const cohortBounds = getRangeBounds( cohortRange );
+        const cohortCards = await buildCohortCards( cohortBounds.start, cohortBounds.end );
+        if ( cancelled ) return;
+        setMetrics( ( previous ) => ( { ...previous, cohortCards } ) );
+      } catch ( err ) {
+        if ( !cancelled ) console.error( "[Management2 Metrics] cohorts load failed:", err );
+      } finally {
+        if ( !cancelled ) setLoading( ( previous ) => ( { ...previous, cohort: false } ) );
+      }
+    }
+
+    loadCohorts();
+    return () => {
+      cancelled = true;
+    };
+  }, [ cohortRange ] );
+
+  useEffect( () => {
+    let cancelled = false;
+
+    async function loadSpeed () {
+      setLoading( ( previous ) => ( { ...previous, speed: true } ) );
+      try {
+        const speedBounds = getRangeBounds( speedRange );
+        const speedCards = await buildSpeedCards( speedBounds.start, speedBounds.end );
+        if ( cancelled ) return;
+        setMetrics( ( previous ) => ( { ...previous, speedCards } ) );
+      } catch ( err ) {
+        if ( !cancelled ) console.error( "[Management2 Metrics] speed load failed:", err );
+      } finally {
+        if ( !cancelled ) setLoading( ( previous ) => ( { ...previous, speed: false } ) );
+      }
+    }
+
+    loadSpeed();
+    return () => {
+      cancelled = true;
+    };
+  }, [ speedRange ] );
 
   return (
     <div className="grid grid-cols-1 gap-2 xl:grid-cols-8 xl:items-start">
       <div className="min-w-0 xl:col-span-2">
-        <NorthStarSection metrics={metrics} loading={loading} />
+        <NorthStarSection
+          metrics={metrics}
+          loading={loading.northStar}
+          range={northStarRange}
+          onRangeChange={setNorthStarRange}
+        />
         <div className="mt-4">
-          <FunnelSection funnel={metrics.funnel} loading={loading} />
+          <FunnelSection
+            funnel={metrics.funnel}
+            loading={loading.funnel}
+            range={funnelRange}
+            onRangeChange={setFunnelRange}
+          />
         </div>
       </div>
 
       <div className="min-w-0 space-y-4 xl:col-span-4">
-        <HealthAlertsSection alerts={metrics.alerts} loading={loading} error={error} />
+        <HealthAlertsSection
+          alerts={metrics.alerts}
+          loading={loading.health}
+          error={error}
+          range={healthRange}
+          onRangeChange={setHealthRange}
+        />
 
         <DashboardPanel className="p-4">
-          <ActivityHeatmapSection heatmapDays={metrics.heatmapDays} loading={loading} />
+          <ActivityHeatmapSection
+            heatmapDays={metrics.heatmapDays}
+            loading={loading.heatmap}
+            range={heatmapRange}
+            onRangeChange={setHeatmapRange}
+          />
         </DashboardPanel>
       </div>
 
@@ -1315,7 +1588,12 @@ export default function Metrics () {
         <ValueVelocityPanel
           cohortCards={metrics.cohortCards}
           speedCards={metrics.speedCards}
-          loading={loading}
+          cohortLoading={loading.cohort}
+          speedLoading={loading.speed}
+          cohortRange={cohortRange}
+          onCohortRangeChange={setCohortRange}
+          speedRange={speedRange}
+          onSpeedRangeChange={setSpeedRange}
         />
       </div>
     </div>
