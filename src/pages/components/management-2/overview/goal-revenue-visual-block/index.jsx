@@ -7,6 +7,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  DEFAULT_MONTHLY_REVENUE_GOAL_USD,
+  fetchMonthlyRevenueGoalUsd,
+} from "../../../../../hooks/useRevenueGoal";
 import { supabase } from "../../../../../lib/supabaseClient";
 import * as DateHelpers from "../../../../../utils/dateHelpers";
 
@@ -104,7 +108,6 @@ function SemiCircleGauge({
   );
 }
 
-const DEFAULT_MONTHLY_GOAL_USD = 55000;
 const SUCCESS_STATES = [
   "paid",
   "successful",
@@ -156,7 +159,9 @@ export default function GoalRevenueVisualBlock() {
   const trendGradId = useId().replace(/:/g, "");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
-  const [monthlyGoal, setMonthlyGoal] = useState(DEFAULT_MONTHLY_GOAL_USD);
+  const [monthlyGoal, setMonthlyGoal] = useState(
+    DEFAULT_MONTHLY_REVENUE_GOAL_USD,
+  );
   const [mtdRevenue, setMtdRevenue] = useState(0);
   const [trendPoints, setTrendPoints] = useState([
     { w: 0, v: 0, weekLabel: "" },
@@ -184,7 +189,8 @@ export default function GoalRevenueVisualBlock() {
         const oldestWeek = DateHelpers.getWeekBoundsForOffset(3).weekStart;
         const currentWeekEnd = DateHelpers.getWeekBoundsForOffset(0).weekEnd;
 
-        const [mtdTxRes, weeklyTxRes] = await Promise.all([
+        const [monthlyGoalUsd, mtdTxRes, weeklyTxRes] = await Promise.all([
+          fetchMonthlyRevenueGoalUsd(),
           supabase
             .from("kajabi_transactions")
             .select(
@@ -248,7 +254,7 @@ export default function GoalRevenueVisualBlock() {
         });
 
         if (cancelled) return;
-        setMonthlyGoal(DEFAULT_MONTHLY_GOAL_USD);
+        setMonthlyGoal(monthlyGoalUsd);
         setMtdRevenue(mtdNet);
         setTrendPoints(grouped);
       } catch (err) {

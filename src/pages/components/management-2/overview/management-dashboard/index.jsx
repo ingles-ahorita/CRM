@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import SegmentedTabs from "../../segmented-tabs";
+import { useRevenueGoal } from "../../../../../hooks/useRevenueGoal";
 import { supabase } from "../../../../../lib/supabaseClient";
 import * as DateHelpers from "../../../../../utils/dateHelpers";
 
@@ -45,7 +46,6 @@ const EMPTY_METRICS = {
   avatars: [],
 };
 
-const MTD_GOAL_USD = 55000;
 const SUCCESS_STATES = [
   "paid",
   "successful",
@@ -169,6 +169,7 @@ function MetricCard({ className = "", children }) {
 }
 
 export default function ManagementDashboard() {
+  const { monthlyRevenueGoal } = useRevenueGoal();
   const netGradientId = useId().replace(/:/g, "");
   const commissionChartId = useId().replace(/:/g, "");
   const [range, setRange] = useState("mtd");
@@ -574,7 +575,7 @@ export default function ManagementDashboard() {
             const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
             
             let label = "Monthly goal";
-            let target = MTD_GOAL_USD;
+            let target = monthlyRevenueGoal;
             let currentDay = now.getUTCDate();
             let totalDays = daysInMonth;
             let expectedPct = currentDay / totalDays;
@@ -587,7 +588,7 @@ export default function ManagementDashboard() {
               expectedPct = 1;
             } else if (range === "last7" || range === "lastWeek") {
               label = range === "last7" ? "7 days goal" : "Weekly goal";
-              target = Math.round((7 / 30.4) * MTD_GOAL_USD);
+              target = Math.round((7 / 30.4) * monthlyRevenueGoal);
               totalDays = 7;
               currentDay = 7;
               expectedPct = 1;
@@ -596,7 +597,7 @@ export default function ManagementDashboard() {
               const { start, end } = normalizeCustomBounds(customStart, customEnd);
               totalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
               currentDay = totalDays;
-              target = Math.round((totalDays / 30.4) * MTD_GOAL_USD);
+              target = Math.round((totalDays / 30.4) * monthlyRevenueGoal);
               expectedPct = 1;
             }
 
