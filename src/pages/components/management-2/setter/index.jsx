@@ -303,22 +303,26 @@ export default function Setter () {
                   data={pickupData}
                   kind="pickup"
                   animate={animateBars}
-                  colorClass={( val ) => {
-                    const color = getConfirmationColor( val );
-                    return `shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1),0_2px_8px_${color}40]`;
+                  customStyle={( val ) => {
+                    const bg = getConfirmationColor( val );
+                    return {
+                      backgroundColor: bg,
+                      boxShadow: `inset 0 -2px 4px rgba(0,0,0,0.1), 0 2px 8px ${bg}40`,
+                    };
                   }}
-                  customStyle={( val ) => ( { backgroundColor: getConfirmationColor( val ) } )}
                 />
                 <BarChartCard
                   title="Show-up rate by setter"
                   data={showupData}
                   kind="showup"
                   animate={animateBars}
-                  colorClass={( val ) => {
-                    const color = getShowUpColor( val );
-                    return `shadow-[inset_0_-2px_4px_rgba(0,0,0,0.1),0_2px_8px_${color}40]`;
+                  customStyle={( val ) => {
+                    const bg = getShowUpColor( val );
+                    return {
+                      backgroundColor: bg,
+                      boxShadow: `inset 0 -2px 4px rgba(0,0,0,0.1), 0 2px 8px ${bg}40`,
+                    };
                   }}
-                  customStyle={( val ) => ( { backgroundColor: getShowUpColor( val ) } )}
                 />
               </>
             )}

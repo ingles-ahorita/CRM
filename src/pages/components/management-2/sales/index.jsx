@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import * as DateHelpers from "../../../../utils/dateHelpers";
 import { useRevenueGoal } from "../../../../hooks/useRevenueGoal";
 import { supabase } from "../../../../lib/supabaseClient";
@@ -21,17 +22,11 @@ import {
   PERFORMANCE_SOFT_BG_CLASSES,
 } from "../../../../utils/performanceBenchmarks";
 
-const MONEY_AGE_DEFS = [
+/** Unified income pie: PIF slice takes priority; remaining new vs old by agreement start in range. */
+const UNIFIED_INCOME_MIX_DEFS = [
+  { key: "pif", label: "PIF", color: PERFORMANCE_COLORS.GREAT },
   { key: "new", label: "New income", color: PERFORMANCE_COLORS.GOOD },
   { key: "old", label: "Old income", color: PERFORMANCE_COLORS.OK },
-];
-
-const NEW_INCOME_TYPE_DEFS = [
-  { key: "pif", label: "PIF", color: PERFORMANCE_COLORS.GOOD },
-  { key: "pip", label: "PIP", color: PERFORMANCE_COLORS.OK },
-  { key: "paymentPlan", label: "Payment plan", color: PERFORMANCE_COLORS.BAD },
-  { key: "payoff", label: "Payoff", color: PERFORMANCE_COLORS.GREAT },
-  { key: "other", label: "Other", color: "#64748B" },
 ];
 
 const TIME_RANGE_ITEMS = [
@@ -203,6 +198,135 @@ function sumNetTransactions(rows, startISO, endISO) {
     const isRefund = action === "refund" || Number(row?.amount_in_cents || 0) < 0;
     return sum + (isRefund ? -txAmountUsd(row) : txAmountUsd(row));
   }, 0);
+}
+
+function createEmptyIncomeMixAgg() {
+  return {
+    pif: { usd: 0, tx: 0 },
+    new: { usd: 0, tx: 0 },
+    old: { usd: 0, tx: 0 },
+    pifNew: { usd: 0, tx: 0 },
+    pifOld: { usd: 0, tx: 0 },
+  };
+}
+
+/** PIF vs new-start vs older agreements (same rules for net and gross lines). */
+function incomeMixClassifyTx(tx, ctx) {
+  const {
+    offersById,
+    payoffOfferIds,
+    treatmentByPurchaseId,
+    outcomeByMainPurchaseId,
+    outcomeByPayoffPurchaseId,
+    resolvePurchase,
+    startISO,
+    endISO,
+  } = ctx;
+  const purchase = resolvePurchase(tx);
+  const purchaseId = purchase?.kajabi_purchase_id != null ? String(purchase.kajabi_purchase_id) : null;
+  const txPurchaseId = tx?.kajabi_purchase_id != null ? String(tx.kajabi_purchase_id) : null;
+  const offerId = String(purchase?.kajabi_offer_id || tx?.kajabi_offer_id || "unknown");
+  const offer = offersById[offerId] || KAJABI_OFFER_FALLBACKS[offerId] || null;
+  const paymentType = String(purchase?.payment_type || "").toLowerCase();
+  const treatment = txPurchaseId ? treatmentByPurchaseId[txPurchaseId] : null;
+  const linkedPayoffOutcome = txPurchaseId ? outcomeByPayoffPurchaseId[txPurchaseId] : null;
+  const linkedMainOutcome = purchaseId ? outcomeByMainPurchaseId[purchaseId] : null;
+  const offerName = String(offer?.name || "").toLowerCase();
+
+  const isPayoff =
+    treatment === "payoff" ||
+    Boolean(linkedPayoffOutcome) ||
+    payoffOfferIds.has(offerId);
+  const isLockIn = treatment === "lock_in" || offerName.includes("lock-in") || offerName.includes("lock in");
+  const installments = Number(offer?.installments);
+  const hasInstallments = Number.isFinite(installments) && installments > 1;
+  const isPaymentPlan = !isPayoff && (
+    paymentType.includes("multipay") ||
+    paymentType.includes("payment plan") ||
+    hasInstallments
+  );
+  const isPif = !isPayoff && !isPaymentPlan && !isLockIn;
+
+  const agreementDate =
+    linkedPayoffOutcome?.purchase_date ||
+    linkedMainOutcome?.purchase_date ||
+    (!isPayoff ? purchase?.created_at_kajabi : null);
+  const agreementStartedInRange =
+    agreementDate != null &&
+    agreementDate >= startISO &&
+    agreementDate <= endISO;
+
+  return { isPif, agreementStartedInRange };
+}
+
+function bumpIncomeMixAgg(mixAgg, signedUsd, { isPif, agreementStartedInRange }) {
+  const bump = (key) => {
+    mixAgg[key].usd += signedUsd;
+    mixAgg[key].tx += 1;
+  };
+  if (isPif) {
+    bump("pif");
+    if (agreementStartedInRange) {
+      mixAgg.pifNew.usd += signedUsd;
+      mixAgg.pifNew.tx += 1;
+    } else {
+      mixAgg.pifOld.usd += signedUsd;
+      mixAgg.pifOld.tx += 1;
+    }
+  } else if (agreementStartedInRange) {
+    bump("new");
+  } else {
+    bump("old");
+  }
+}
+
+function netLineContributionForIncomeMix(tx, startISO, endISO) {
+  const resolvedInRange =
+    tx?.payment_resolved_at != null &&
+    tx.payment_resolved_at >= startISO &&
+    tx.payment_resolved_at <= endISO &&
+    (tx.effective_date == null || tx.effective_date < startISO || tx.effective_date > endISO);
+  const inRange =
+    (tx?.effective_date >= startISO && tx.effective_date <= endISO) ||
+    resolvedInRange;
+  if (!inRange) return null;
+
+  const action = resolvedInRange
+    ? "charge"
+    : String(tx?.action || (Number(tx?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
+  if (!resolvedInRange && isFailedTransaction(tx, action)) return null;
+
+  const isRefund = action === "refund" || Number(tx?.amount_in_cents || 0) < 0;
+  const amt = txAmountUsd(tx);
+  return { signedUsd: isRefund ? -amt : amt };
+}
+
+function grossLineContributionForIncomeMix(tx, startISO, endISO) {
+  if (!tx?.created_at_kajabi || tx.created_at_kajabi < startISO || tx.created_at_kajabi > endISO) return null;
+  const action = String(tx?.action || (Number(tx?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
+  const isRefund = action === "refund" || Number(tx?.amount_in_cents || 0) < 0;
+  if (isRefund || isFailedTransaction(tx, action)) return null;
+  return { signedUsd: txAmountUsd(tx) };
+}
+
+function incomeMixAggToSlicesModel(agg) {
+  const slices = UNIFIED_INCOME_MIX_DEFS.map((def) => {
+    const bucket = agg[def.key];
+    return {
+      key: def.key,
+      label: def.label,
+      color: def.color,
+      valueCents: Math.round((Number(bucket?.usd) || 0) * 100),
+      txCount: Number(bucket?.tx) || 0,
+    };
+  });
+  const pifBreakdown = {
+    newUsd: Number(agg.pifNew?.usd) || 0,
+    newTx: Number(agg.pifNew?.tx) || 0,
+    oldUsd: Number(agg.pifOld?.usd) || 0,
+    oldTx: Number(agg.pifOld?.tx) || 0,
+  };
+  return { slices, pifBreakdown };
 }
 
 const PAYOFF_OFFER_IDS = new Set(["2150799973"]);
@@ -517,38 +641,16 @@ function pct(value, total) {
   return Math.round(((Number(value) / Number(total)) * 1000)) / 10;
 }
 
-function rowsFromTotals(defs, totals) {
-  return defs.map((def) => ({
-    ...def,
-    valueCents: Math.round((Number(totals?.[def.key]) || 0) * 100),
-  }));
-}
-
-function buildIncomeMixCharts({
-  newIncomeByType = {},
-  allIncomeByAge = {},
-  payoffIncomeByAge = {},
-} = {}) {
-  return [
-    {
-      key: "new-income",
-      title: "New income mix",
-      subtitle: "Agreements started in this range: PIF, PIP, plans, payoffs.",
-      rows: rowsFromTotals(NEW_INCOME_TYPE_DEFS, newIncomeByType),
-    },
-    {
-      key: "all-income",
-      title: "All income mix",
-      subtitle: "All collected revenue split by new vs old agreement money.",
-      rows: rowsFromTotals(MONEY_AGE_DEFS, allIncomeByAge),
-    },
-    {
-      key: "payoff-income",
-      title: "Payoff income mix",
-      subtitle: "Payoff revenue split by original agreement date.",
-      rows: rowsFromTotals(MONEY_AGE_DEFS, payoffIncomeByAge),
-    },
-  ];
+function emptyUnifiedIncomeMix() {
+  const empty = incomeMixAggToSlicesModel(createEmptyIncomeMixAgg());
+  return {
+    slicesNet: empty.slices.map((s) => ({ ...s })),
+    slicesGross: empty.slices.map((s) => ({ ...s })),
+    pifBreakdownNet: { ...empty.pifBreakdown },
+    pifBreakdownGross: { ...empty.pifBreakdown },
+    netTotalCents: 0,
+    grossTotalCents: 0,
+  };
 }
 
 function SectionBadge({ children }) {
@@ -802,125 +904,63 @@ function RefundsPanel({
   );
 }
 
-function IncomeMixCard({ title, subtitle, rows, loading, error }) {
-  const totalCents = rows.reduce((sum, row) => sum + row.valueCents, 0);
-  const visibleRows = totalCents > 0 ? rows.filter((row) => row.valueCents > 0) : rows;
-  const chartData = visibleRows.map((row) => ({
-    name: row.label,
-    value: row.valueCents,
-    color: row.color,
-  }));
-
+/** Tooltip body for income mix pie (used with fixed-position portal following cursor). */
+function IncomeMixTooltipCard({ p }) {
+  if (!p) return null;
+  const tx = Number(p.txCount) || 0;
+  const bd = p.pifBreakdown;
+  const rawCents = p.displayCents != null ? Number(p.displayCents) : Number(p.value);
+  const valueCents = Number.isFinite(rawCents) ? rawCents : 0;
   return (
-    <div className="flex min-h-[290px] flex-col rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
-      <div className="flex min-h-[54px] flex-col gap-1 pb-2">
-        <div className="text-[11px] font-bold uppercase tracking-wide text-slate-900">
-          {title}
+    <div
+      className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_24px_rgba(15,23,42,0.14)]"
+      style={{ fontSize: "10px", outline: "none", maxWidth: "14rem" }}
+    >
+      <p className="text-[11px] font-extrabold text-slate-950">{p.name}</p>
+      <p className="mt-1 text-[12px] font-extrabold text-slate-800">
+        {formatCents(valueCents)}
+      </p>
+      <p className="mt-0.5 text-[10px] font-semibold text-slate-600">
+        {tx} transaction{tx !== 1 ? "s" : ""}
+      </p>
+      {p.sliceKey === "pif" && bd ? (
+        <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-[10px] font-semibold text-slate-600">
+          <p>
+            New agreements: {formatUsd(bd.newUsd)} ({bd.newTx} tx)
+          </p>
+          <p>
+            Old agreements: {formatUsd(bd.oldUsd)} ({bd.oldTx} tx)
+          </p>
         </div>
-        <p className="text-[10px] font-medium text-slate-500 leading-snug">
-          {subtitle}
-        </p>
-      </div>
-
-      {loading ? (
-        <div className="mt-2 flex flex-1 flex-col gap-2">
-          <div className="flex h-[112px] items-center justify-center">
-            {shimmer("h-24 w-24 rounded-full")}
-          </div>
-          <div className="flex flex-col justify-center gap-2">
-            <div className="space-y-1.5">
-              {shimmer("h-2.5 w-28")}
-              {shimmer("h-6 w-32")}
-            </div>
-            <div className="space-y-2">
-              {[1, 2].map(i => (
-                <div key={i} className="flex justify-between">
-                  {shimmer("h-2.5 w-20")}
-                  {shimmer("h-2.5 w-12")}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : error ? (
-        <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-[12px] font-semibold text-red-700">
-          {error}
-        </div>
-      ) : totalCents === 0 ? (
-        <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-[12px] font-semibold text-slate-500">
-          No income found in selected range.
-        </div>
-      ) : (
-        <div className="mt-2 flex flex-1 flex-col gap-2">
-          <div className="mx-auto flex h-[112px] w-[112px] items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={30}
-                  outerRadius={52}
-                  paddingAngle={1.5}
-                  stroke="none"
-                >
-                  {chartData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value, name) => [formatCents(value), name]}
-                  wrapperStyle={{ outline: "none" }}
-                  contentStyle={{
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "10px",
-                    backgroundColor: "#fff",
-                    boxShadow: "0 8px 24px rgba(15,23,42,0.14)",
-                    fontSize: "10px",
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="flex min-w-0 flex-col justify-center">
-            <div className="min-h-[48px] rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-              <p className="text-[8px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
-                Total income in range
-              </p>
-              <p className="mt-0.5 text-[18px] font-extrabold leading-none text-slate-950">
-                {formatCents(totalCents)}
-              </p>
-            </div>
-
-            <div className="mt-2 min-h-[56px] divide-y divide-slate-100 rounded-xl border border-slate-100">
-              {visibleRows.map((row) => {
-                return (
-                  <div key={row.key} className="flex items-start justify-between gap-3 px-2 py-1.5">
-                    <div className="flex min-w-0 items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-semibold text-slate-800 leading-none">{row.label}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-extrabold tabular-nums text-slate-950 leading-none">
-                        {formatCents(row.valueCents)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
+function incomeMixSectorPayload(sector) {
+  const raw = sector?.payload ?? sector;
+  return raw && typeof raw === "object" ? raw : null;
+}
+
+function clampIncomeTooltipPosition(clientX, clientY) {
+  if (typeof window === "undefined") {
+    return { left: clientX + 14, top: clientY + 14 };
+  }
+  const pad = 10;
+  const offset = 14;
+  const estW = 240;
+  const estH = 200;
+  let left = clientX + offset;
+  let top = clientY + offset;
+  left = Math.min(left, window.innerWidth - estW - pad);
+  top = Math.min(top, window.innerHeight - estH - pad);
+  left = Math.max(pad, left);
+  top = Math.max(pad, top);
+  return { left, top };
+}
+
 function IncomeMixPanel({
-  charts,
+  unifiedMix,
   range,
   setRange,
   customStart,
@@ -930,6 +970,66 @@ function IncomeMixPanel({
   loading,
   error,
 }) {
+  const chartHitRef = useRef(null);
+  const [incomeTotalBasis, setIncomeTotalBasis] = useState("net");
+  const rows =
+    incomeTotalBasis === "gross"
+      ? unifiedMix?.slicesGross || []
+      : unifiedMix?.slicesNet || [];
+  const sliceSumCents = rows.reduce((sum, row) => sum + row.valueCents, 0);
+  const netHeadlineCents = Number(unifiedMix?.netTotalCents) || 0;
+  const grossHeadlineCents = Number(unifiedMix?.grossTotalCents) || 0;
+  const headlineCents = incomeTotalBasis === "gross" ? grossHeadlineCents : netHeadlineCents;
+  const pifBreakdown =
+    incomeTotalBasis === "gross"
+      ? unifiedMix?.pifBreakdownGross
+      : unifiedMix?.pifBreakdownNet;
+  const pieRows = rows.filter((row) => row.valueCents > 0);
+  const chartData = pieRows.map((row) => ({
+    name: row.label,
+    value: Math.max(0, row.valueCents),
+    displayCents: row.valueCents,
+    color: row.color,
+    txCount: row.txCount,
+    sliceKey: row.key,
+    pifBreakdown: row.key === "pif" ? pifBreakdown : null,
+  }));
+  const hasPieSlices = chartData.length > 0;
+
+  const [incomeCursorTip, setIncomeCursorTip] = useState(null);
+
+  useEffect(() => {
+    if (
+      loading ||
+      error ||
+      (sliceSumCents === 0 && netHeadlineCents === 0 && grossHeadlineCents === 0)
+    ) {
+      setIncomeCursorTip(null);
+    }
+  }, [loading, error, sliceSumCents, netHeadlineCents, grossHeadlineCents, incomeTotalBasis]);
+
+  useEffect(() => {
+    if (!incomeCursorTip) return undefined;
+    const closeIfOutsideChart = (e) => {
+      const r = chartHitRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const { clientX: x, clientY: y } = e;
+      if (x < r.left || x > r.right || y < r.top || y > r.bottom) {
+        setIncomeCursorTip(null);
+      }
+    };
+    window.addEventListener("pointermove", closeIfOutsideChart, { passive: true });
+    return () => window.removeEventListener("pointermove", closeIfOutsideChart);
+  }, [incomeCursorTip]);
+
+  const handleIncomePiePointer = (sector, _index, e) => {
+    const p = incomeMixSectorPayload(sector);
+    if (!p?.name) return;
+    setIncomeCursorTip({ clientX: e.clientX, clientY: e.clientY, p });
+  };
+
+  const clearIncomeCursorTip = () => setIncomeCursorTip(null);
+
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
       <div className="flex items-start justify-between gap-2 pb-2">
@@ -938,6 +1038,9 @@ function IncomeMixPanel({
         </div>
         <SectionBadge>Kajabi revenue mix</SectionBadge>
       </div>
+      <p className="pb-2 text-[11px] font-medium leading-snug text-slate-500">
+        Helps you see upfront (PIF) revenue next to dollars from newer agreements versus longer-running ones.
+      </p>
       <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
         <SegmentedTabs
           items={TIME_RANGE_ITEMS}
@@ -966,18 +1069,127 @@ function IncomeMixPanel({
         </div>
       ) : null}
 
-      <div className="mt-2 grid grid-cols-1 gap-2 xl:grid-cols-3">
-        {charts.map((chart) => (
-          <IncomeMixCard
-            key={chart.key}
-            title={chart.title}
-            subtitle={chart.subtitle}
-            rows={chart.rows}
-            loading={loading}
-            error={error}
-          />
-        ))}
-      </div>
+      {loading ? (
+        <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-stretch">
+          <div className="flex h-[200px] flex-1 items-center justify-center">
+            {shimmer("h-36 w-36 rounded-full")}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+            <div className="space-y-1.5">
+              {shimmer("h-2.5 w-28")}
+              {shimmer("h-6 w-32")}
+            </div>
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex justify-between">
+                  {shimmer("h-2.5 w-20")}
+                  {shimmer("h-2.5 w-12")}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : error ? (
+        <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-[12px] font-semibold text-red-700">
+          {error}
+        </div>
+      ) : sliceSumCents === 0 && netHeadlineCents === 0 && grossHeadlineCents === 0 ? (
+        <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-[12px] font-semibold text-slate-500">
+          No income found in selected range.
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+          <div
+            ref={chartHitRef}
+            className="mx-auto flex h-[200px] w-[200px] shrink-0 items-center justify-center"
+            onMouseLeave={clearIncomeCursorTip}
+          >
+            {hasPieSlices ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={0}
+                    outerRadius={78}
+                    paddingAngle={1.5}
+                    stroke="none"
+                    onMouseEnter={handleIncomePiePointer}
+                    onMouseMove={handleIncomePiePointer}
+                    onMouseLeave={clearIncomeCursorTip}
+                  >
+                    {chartData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full w-full items-center justify-center px-2 text-center text-[10px] font-semibold leading-snug text-slate-400">
+                No positive slice totals to chart—see legend for signed amounts.
+              </div>
+            )}
+          </div>
+
+          {incomeCursorTip && typeof document !== "undefined"
+            ? createPortal(
+                <div
+                  className="pointer-events-none fixed z-[9999]"
+                  style={clampIncomeTooltipPosition(
+                    incomeCursorTip.clientX,
+                    incomeCursorTip.clientY,
+                  )}
+                >
+                  <IncomeMixTooltipCard p={incomeCursorTip.p} />
+                </div>,
+                document.body,
+              )
+            : null}
+          <div className="flex min-w-0 flex-1 flex-col justify-center">
+            <div className="min-h-[48px] rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[8px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+                  {incomeTotalBasis === "gross" ? "Total gross income" : "Total net income"}
+                </p>
+                <select
+                  value={incomeTotalBasis}
+                  onChange={(e) => setIncomeTotalBasis(e.target.value)}
+                  className="h-7 shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
+                  aria-label="Income total basis"
+                >
+                  <option value="net">Net</option>
+                  <option value="gross">Gross</option>
+                </select>
+              </div>
+              <p className="mt-0.5 text-[18px] font-extrabold leading-none text-slate-950">
+                {formatCents(headlineCents)}
+              </p>
+            </div>
+
+            <div className="mt-2 min-h-[56px] divide-y divide-slate-100 rounded-xl border border-slate-100">
+              {rows.map((row) => (
+                <div key={row.key} className="flex items-start justify-between gap-3 px-2 py-1.5">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-semibold leading-none text-slate-800">{row.label}</p>
+                      <p className="mt-0.5 text-[9px] font-medium text-slate-400">
+                        {row.txCount} tx
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-extrabold tabular-nums leading-none text-slate-950">
+                      {formatCents(row.valueCents)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1507,7 +1719,7 @@ export default function Sales() {
   );
   const [dailyLoading, setDailyLoading] = useState(true);
   const [dailyError, setDailyError] = useState(null);
-  const [incomeMixCharts, setIncomeMixCharts] = useState(() => buildIncomeMixCharts());
+  const [incomeMixUnified, setIncomeMixUnified] = useState(() => emptyUnifiedIncomeMix());
   const [forecastCards, setForecastCards] = useState([]);
   const [forecastDailySeries, setForecastDailySeries] = useState([]);
   const [productRows, setProductRows] = useState([]);
@@ -1830,10 +2042,7 @@ export default function Sales() {
       setMixError(null);
 
       try {
-        const { start, end } =
-          range === "custom"
-            ? normalizeCustomBounds(customStart, customEnd)
-            : getRangeBounds(range);
+        const { start, end } = getSnapshotRangeBounds(range, customStart, customEnd);
         const startISO = start.toISOString();
         const endISO = end.toISOString();
 
@@ -1940,84 +2149,52 @@ export default function Sales() {
           }) || matches[0] || null;
         }
 
-        const newIncomeByType = { pif: 0, pip: 0, paymentPlan: 0, payoff: 0, other: 0 };
-        const allIncomeByAge = { new: 0, old: 0 };
-        const payoffIncomeByAge = { new: 0, old: 0 };
+        const classifyCtx = {
+          offersById,
+          payoffOfferIds,
+          treatmentByPurchaseId,
+          outcomeByMainPurchaseId,
+          outcomeByPayoffPurchaseId,
+          resolvePurchase,
+          startISO,
+          endISO,
+        };
 
+        const netAgg = createEmptyIncomeMixAgg();
         for (const tx of txRows) {
-          if (!isChargeInRange(tx, startISO, endISO)) continue;
-
-          const amount = txAmountUsd(tx);
-          const purchase = resolvePurchase(tx);
-          const purchaseId = purchase?.kajabi_purchase_id != null ? String(purchase.kajabi_purchase_id) : null;
-          const txPurchaseId = tx?.kajabi_purchase_id != null ? String(tx.kajabi_purchase_id) : null;
-          const offerId = String(purchase?.kajabi_offer_id || tx?.kajabi_offer_id || "unknown");
-          const offer = offersById[offerId] || KAJABI_OFFER_FALLBACKS[offerId] || null;
-          const paymentType = String(purchase?.payment_type || "").toLowerCase();
-          const treatment = txPurchaseId ? treatmentByPurchaseId[txPurchaseId] : null;
-          const linkedPayoffOutcome = txPurchaseId ? outcomeByPayoffPurchaseId[txPurchaseId] : null;
-          const linkedMainOutcome = purchaseId ? outcomeByMainPurchaseId[purchaseId] : null;
-          const offerName = String(offer?.name || "").toLowerCase();
-
-          const isPayoff =
-            treatment === "payoff" ||
-            Boolean(linkedPayoffOutcome) ||
-            payoffOfferIds.has(offerId);
-          const isLockIn = treatment === "lock_in" || offerName.includes("lock-in") || offerName.includes("lock in");
-          const installments = Number(offer?.installments);
-          const hasInstallments = Number.isFinite(installments) && installments > 1;
-          const isPaymentPlan = !isPayoff && (
-            paymentType.includes("multipay") ||
-            paymentType.includes("payment plan") ||
-            hasInstallments
-          );
-          const paymentsMade = Number(purchase?.multipay_payments_made);
-          const hasPaymentProgress =
-            isPaymentPlan &&
-            Number.isFinite(paymentsMade) &&
-            Number.isFinite(installments) &&
-            installments > 1;
-          const isPip = hasPaymentProgress && paymentsMade > 0 && paymentsMade < installments;
-          const isPif = !isPayoff && !isPaymentPlan && !isLockIn;
-
-          const agreementDate =
-            linkedPayoffOutcome?.purchase_date ||
-            linkedMainOutcome?.purchase_date ||
-            (!isPayoff ? purchase?.created_at_kajabi : null);
-          const agreementStartedInRange =
-            agreementDate != null &&
-            agreementDate >= startISO &&
-            agreementDate <= endISO;
-          const ageBucket = agreementStartedInRange ? "new" : "old";
-
-          allIncomeByAge[ageBucket] += amount;
-          if (isPayoff) {
-            payoffIncomeByAge[ageBucket] += amount;
-          }
-          if (agreementStartedInRange) {
-            const typeBucket = isPayoff
-              ? "payoff"
-              : isPip
-                ? "pip"
-                : isPaymentPlan
-                ? "paymentPlan"
-                : isPif
-                  ? "pif"
-                  : "other";
-            newIncomeByType[typeBucket] += amount;
-          }
+          const line = netLineContributionForIncomeMix(tx, startISO, endISO);
+          if (!line) continue;
+          const cls = incomeMixClassifyTx(tx, classifyCtx);
+          bumpIncomeMixAgg(netAgg, line.signedUsd, cls);
         }
 
+        const grossAgg = createEmptyIncomeMixAgg();
+        for (const tx of txRows) {
+          const line = grossLineContributionForIncomeMix(tx, startISO, endISO);
+          if (!line) continue;
+          const cls = incomeMixClassifyTx(tx, classifyCtx);
+          bumpIncomeMixAgg(grossAgg, line.signedUsd, cls);
+        }
+
+        const netTotalCents = Math.round(sumNetTransactions(txRows, startISO, endISO) * 100);
+        const grossTotalCents = Math.round(sumGrossTransactions(txRows, startISO, endISO) * 100);
+
+        const netModel = incomeMixAggToSlicesModel(netAgg);
+        const grossModel = incomeMixAggToSlicesModel(grossAgg);
+
         if (!cancelled) {
-          setIncomeMixCharts(buildIncomeMixCharts({
-            newIncomeByType,
-            allIncomeByAge,
-            payoffIncomeByAge,
-          }));
+          setIncomeMixUnified({
+            slicesNet: netModel.slices,
+            slicesGross: grossModel.slices,
+            pifBreakdownNet: netModel.pifBreakdown,
+            pifBreakdownGross: grossModel.pifBreakdown,
+            netTotalCents,
+            grossTotalCents,
+          });
         }
       } catch (err) {
         if (!cancelled) {
-          setIncomeMixCharts(buildIncomeMixCharts());
+          setIncomeMixUnified(emptyUnifiedIncomeMix());
           setMixError(err?.message || "Failed to load income mix data");
         }
       } finally {
@@ -2104,27 +2281,6 @@ export default function Sales() {
             active: offer?.active === true,
           };
         });
-
-        // #region agent log
-        fetch("http://127.0.0.1:7823/ingest/14419534-cddc-4300-86cb-ca37589b397e", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73f40b" },
-          body: JSON.stringify({
-            sessionId: "73f40b",
-            location: "sales/index.jsx:loadProductMixData",
-            message: "Sales tab Sales by Product / Offer",
-            data: {
-              productStatusFilter,
-              productDateFilter,
-              offersRawCount: offersRaw.length,
-              rowsAfterStatusFilter: rows.length,
-              activeStrictEqTrue: offersRaw.filter((o) => o?.active === true).length,
-            },
-            timestamp: Date.now(),
-            hypothesisId: "A",
-          }),
-        }).catch(() => {});
-        // #endregion
 
         if (!cancelled) {
           setProductRows(rows);
@@ -2298,7 +2454,7 @@ export default function Sales() {
         </div>
         <div className="col-span-4 flex flex-col gap-3">
           <IncomeMixPanel
-            charts={incomeMixCharts}
+            unifiedMix={incomeMixUnified}
             range={range}
             setRange={setRange}
             customStart={customStart}

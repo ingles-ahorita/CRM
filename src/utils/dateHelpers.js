@@ -1,5 +1,7 @@
-export { fromZonedTime, toZonedTime, format, formatInTimeZone } from 'date-fns-tz';
-import { startOfMonth, endOfMonth, getYear, getMonth, parseISO, addDays, subDays, subWeeks } from 'date-fns';
+import { fromZonedTime, toZonedTime, format, formatInTimeZone } from 'date-fns-tz';
+import { startOfMonth, endOfMonth, parseISO, addDays, subDays, subWeeks } from 'date-fns';
+
+export { fromZonedTime, toZonedTime, format, formatInTimeZone };
 
 /**
  * Default timezone for normalization (can be changed based on business needs)
@@ -284,9 +286,6 @@ export function formatTimeWithRelative(dateString, timezone) {
   hour12: false,
   timeZone: timezone
   });
-  
-  const diffMs = Date.now() - date;
-  const diffMinutes = Math.floor(diffMs / 60000);
   
   return timeStr;
 }
