@@ -205,8 +205,6 @@ function createEmptyIncomeMixAgg() {
     pif: { usd: 0, tx: 0 },
     new: { usd: 0, tx: 0 },
     old: { usd: 0, tx: 0 },
-    pifNew: { usd: 0, tx: 0 },
-    pifOld: { usd: 0, tx: 0 },
   };
 }
 
@@ -245,7 +243,11 @@ function incomeMixClassifyTx(tx, ctx) {
     paymentType.includes("payment plan") ||
     hasInstallments
   );
-  const isPif = !isPayoff && !isPaymentPlan && !isLockIn;
+  const outcomePif =
+    typeof linkedMainOutcome?.PIF === "boolean" ? linkedMainOutcome.PIF : null;
+  const isPif = !isPayoff && !isLockIn && (
+    outcomePif != null ? outcomePif : !isPaymentPlan
+  );
 
   const agreementDate =
     linkedPayoffOutcome?.purchase_date ||
@@ -266,13 +268,6 @@ function bumpIncomeMixAgg(mixAgg, signedUsd, { isPif, agreementStartedInRange })
   };
   if (isPif) {
     bump("pif");
-    if (agreementStartedInRange) {
-      mixAgg.pifNew.usd += signedUsd;
-      mixAgg.pifNew.tx += 1;
-    } else {
-      mixAgg.pifOld.usd += signedUsd;
-      mixAgg.pifOld.tx += 1;
-    }
   } else if (agreementStartedInRange) {
     bump("new");
   } else {
@@ -320,13 +315,7 @@ function incomeMixAggToSlicesModel(agg) {
       txCount: Number(bucket?.tx) || 0,
     };
   });
-  const pifBreakdown = {
-    newUsd: Number(agg.pifNew?.usd) || 0,
-    newTx: Number(agg.pifNew?.tx) || 0,
-    oldUsd: Number(agg.pifOld?.usd) || 0,
-    oldTx: Number(agg.pifOld?.tx) || 0,
-  };
-  return { slices, pifBreakdown };
+  return { slices };
 }
 
 const PAYOFF_OFFER_IDS = new Set(["2150799973"]);
@@ -646,8 +635,6 @@ function emptyUnifiedIncomeMix() {
   return {
     slicesNet: empty.slices.map((s) => ({ ...s })),
     slicesGross: empty.slices.map((s) => ({ ...s })),
-    pifBreakdownNet: { ...empty.pifBreakdown },
-    pifBreakdownGross: { ...empty.pifBreakdown },
     netTotalCents: 0,
     grossTotalCents: 0,
   };
@@ -908,7 +895,6 @@ function RefundsPanel({
 function IncomeMixTooltipCard({ p }) {
   if (!p) return null;
   const tx = Number(p.txCount) || 0;
-  const bd = p.pifBreakdown;
   const rawCents = p.displayCents != null ? Number(p.displayCents) : Number(p.value);
   const valueCents = Number.isFinite(rawCents) ? rawCents : 0;
   return (
@@ -923,16 +909,6 @@ function IncomeMixTooltipCard({ p }) {
       <p className="mt-0.5 text-[10px] font-semibold text-slate-600">
         {tx} transaction{tx !== 1 ? "s" : ""}
       </p>
-      {p.sliceKey === "pif" && bd ? (
-        <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-[10px] font-semibold text-slate-600">
-          <p>
-            New agreements: {formatUsd(bd.newUsd)} ({bd.newTx} tx)
-          </p>
-          <p>
-            Old agreements: {formatUsd(bd.oldUsd)} ({bd.oldTx} tx)
-          </p>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -980,10 +956,6 @@ function IncomeMixPanel({
   const netHeadlineCents = Number(unifiedMix?.netTotalCents) || 0;
   const grossHeadlineCents = Number(unifiedMix?.grossTotalCents) || 0;
   const headlineCents = incomeTotalBasis === "gross" ? grossHeadlineCents : netHeadlineCents;
-  const pifBreakdown =
-    incomeTotalBasis === "gross"
-      ? unifiedMix?.pifBreakdownGross
-      : unifiedMix?.pifBreakdownNet;
   const pieRows = rows.filter((row) => row.valueCents > 0);
   const chartData = pieRows.map((row) => ({
     name: row.label,
@@ -992,7 +964,6 @@ function IncomeMixPanel({
     color: row.color,
     txCount: row.txCount,
     sliceKey: row.key,
-    pifBreakdown: row.key === "pif" ? pifBreakdown : null,
   }));
   const hasPieSlices = chartData.length > 0;
 
@@ -1039,7 +1010,7 @@ function IncomeMixPanel({
         <SectionBadge>Kajabi revenue mix</SectionBadge>
       </div>
       <p className="pb-2 text-[11px] font-medium leading-snug text-slate-500">
-        Helps you see upfront (PIF) revenue next to dollars from newer agreements versus longer-running ones.
+        Helps you see PIF revenue alongside newer agreement income and longer-running agreement income.
       </p>
       <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
         <SegmentedTabs
@@ -2186,8 +2157,6 @@ export default function Sales() {
           setIncomeMixUnified({
             slicesNet: netModel.slices,
             slicesGross: grossModel.slices,
-            pifBreakdownNet: netModel.pifBreakdown,
-            pifBreakdownGross: grossModel.pifBreakdown,
             netTotalCents,
             grossTotalCents,
           });

@@ -1,5 +1,21 @@
 # AGENTS.md — Inglés Ahorita CRM
 
+## Agent session protocol
+
+Use this **same order** every time (mirrored in `.cursor/rules/session-boot.mdc`, always on for Cursor).
+
+1. **This file (`AGENTS.md`)** — Skim stack, structure, routing/API conventions, env vars, and domain tables before changing code.
+2. **Graphify rules** — **Every chat:** read `.agents/rules/graphify.md` and follow it.
+3. **Graphify report** — Read `graphify-out/GRAPH_REPORT.md` (god nodes + communities for the task) before deep-diving large files.
+4. **Skills** — When relevant, read before implementing:
+   - `.agents/skills/supabase/SKILL.md` — Supabase products, auth, RLS, migrations, clients.
+   - `.agents/skills/supabase-postgres-best-practices/SKILL.md` — Postgres/query performance.
+   - Graphify CLI workflow: `~/.agents/skills/graphify/SKILL.md` (user-level skill if installed).
+5. **Explore** — `grep` / read only what steps 1–4 pointed at; prefer graphify MCP/CLI over grep when cross-module (see graphify rules).
+6. **After substantive edits** — Run `graphify update .` so the graph and report stay accurate.
+
+---
+
 ## What this project is
 
 A sales CRM + commission management system for **Inglés Ahorita**, a Spanish-language English teaching business. The CRM tracks:
@@ -208,9 +224,10 @@ export default function MyPage() {
 
 ## Knowledge Graph (graphify)
 
-This project uses **graphify** to maintain a navigable knowledge graph of the architecture.
+Policy lives in **`.agents/rules/graphify.md`** (steps 2–3 of [Agent session protocol](#agent-session-protocol)); Cursor enforces via `.cursor/rules/session-boot.mdc`.
 
-- **Context**: Read `graphify-out/GRAPH_REPORT.md` at the start of a session for god nodes and community structure.
-- **Visualization**: Open `graphify-out/graph.html` in a browser for a 3D view of the codebase.
-- **Updates**: After modifying code, run `graphify update .` to keep the graph and report current.
-- **Queries**: Use `graphify query "..."` or `graphify explain "..."` for cross-module navigation.
+- **Rules**: `.agents/rules/graphify.md` — read every chat.
+- **Context**: `graphify-out/GRAPH_REPORT.md` — god nodes, communities.
+- **Visualization**: `graphify-out/graph.html` — optional 3D view.
+- **Updates**: `graphify update .` after substantive code changes.
+- **Queries**: graphify MCP, or `graphify query "..."` / `graphify explain "..."` — prefer over grep for cross-module navigation.

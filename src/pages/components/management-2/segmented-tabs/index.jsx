@@ -11,6 +11,8 @@ export default function SegmentedTabs({
   activeClassName = "",
   /** When true, tab buttons use inline-flex so labels + trailing badges align */
   tabInline = false,
+  /** When true, bar shrinks to content width instead of stretching full width */
+  fit = false,
 }) {
   const sizeClasses =
     size === "xs"
@@ -24,7 +26,8 @@ export default function SegmentedTabs({
   return (
     <div
       className={cx(
-        "flex max-w-full !w-full flex-nowrap items-stretch border justify-between border-slate-200/80 bg-slate-100/70 p-0.5 gap-0.5 shadow-inner",
+        "flex flex-nowrap items-stretch border border-slate-200/80 bg-slate-100/70 p-0.5 gap-0.5 shadow-inner",
+        fit ? "w-fit max-w-full" : "max-w-full !w-full justify-between",
         rounding,
         className,
       )}

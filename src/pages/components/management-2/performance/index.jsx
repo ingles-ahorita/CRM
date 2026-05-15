@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Calendar,
   Instagram,
   Link,
   Search,
@@ -13,13 +14,21 @@ import {
 import WorldMap from "react-svg-worldmap";
 import { supabase } from "../../../../lib/supabaseClient";
 import { getCountryFromPhone } from "../../../../utils/phoneNumberParser";
+import * as DateHelpers from "../../../../utils/dateHelpers";
+import SegmentedTabs from "../segmented-tabs";
 
 const FILTER_OPTIONS = [
   { id: "today", label: "Today" },
-  { id: "thisWeek", label: "This Week" },
-  { id: "thisMonth", label: "This Month" },
+  { id: "lastWeek", label: "Last wk" },
   { id: "mtd", label: "MTD" },
-  { id: "last30", label: "Last 30d" },
+  { id: "lastMonth", label: "Last mo" },
+  { id: "custom", label: "Custom" },
+];
+
+const ARM_FILTER_ITEMS = [
+  { id: "all", label: "All" },
+  { id: "organic", label: "Organic" },
+  { id: "ads", label: "Ads" },
 ];
 
 const COUNTRY_FLAGS = {
@@ -36,10 +45,20 @@ const COUNTRY_FLAGS = {
 
 const performanceDataCache = new Map();
 const SUPABASE_QUERY_TIMEOUT_MS = 12000;
+
+/** Canonical funnel paths — same as GoogleAnalyticsPage.jsx */
+const ADS_VSL_PATH = "/ads-new-masterclass-job";
+const ADS_OPT_IN_PATH = "/ads-opt-in-masterclass";
+const ORGANIC_VSL_PATH = "/masterclass-job";
+const ORGANIC_OPT_IN_PATHS = "/pro,/";
+const FUNNEL_LANDING_PATHS = [ADS_VSL_PATH, ADS_OPT_IN_PATH, ORGANIC_VSL_PATH, "/pro", "/"];
+const ADS_PAGE_PREFIX = "/ads";
+
 const COUNTRY_NAME_BY_CODE = {
   AR: "Argentina",
   BO: "Bolivia",
   BR: "Brazil",
+  CL: "Chile",
   CO: "Colombia",
   DO: "Dominican Republic",
   EC: "Ecuador",
@@ -63,8 +82,8 @@ const COUNTRY_CODE_BY_NAME = Object.entries(COUNTRY_NAME_BY_CODE).reduce((acc, [
   "dominican republic": "DO",
 });
 
-function cx ( ...classes ) {
-  return classes.filter( Boolean ).join( " " );
+function cx(...classes) {
+  return classes.filter(Boolean).join(" ");
 }
 
 function formatInt(n) {
@@ -74,6 +93,76 @@ function formatInt(n) {
 function formatPct(n, digits = 1) {
   const v = Number(n || 0);
   return `${v.toFixed(digits)}%`;
+}
+
+function funnelPct(numerator, denominator) {
+  const num = Number(numerator || 0);
+  const den = Number(denominator || 0);
+  if (den <= 0) return 0;
+  return Math.min(100, (num / den) * 100);
+}
+
+function isShowedUp(row) {
+  return row?.showed_up === true || row?.showed_up === "true";
+}
+
+function mapCountryMetrics(row, hasGaCountryOptIns) {
+  const optIns = hasGaCountryOptIns ? row.gaOptIns : row.crmOptIns;
+  return {
+    ...row,
+    optIns,
+    optInSource: hasGaCountryOptIns ? "GA call_booked by country" : "CRM bookings by phone country",
+    viewsToOptIn: funnelPct(optIns, row.views),
+    optInToBook: funnelPct(row.bookings, optIns),
+    bookToShow: funnelPct(row.shows, row.bookings),
+    showToClose: funnelPct(row.closes, row.shows),
+    endToEnd: funnelPct(row.closes, row.views),
+    aov: row.closes > 0 ? row.revenue / row.closes : 0,
+  };
+}
+
+function countryInsightRow(row) {
+  const code = String(row.code || "OTHER");
+  const name = COUNTRY_NAME_BY_CODE[code] || row.country || code;
+  return { code, name, flag: countryFlag(code) };
+}
+
+/** Insights use all countries with CRM data — not only the top-8-by-views table rows. */
+function buildCountryInsights(allCountryRows) {
+  const bestCountries = allCountryRows
+    .filter((r) => r.bookings >= 2 && r.shows > 0 && r.closes > 0)
+    .sort((a, b) => b.showToClose - a.showToClose || b.closes - a.closes)
+    .slice(0, 3)
+    .map((r) => ({
+      ...countryInsightRow(r),
+      metric: formatPct(r.showToClose),
+      metricLabel: "close / show",
+      sub: pluralCount(r.closes, "close"),
+    }));
+
+  // Any country with ≥1 booking; worst show-up first (0% with 0 shows included).
+  const underCountries = allCountryRows
+    .filter((r) => r.bookings >= 1)
+    .sort((a, b) => {
+      if (a.bookToShow !== b.bookToShow) return a.bookToShow - b.bookToShow;
+      if (a.shows !== b.shows) return a.shows - b.shows;
+      return b.bookings - a.bookings;
+    })
+    .slice(0, 3)
+    .map((r) => ({
+      ...countryInsightRow(r),
+      metric: formatPct(r.bookToShow),
+      metricLabel: "show-up",
+      sub: `${pluralCount(r.shows, "show")} / ${pluralCount(r.bookings, "booking")}`,
+      zeroShows: r.shows === 0,
+    }));
+
+  return { bestCountries, underCountries };
+}
+
+function pluralCount(count, singular, plural = `${singular}s`) {
+  const n = Number(count || 0);
+  return `${formatInt(n)} ${n === 1 ? singular : plural}`;
 }
 
 function formatUsd(n) {
@@ -86,6 +175,261 @@ function secondsToClock(seconds) {
   const m = Math.floor(s / 60);
   const rem = s % 60;
   return `${m}:${String(rem).padStart(2, "0")}`;
+}
+
+function formatRangeBoundsLabel(start, end) {
+  if (!start || !end) return "—";
+  const fmt = (d) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(d);
+  const startStr = fmt(start);
+  const endStr = fmt(end);
+  if (startStr === endStr) return startStr;
+  return `${startStr} – ${endStr}`;
+}
+
+/** Mirrors `metrics/index.jsx` MetricInfo — same sizing and hover panel. */
+function MetricInfo({ title, body }) {
+  return (
+    <span className="group relative inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-slate-300 text-[9px] font-semibold leading-none text-slate-500 cursor-default">
+      i
+      <span className="pointer-events-none invisible absolute right-0 top-full z-20 mt-1 w-[160px] rounded-md border border-slate-200 bg-white px-2 py-1 text-[9px] font-medium leading-snug text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.14)] group-hover:visible">
+        <span className="block text-[9px] font-semibold text-slate-900">{title}</span>
+        <span className="block">{body}</span>
+      </span>
+    </span>
+  );
+}
+
+function GaUnavailableNotice({ className = "" }) {
+  return (
+    <p className={cx("rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[9px] font-medium leading-snug text-slate-600", className)}>
+      Website stats unavailable. Connect Google Analytics (GA4_PROPERTY_ID + service account) for live funnel numbers.
+    </p>
+  );
+}
+
+function formatMetricValue(value, unavailable) {
+  if (unavailable) return "—";
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return formatInt(value);
+}
+
+/** Per-arm GA funnel snapshot — aligned with GoogleAnalyticsPage.jsx chart pairs */
+function buildArmSnapshot(vslViews, optInPageViews, vslSessions, optInSessions, bookingRate, vslConversion, callBooked) {
+  const vslWatched = Number(vslSessions || 0);
+  const optInsSessions = Number(optInSessions || 0);
+  return {
+    vslPageViews: Number(vslViews || 0),
+    optInPageViews: Number(optInPageViews || 0),
+    vslWatched,
+    optInsSessions,
+    callBooked: Number(callBooked || 0),
+    bookingRate,
+    vslConversion,
+    watchRate: optInsSessions > 0 ? (vslWatched / optInsSessions) * 100 : 0,
+  };
+}
+
+function isoDay(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function startOfUtcDay(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+}
+
+function endOfUtcDay(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
+/** Same range keys as management metrics */
+function getPerformanceRangeBounds(range, customStart = null, customEnd = null) {
+  const now = new Date();
+  const todayStart = startOfUtcDay(now);
+  const todayEnd = endOfUtcDay(now);
+
+  if (range === "lastWeek") {
+    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset(1);
+    return { start: weekStart, end: weekEnd };
+  }
+  if (range === "lastMonth") {
+    const previousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
+    const monthRange = DateHelpers.getMonthRangeInTimezone(previousMonth, DateHelpers.DEFAULT_TIMEZONE);
+    return { start: monthRange.startDate, end: monthRange.endDate };
+  }
+  if (range === "custom") {
+    return normalizeCustomBounds(customStart, customEnd);
+  }
+  if (range === "mtd") {
+    const monthRange = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
+    return { start: monthRange.startDate, end: now };
+  }
+  return { start: todayStart, end: todayEnd };
+}
+
+function normalizeCustomBounds(startDateText, endDateText) {
+  const fallback = getPerformanceRangeBounds("mtd");
+  if (!startDateText || !endDateText) return fallback;
+  const start = new Date(`${startDateText}T00:00:00.000Z`);
+  const end = new Date(`${endDateText}T23:59:59.999Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return fallback;
+  if (start > end) return fallback;
+  return { start, end };
+}
+
+function isAdsSource(row) {
+  const source = String(row?.source_type || "").toLowerCase();
+  return source.includes("ad") || source.includes("ads");
+}
+
+function matchesArmFilter(row, armFilter) {
+  if (armFilter === "all") return true;
+  const isAd = isAdsSource(row);
+  return armFilter === "ads" ? isAd : !isAd;
+}
+
+function pickArmMetric(organicVal, adsVal, armFilter) {
+  if (armFilter === "organic") return organicVal;
+  if (armFilter === "ads") return adsVal;
+  return organicVal + adsVal;
+}
+
+/**
+ * Maps an arm filter to GA page-path filter params so country / device / event
+ * breakdowns are restricted to that arm's funnel pages.
+ *   ads     → pagePath=/ads        (CONTAINS — matches /ads, /ads-*, etc.)
+ *   organic → excludePagePath=/ads (CONTAINS — everything outside the ads funnel)
+ *   all     → {} (whole property)
+ */
+function getArmPagePathParams(armFilter) {
+  if (armFilter === "ads") return { pagePath: ADS_PAGE_PREFIX };
+  if (armFilter === "organic") return { excludePagePath: ADS_PAGE_PREFIX };
+  return {};
+}
+
+function gaRows(payload) {
+  if (!payload || payload.mock) return [];
+  return payload.rows || [];
+}
+
+async function fetchGaJson(url) {
+  try {
+    const res = await fetch(url);
+    const text = await res.text();
+    let json = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      return { rows: [], mock: false, failed: true, error: "Invalid GA response" };
+    }
+    if (!res.ok) {
+      return {
+        rows: [],
+        mock: !!json.mock,
+        failed: true,
+        error: json.error || json.details || res.statusText,
+      };
+    }
+    if (json.mock) {
+      return { rows: [], mock: true };
+    }
+    return { ...json, rows: json.rows || [], mock: false };
+  } catch (err) {
+    return { rows: [], mock: false, failed: true, error: err?.message || "GA request failed" };
+  }
+}
+
+function gaApiUrl(startDate, endDate, params) {
+  return `/api/google-analytics?${new URLSearchParams({ startDate, endDate, ...params }).toString()}`;
+}
+
+function isGaConfigured(payloads) {
+  return payloads.some((payload) => payload && !payload.mock);
+}
+
+function sumGaDailyMetric(payload, field) {
+  return sumGaRows(payload, field);
+}
+
+function sumGaRows(payload, field) {
+  return gaRows(payload).reduce((sum, row) => sum + Number(row?.[field] || 0), 0);
+}
+
+function sumGaByPath(payload, paths) {
+  return gaRows(payload).reduce((total, row) => {
+    const byPath = row?.byPath || {};
+    return total + paths.reduce((sum, path) => sum + Number(byPath[path] || 0), 0);
+  }, 0);
+}
+
+function sumGaMetricRows(payload) {
+  return gaRows(payload).reduce((sum, row) => sum + Number(row?.metric || 0), 0);
+}
+
+function sumGaEventRows(payload) {
+  return gaRows(payload).reduce(
+    (sum, row) => sum + Number(row?.eventCount ?? row?.views ?? row?.metric ?? 0),
+    0,
+  );
+}
+
+function collectFunnelLandingPages(...payloads) {
+  const counts = new Map();
+  const addSessions = (rows) => {
+    (rows || []).forEach((row) => {
+      const daily = Number(row?.sessions || 0);
+      const byPath = row?.byPath;
+      if (byPath && Object.keys(byPath).length > 0) {
+        Object.entries(byPath).forEach(([path, val]) => {
+          if (!FUNNEL_LANDING_PATHS.includes(path)) return;
+          counts.set(path, (counts.get(path) || 0) + Number(val || 0));
+        });
+      } else if (row?.pagePath && FUNNEL_LANDING_PATHS.includes(row.pagePath)) {
+        counts.set(row.pagePath, (counts.get(row.pagePath) || 0) + daily);
+      }
+    });
+  };
+  payloads.forEach((payload) => addSessions(gaRows(payload)));
+  const sorted = [...counts.entries()]
+    .map(([page, sessions]) => ({ page, sessions }))
+    .sort((a, b) => b.sessions - a.sessions);
+  const total = sorted.reduce((sum, row) => sum + row.sessions, 0);
+  return sorted.map((row) => ({
+    ...row,
+    share: total > 0 ? (row.sessions / total) * 100 : 0,
+  }));
+}
+
+function weightedAvgSessionDuration(durationPayload, sessionsPayload) {
+  const durationRows = gaRows(durationPayload);
+  const sessionsRows = gaRows(sessionsPayload);
+  const sessionsByDate = {};
+  sessionsRows.forEach((row) => {
+    const date = row?.dimensions?.date || row?.date;
+    if (!date) return;
+    sessionsByDate[date] = (sessionsByDate[date] || 0) + Number(row?.metric ?? row?.sessions ?? 0);
+  });
+  let weightedSum = 0;
+  let totalSessions = 0;
+  durationRows.forEach((row) => {
+    const date = row?.dimensions?.date || row?.date;
+    const avgSec = Number(row?.metric ?? row?.averageSessionDuration ?? 0);
+    const sessions = sessionsByDate[date] || 0;
+    if (sessions > 0 && avgSec > 0) {
+      weightedSum += avgSec * sessions;
+      totalSessions += sessions;
+    }
+  });
+  if (totalSessions > 0) return weightedSum / totalSessions;
+  if (durationRows.length > 0) {
+    return durationRows.reduce((s, r) => s + Number(r?.metric || 0), 0) / durationRows.length;
+  }
+  return null;
 }
 
 function sourceIcon(name) {
@@ -115,27 +459,30 @@ function normalizeGaSource(rawSource) {
   return raw;
 }
 
-async function fetchPerformanceData(range, timezone) {
-  const cacheKey = `${range}:${timezone}`;
+function isAdsTrafficSource(name) {
+  const normalized = normalizeGaSource(name);
+  return normalized === "Meta Ads" || normalized === "Google Ads";
+}
+
+function matchesTrafficArm(name, armFilter) {
+  if (armFilter === "all") return true;
+  const isAd = isAdsTrafficSource(name);
+  return armFilter === "ads" ? isAd : !isAd;
+}
+
+async function fetchPerformanceData(range, timezone, customStart = null, customEnd = null, armFilter = "all") {
+  const cacheKey = `${range}:${timezone}:${customStart || ""}:${customEnd || ""}:${armFilter}`;
   const cached = performanceDataCache.get(cacheKey);
 
   if (cached) return cached;
 
-  const request = buildPerformanceData(range, timezone).catch((error) => {
+  const request = buildPerformanceData(range, timezone, customStart, customEnd, armFilter).catch((error) => {
     performanceDataCache.delete(cacheKey);
     throw error;
   });
 
   performanceDataCache.set(cacheKey, request);
   return request;
-}
-
-async function fetchSectionData(section, range, timezone) {
-  const data = await fetchPerformanceData(range, timezone);
-  return {
-    meta: data.meta,
-    [section]: data[section] || null,
-  };
 }
 
 async function runSupabaseQuery(queryFactory, label) {
@@ -161,52 +508,24 @@ async function runSupabaseQuery(queryFactory, label) {
   }
 }
 
-async function buildPerformanceData(range, timezone) {
-  const now = new Date();
-  const localStartOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-  const localEndOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-  const startOfWeekMonday = (d) => {
-    const copy = new Date(d);
-    const day = copy.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    copy.setDate(copy.getDate() + diff);
-    return localStartOfDay(copy);
-  };
-  const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-  const endOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-
-  let start = localStartOfDay(new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000));
-  let end = localEndOfDay(now);
-  if (range === "today") {
-    start = localStartOfDay(now);
-    end = localEndOfDay(now);
-  } else if (range === "thisWeek") {
-    start = startOfWeekMonday(now);
-    end = localEndOfDay(now);
-  } else if (range === "thisMonth") {
-    start = startOfMonth(now);
-    end = endOfMonth(now);
-  } else if (range === "mtd") {
-    start = startOfMonth(now);
-    end = localEndOfDay(now);
-  }
-
+async function buildPerformanceData(range, timezone, customStart = null, customEnd = null, armFilter = "all") {
+  const { start, end } = getPerformanceRangeBounds(range, customStart, customEnd);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
-  const startDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
-  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+  const startDate = isoDay(start);
+  const endDate = isoDay(end);
 
-  const fetchGa = async (params) => {
-    try {
-      const res = await fetch(`/api/google-analytics?${new URLSearchParams({ startDate, endDate, ...params }).toString()}`);
-      const json = await res.json().catch(() => ({}));
-      return res.ok ? json : { rows: [] };
-    } catch {
-      return { rows: [] };
-    }
-  };
+  const armPathParams = getArmPagePathParams(armFilter);
+  const gaErrors = [];
+  const sessionsParams = { metric: "sessions" };
+  const vslPathsParam = `${ADS_VSL_PATH},${ORGANIC_VSL_PATH}`;
+  // Arm-specific VSL path(s) for video-event queries so that completion %
+  // and event counts only reflect the currently selected funnel arm.
+  const armVslPathsParam =
+    armFilter === "organic" ? ORGANIC_VSL_PATH
+    : armFilter === "ads" ? ADS_VSL_PATH
+    : vslPathsParam;
 
-  const emptyGa = { rows: [] };
   const [
     rawCallsByDate,
     rawBookings,
@@ -225,7 +544,7 @@ async function buildPerformanceData(range, timezone) {
     runSupabaseQuery(
       () => supabase
         .from("calls")
-        .select("id, lead_id, phone, source_type, utm_source, utm_medium, utm_campaign, picked_up, confirmed, is_reschedule, book_date, leads(phone)")
+        .select("id, lead_id, phone, source_type, utm_source, utm_medium, utm_campaign, picked_up, confirmed, is_reschedule, showed_up, book_date, leads(phone)")
         .gte("book_date", startIso)
         .lte("book_date", endIso)
         .order("book_date", { ascending: true })
@@ -263,63 +582,96 @@ async function buildPerformanceData(range, timezone) {
   ]);
 
   const [
-    gaFunnelSessionsResult,
-    gaWebsiteViewsResult,
-    gaCountryViewsResult,
-    gaDeviceSessionsResult,
-    gaSourceViewsResult,
-    gaSourceOptInsResult,
-    gaCountryOptInsResult,
-    gaDeviceOptInsResult,
-    gaLandingSessionsResult,
-    gaOptInEventsResult,
-    gaVslViewsResult,
-    gaVslProgressBreakdownResult,
-    gaVideoStartResult,
-    gaVideoProgressTotalResult,
-    gaVideoCompleteResult,
-    gaAvgDurationResult,
-  ] = await Promise.allSettled([
-    fetchGa({ metric: "sessions", pagePaths: "/ads-new-masterclass-job,/masterclass-job,/ads-opt-in-masterclass,/pro,/" }),
-    fetchGa({ pagePath: "/" }),
-    fetchGa({ dimensions: "country", metricName: "screenPageViews" }),
-    fetchGa({ dimensions: "deviceCategory", metricName: "sessions" }),
-    fetchGa({ dimensions: "sessionSource", metricName: "screenPageViews" }),
-    fetchGa({ eventName: "call_booked", dimensions: "sessionSource", metricName: "eventCount" }),
-    fetchGa({ eventName: "call_booked", dimensions: "country", metricName: "eventCount" }),
-    fetchGa({ eventName: "call_booked", dimensions: "deviceCategory", metricName: "eventCount" }),
-    fetchGa({ dimensions: "pagePath", metricName: "sessions" }),
-    fetchGa({ wholeSite: "1" }),
-    fetchGa({ pagePaths: "/ads-new-masterclass-job,/masterclass-job" }),
-    fetchGa({ eventName: "video_progress", dimensions: "video_percent", metricName: "eventCount", pagePaths: "/ads-new-masterclass-job,/masterclass-job" }),
-    fetchGa({ eventName: "video_start", metricName: "eventCount", pagePaths: "/ads-new-masterclass-job,/masterclass-job" }),
-    fetchGa({ eventName: "video_progress", metricName: "eventCount", pagePaths: "/ads-new-masterclass-job,/masterclass-job" }),
-    fetchGa({ eventName: "video_complete", metricName: "eventCount", pagePaths: "/ads-new-masterclass-job,/masterclass-job" }),
-    fetchGa({ dimensions: "date", metricName: "averageSessionDuration" }),
+    gaAdsSiteViews,
+    gaOrganicSiteViews,
+    gaAdsSiteSessions,
+    gaOrganicSiteSessions,
+    gaAdsVslViews,
+    gaOrganicVslViews,
+    gaAdsOptInViews,
+    gaOrganicOptInViews,
+    gaAdsVslSessions,
+    gaOrganicVslSessions,
+    gaAdsOptInSessions,
+    gaOrganicOptInSessions,
+    gaCountryViews,
+    gaDeviceSessions,
+    gaSourceViews,
+    gaSourceOptIns,
+    gaCountryOptIns,
+    gaDeviceOptIns,
+    gaOptInEvents,
+    gaVideoStart,
+    gaVideoProgressTotal,
+    gaVideoComplete,
+    gaAvgDuration,
+    gaSessionsByDate,
+  ] = await Promise.all([
+    fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ADS_PAGE_PREFIX })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { excludePagePath: ADS_PAGE_PREFIX })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ADS_PAGE_PREFIX })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, excludePagePath: ADS_PAGE_PREFIX })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ADS_VSL_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ORGANIC_VSL_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ADS_OPT_IN_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { pagePaths: ORGANIC_OPT_IN_PATHS })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ADS_VSL_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ORGANIC_VSL_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ADS_OPT_IN_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePaths: ORGANIC_OPT_IN_PATHS })),
+    // Country views: arm-aware via pagePath/excludePagePath
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "country", metricName: "screenPageViews", ...armPathParams })),
+    // Device sessions: arm-aware
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "deviceCategory", metricName: "sessions", ...armPathParams })),
+    // Source views (whole-site; client filters by source-name arm match)
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "sessionSource", metricName: "screenPageViews" })),
+    // Source opt-ins (call_booked); whole-site, client filters by source-name arm match
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "sessionSource", metricName: "eventCount" })),
+    // Country opt-ins (call_booked): arm-aware
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "country", metricName: "eventCount", ...armPathParams })),
+    // Device opt-ins (call_booked): arm-aware
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "deviceCategory", metricName: "eventCount", ...armPathParams })),
+    // Whole-site call_booked totals (for "all" arm in TopLine "Call booked" card)
+    fetchGaJson(gaApiUrl(startDate, endDate, { wholeSite: "1" })),
+    // VSL video aggregates only (no video_percent breakdown — GA4 often rejects that dimension in Data API).
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "video_start", metricName: "eventCount", pagePaths: armVslPathsParam })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "video_progress", metricName: "eventCount", pagePaths: armVslPathsParam })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "video_complete", metricName: "eventCount", pagePaths: armVslPathsParam })),
+    // Avg session duration and session-by-date are arm-aware so "Avg Time on Page"
+    // reflects the selected funnel arm rather than the whole property.
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "date", metricName: "averageSessionDuration", ...armPathParams })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "date", metricName: "sessions", ...armPathParams })),
   ]);
 
-  const resultValue = (result) => result.status === "fulfilled" ? result.value : emptyGa;
-  const gaFunnelSessions = resultValue(gaFunnelSessionsResult);
-  const gaWebsiteViews = resultValue(gaWebsiteViewsResult);
-  const gaCountryViews = resultValue(gaCountryViewsResult);
-  const gaDeviceSessions = resultValue(gaDeviceSessionsResult);
-  const gaSourceViews = resultValue(gaSourceViewsResult);
-  const gaSourceOptIns = resultValue(gaSourceOptInsResult);
-  const gaCountryOptIns = resultValue(gaCountryOptInsResult);
-  const gaDeviceOptIns = resultValue(gaDeviceOptInsResult);
-  const gaLandingSessions = resultValue(gaLandingSessionsResult);
-  const gaOptInEvents = resultValue(gaOptInEventsResult);
-  const gaVslViews = resultValue(gaVslViewsResult);
-  const gaVslProgressBreakdown = resultValue(gaVslProgressBreakdownResult);
-  const gaVideoStart = resultValue(gaVideoStartResult);
-  const gaVideoProgressTotal = resultValue(gaVideoProgressTotalResult);
-  const gaVideoComplete = resultValue(gaVideoCompleteResult);
-  const gaAvgDuration = resultValue(gaAvgDurationResult);
+  [
+    gaAdsSiteViews,
+    gaOrganicSiteViews,
+    gaAdsSiteSessions,
+    gaOrganicSiteSessions,
+    gaAdsVslViews,
+    gaOrganicVslViews,
+    gaAdsOptInViews,
+    gaOrganicOptInViews,
+    gaOptInEvents,
+  ].forEach((payload) => {
+    if (payload?.failed && payload?.error) gaErrors.push(payload.error);
+  });
+
+  const coreGaPayloads = [
+    gaAdsSiteViews,
+    gaOrganicSiteViews,
+    gaAdsVslViews,
+    gaOrganicVslViews,
+    gaAdsOptInViews,
+    gaOrganicOptInViews,
+    gaOptInEvents,
+  ];
+  const gaUnavailable = !isGaConfigured(coreGaPayloads);
 
   const rescheduledLeadIds = new Set(rawCallsByDate.filter((call) => call.is_reschedule === true).map((call) => call.lead_id));
-  const callsByDate = rawCallsByDate.filter((call) => call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id));
-  const bookings = rawBookings;
-  const purchases = rawPurchases
+  const callsByDateAll = rawCallsByDate.filter((call) => call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id));
+  const bookingsAll = (rawBookings || []).filter((call) => call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id));
+  const purchasesAll = rawPurchases
     .filter((outcomeLog) => outcomeLog.calls?.id)
     .map((outcomeLog) => ({
       ...outcomeLog.calls,
@@ -329,33 +681,62 @@ async function buildPerformanceData(range, timezone) {
       offer_price: outcomeLog.offers?.price,
     }));
 
-  const sumRows = (rows, key) => (rows || []).reduce((s, r) => s + Number(r?.[key] || 0), 0);
-  const sumGaMetric = (rows) => (rows || []).reduce((s, r) => s + Number(r?.metric || 0), 0);
-  const sumByPath = (rows, paths) => (rows || []).reduce((total, row) => {
-    const byPath = row?.byPath || {};
-    return total + paths.reduce((sum, path) => sum + Number(byPath[path] || 0), 0);
-  }, 0);
-  const websiteViews = sumRows(gaWebsiteViews.rows, "views") || sumRows(gaVslViews.rows, "views");
-  const vslWatched = sumByPath(gaFunnelSessions.rows, ["/ads-new-masterclass-job", "/masterclass-job"]);
-  const optInsSessions = sumByPath(gaFunnelSessions.rows, ["/ads-opt-in-masterclass", "/pro", "/"]);
-  const optInsEvents = sumRows(gaOptInEvents.rows, "eventCount");
-  const optIns = optInsEvents > 0 ? optInsEvents : (optInsSessions > 0 ? optInsSessions : bookings.length);
-  const optInSource = optInsEvents > 0 ? "GA call_booked" : (optInsSessions > 0 ? "GA opt-in sessions" : "CRM bookings");
-  const vslProgressRanges = (gaVslProgressBreakdown.rows || [])
-    .map((row) => ({
-      percent: Number(String(row?.dimensions?.video_percent || "").replace(/[^0-9.]/g, "")),
-      events: Number(row?.metric || 0),
-    }))
-    .filter((row) => Number.isFinite(row.percent) && row.percent > 0 && row.events > 0)
-    .sort((a, b) => a.percent - b.percent);
-  const videoStartEvents = sumRows(gaVideoStart.rows, "views");
-  const videoProgressEvents = sumRows(gaVideoProgressTotal.rows, "views");
-  const videoCompleteEvents = sumRows(gaVideoComplete.rows, "views");
-  const vsl50PlusEvents = vslProgressRanges.reduce((sum, row) => sum + (row.percent >= 50 ? row.events : 0), 0);
-  const vslCompletionPct = vslWatched > 0 && vsl50PlusEvents > 0
-    ? (vsl50PlusEvents / vslWatched) * 100
-    : (videoStartEvents > 0 && videoCompleteEvents > 0 ? (videoCompleteEvents / videoStartEvents) * 100 : null);
-  const vslFallbackRanges = vslProgressRanges.length ? [] : [
+  const bookings = bookingsAll.filter((row) => matchesArmFilter(row, armFilter));
+  const purchases = purchasesAll.filter((row) => matchesArmFilter(row, armFilter));
+  const adsBookings = bookingsAll.filter(isAdsSource);
+  const organicBookings = bookingsAll.filter((call) => !isAdsSource(call));
+  const adsPurchases = purchasesAll.filter(isAdsSource);
+  const organicPurchases = purchasesAll.filter((row) => !isAdsSource(row));
+
+  const adsSiteViews = sumGaDailyMetric(gaAdsSiteViews, "views");
+  const organicSiteViews = sumGaDailyMetric(gaOrganicSiteViews, "views");
+  const adsSiteSessions = sumGaDailyMetric(gaAdsSiteSessions, "sessions");
+  const organicSiteSessions = sumGaDailyMetric(gaOrganicSiteSessions, "sessions");
+  const websiteViews = pickArmMetric(organicSiteViews, adsSiteViews, armFilter);
+  const websiteSessions = pickArmMetric(organicSiteSessions, adsSiteSessions, armFilter);
+
+  const adsVslViews = sumGaDailyMetric(gaAdsVslViews, "views");
+  const organicVslViews = sumGaDailyMetric(gaOrganicVslViews, "views");
+  const adsOptInViews = sumGaDailyMetric(gaAdsOptInViews, "views");
+  const organicOptInViews = sumGaByPath(gaOrganicOptInViews, ["/pro", "/"]) || sumGaDailyMetric(gaOrganicOptInViews, "views");
+  const optInPageViews = pickArmMetric(organicOptInViews, adsOptInViews, armFilter);
+
+  const adsVslSessions = sumGaDailyMetric(gaAdsVslSessions, "sessions");
+  const organicVslSessions = sumGaDailyMetric(gaOrganicVslSessions, "sessions");
+  const adsOptInSessions = sumGaDailyMetric(gaAdsOptInSessions, "sessions");
+  const organicOptInSessions = sumGaByPath(gaOrganicOptInSessions, ["/pro", "/"]) || sumGaDailyMetric(gaOrganicOptInSessions, "sessions");
+  const vslWatched = pickArmMetric(organicVslSessions, adsVslSessions, armFilter);
+  const optInsSessions = pickArmMetric(organicOptInSessions, adsOptInSessions, armFilter);
+
+  const adsVslCallBooked = sumGaDailyMetric(gaAdsVslViews, "eventCount");
+  const organicVslCallBooked = sumGaDailyMetric(gaOrganicVslViews, "eventCount");
+  const adsBookingRate = adsVslViews > 0 ? (adsVslCallBooked / adsVslViews) * 100 : null;
+  const organicBookingRate = organicVslViews > 0 ? (organicVslCallBooked / organicVslViews) * 100 : null;
+  const adsVslConversion = adsOptInSessions > 0 ? (adsVslSessions / adsOptInSessions) * 100 : null;
+  const organicVslConversion = organicOptInSessions > 0 ? (organicVslSessions / organicOptInSessions) * 100 : null;
+
+  const optInsEvents = sumGaRows(gaOptInEvents, "eventCount");
+  const armGaCallBooked = sumGaMetricRows(gaDeviceOptIns);
+  const armCallBooked = pickArmMetric(organicVslCallBooked, adsVslCallBooked, armFilter);
+  const optIns = gaUnavailable
+    ? bookings.length
+    : (armFilter === "all" && optInsEvents > 0
+      ? optInsEvents
+      : (armCallBooked > 0 ? armCallBooked : (optInsSessions > 0 ? optInsSessions : bookings.length)));
+  const optInSource = gaUnavailable
+    ? "CRM bookings (GA unavailable)"
+    : (armFilter === "all" && optInsEvents > 0
+      ? "GA call_booked (whole site)"
+      : (armCallBooked > 0 ? `GA call_booked on ${armFilter === "ads" ? ADS_VSL_PATH : ORGANIC_VSL_PATH}` : (optInsSessions > 0 ? "GA opt-in page sessions" : "CRM bookings")));
+  // Percent-watched buckets from GA (video_percent dim) removed — Data API often errors; ratio uses complete/start below.
+  const vslProgressRanges = [];
+  const videoStartEvents = sumGaEventRows(gaVideoStart);
+  const videoProgressEvents = sumGaEventRows(gaVideoProgressTotal);
+  const videoCompleteEvents = sumGaEventRows(gaVideoComplete);
+  const vslCompletionPct = videoStartEvents > 0 && videoCompleteEvents > 0
+    ? (videoCompleteEvents / videoStartEvents) * 100
+    : null;
+  const vslFallbackRanges = [
     { label: "Started", events: videoStartEvents },
     { label: "Progress", events: videoProgressEvents },
     { label: "Completed", events: videoCompleteEvents },
@@ -388,12 +769,10 @@ async function buildPerformanceData(range, timezone) {
     const c = ensureCountry(countryCode(b.phone || b.leads?.phone));
     c.bookings += 1;
     c.crmOptIns += 1;
-  });
-  callsByDate.forEach((cRow) => {
-    const s = ensureSource(sourceName(cRow));
-    if (cRow.showed_up) s.shows += 1;
-    const c = ensureCountry(countryCode(cRow.phone || cRow.leads?.phone));
-    if (cRow.showed_up) c.shows += 1;
+    if (isShowedUp(b)) {
+      s.shows += 1;
+      c.shows += 1;
+    }
   });
   purchases.forEach((p) => {
     const s = ensureSource(sourceName(p));
@@ -404,28 +783,26 @@ async function buildPerformanceData(range, timezone) {
     c.revenue += Number(p.offer_price || 0);
   });
 
-  (gaSourceViews.rows || []).forEach((r) => {
+  gaRows(gaSourceViews).forEach((r) => {
     const name = normalizeGaSource(r?.dimensions?.sessionSource);
+    if (!matchesTrafficArm(name, armFilter)) return;
     ensureSource(name).views += Number(r.metric || 0);
   });
-  (gaSourceOptIns.rows || []).forEach((r) => {
+  gaRows(gaSourceOptIns).forEach((r) => {
     const name = normalizeGaSource(r?.dimensions?.sessionSource);
+    if (!matchesTrafficArm(name, armFilter)) return;
     ensureSource(name).gaOptIns += Number(r.metric || 0);
   });
-  if (sumGaMetric(gaSourceViews.rows) === 0) {
-    const adsVslViews = sumByPath(gaVslViews.rows, ["/ads-new-masterclass-job"]);
-    const organicVslViews = sumByPath(gaVslViews.rows, ["/masterclass-job"]);
-    if (adsVslViews > 0) ensureSource("Meta Ads").views += adsVslViews;
-    if (organicVslViews > 0) ensureSource("Organic / Direct").views += organicVslViews;
-  }
-  (gaCountryViews.rows || []).forEach((r) => {
+
+  // Country GA views/opt-ins are arm-aware via pagePath filter (see armPathParams).
+  gaRows(gaCountryViews).forEach((r) => {
     const rawCountry = String(r?.dimensions?.country || "");
     const code = codeFromCountryName(rawCountry);
     const country = ensureCountry(code);
     country.country = code === "OTHER" && rawCountry ? rawCountry : countryName(code);
     country.views += Number(r.metric || 0);
   });
-  (gaCountryOptIns.rows || []).forEach((r) => {
+  gaRows(gaCountryOptIns).forEach((r) => {
     const rawCountry = String(r?.dimensions?.country || "");
     const code = codeFromCountryName(rawCountry);
     const country = ensureCountry(code);
@@ -433,40 +810,44 @@ async function buildPerformanceData(range, timezone) {
     country.gaOptIns += Number(r.metric || 0);
   });
 
-  const hasGaCountryOptIns = sumGaMetric(gaCountryOptIns.rows) > 0;
-  const countryRows = Object.values(countryAgg).sort((a, b) => (b.views || b.bookings || b.closes) - (a.views || a.bookings || a.closes)).slice(0, 8).map((r) => {
-    const optIns = hasGaCountryOptIns ? r.gaOptIns : r.crmOptIns;
-    const viewsToOptIn = r.views > 0 ? (optIns / r.views) * 100 : 0;
-    const optInToBook = optIns > 0 ? (r.bookings / optIns) * 100 : 0;
-    const bookToShow = r.bookings > 0 ? (r.shows / r.bookings) * 100 : 0;
-    const showToClose = r.shows > 0 ? (r.closes / r.shows) * 100 : 0;
-    const endToEnd = r.views > 0 ? (r.closes / r.views) * 100 : 0;
-    const aov = r.closes > 0 ? r.revenue / r.closes : 0;
-    return { ...r, optIns, optInSource: hasGaCountryOptIns ? "GA call_booked by country" : "CRM bookings by phone country", viewsToOptIn, optInToBook, bookToShow, showToClose, endToEnd, aov };
-  });
+  const hasGaCountryOptIns = !gaUnavailable && sumGaMetricRows(gaCountryOptIns) > 0;
+  const allCountryRows = Object.values(countryAgg).map((r) => mapCountryMetrics(r, hasGaCountryOptIns));
+  const totalCountryViews = allCountryRows.reduce((sum, r) => sum + Number(r.views || 0), 0);
+  const countryRows = allCountryRows
+    .sort((a, b) => (b.views || b.bookings || b.closes) - (a.views || a.bookings || a.closes))
+    .slice(0, 8);
+  const { bestCountries, underCountries } = buildCountryInsights(allCountryRows);
 
-  const trafficRows = Object.values(sourceAgg).sort((a, b) => (b.views || b.revenue) - (a.views || a.revenue)).slice(0, 5).map((r) => {
-    const optIns = r.gaOptIns > 0 ? r.gaOptIns : r.bookings;
-    return {
-      ...r,
-      optIns,
-      optInSource: r.gaOptIns > 0 ? "GA call_booked" : "CRM bookings",
-      optInRate: r.views > 0 ? (optIns / r.views) * 100 : 0,
-      closeRate: r.shows > 0 ? (r.closes / r.shows) * 100 : 0,
-      conversion: r.views > 0 ? (optIns / r.views) * 100 : 0,
-    };
-  });
+  const trafficRows = Object.values(sourceAgg)
+    .sort((a, b) => {
+      if (gaUnavailable) return (b.bookings || b.revenue) - (a.bookings || a.revenue);
+      const viewDiff = (b.views || 0) - (a.views || 0);
+      if (viewDiff !== 0) return viewDiff;
+      return (b.revenue || 0) - (a.revenue || 0);
+    })
+    .slice(0, 5)
+    .map((r) => {
+      const optIns = r.gaOptIns > 0 ? r.gaOptIns : r.bookings;
+      return {
+        ...r,
+        optIns,
+        optInSource: r.gaOptIns > 0 ? "GA call_booked" : "CRM bookings",
+        optInRate: r.views > 0 ? (optIns / r.views) * 100 : 0,
+        closeRate: r.shows > 0 ? (r.closes / r.shows) * 100 : 0,
+        conversion: r.views > 0 ? (optIns / r.views) * 100 : 0,
+      };
+    });
 
   const deviceCounts = { mobile: 0, desktop: 0, other: 0 };
   const deviceOptIns = { mobile: 0, desktop: 0, other: 0 };
-  (gaDeviceSessions.rows || []).forEach((r) => {
+  gaRows(gaDeviceSessions).forEach((r) => {
     const key = String(r?.dimensions?.deviceCategory || "").toLowerCase();
     const val = Number(r.metric || 0);
     if (key === "mobile") deviceCounts.mobile += val;
     else if (key === "desktop") deviceCounts.desktop += val;
     else deviceCounts.other += val;
   });
-  (gaDeviceOptIns.rows || []).forEach((r) => {
+  gaRows(gaDeviceOptIns).forEach((r) => {
     const key = String(r?.dimensions?.deviceCategory || "").toLowerCase();
     const val = Number(r.metric || 0);
     if (key === "mobile") deviceOptIns.mobile += val;
@@ -475,45 +856,93 @@ async function buildPerformanceData(range, timezone) {
   });
   const totalDevice = deviceCounts.mobile + deviceCounts.desktop + deviceCounts.other;
 
-  const rawLanding = (gaLandingSessions.rows || [])
-    .map((r) => ({ page: r?.dimensions?.pagePath || "/", sessions: Number(r.metric || 0) }))
-    .sort((a, b) => b.sessions - a.sessions)
-    .slice(0, 4);
-  const landingSessionsTotal = rawLanding.reduce((sum, row) => sum + Number(row.sessions || 0), 0);
-  const landing = rawLanding.map((r) => ({
-    ...r,
-    share: landingSessionsTotal > 0 ? (Number(r.sessions || 0) / landingSessionsTotal) * 100 : 0,
-  }));
+  const funnelLanding = collectFunnelLandingPages(
+    ...(armFilter === "ads"
+      ? [gaAdsVslSessions, gaAdsOptInSessions]
+      : armFilter === "organic"
+        ? [gaOrganicVslSessions, gaOrganicOptInSessions]
+        : [gaAdsVslSessions, gaOrganicVslSessions, gaAdsOptInSessions, gaOrganicOptInSessions]),
+  );
+  const landing = funnelLanding.length > 0
+    ? funnelLanding.slice(0, 4)
+    : FUNNEL_LANDING_PATHS.map((page) => ({ page, sessions: 0, share: 0 }));
 
-  const avgTimeSec = (gaAvgDuration.rows || []).length > 0 ? sumGaMetric(gaAvgDuration.rows) / gaAvgDuration.rows.length : null;
+  const avgTimeSec = gaUnavailable ? null : weightedAvgSessionDuration(gaAvgDuration, gaSessionsByDate);
 
-  const allData = {
-    meta: { range, timezone, startDate, endDate },
+  const watchRate = optInsSessions > 0 ? (vslWatched / optInsSessions) * 100 : 0;
+  const optInRate = optInPageViews > 0 ? (optIns / optInPageViews) * 100 : 0;
+
+  return {
+    meta: {
+      range,
+      timezone,
+      startDate,
+      endDate,
+      rangeStart: start,
+      rangeEnd: end,
+      gaUnavailable,
+      gaMock: gaUnavailable,
+      gaError: gaErrors.length > 0 ? gaErrors[0] : null,
+      armFilter,
+    },
     topline: {
+      gaUnavailable,
+      arms: {
+        ads: buildArmSnapshot(adsVslViews, adsOptInViews, adsVslSessions, adsOptInSessions, adsBookingRate, adsVslConversion, adsVslCallBooked),
+        organic: buildArmSnapshot(organicVslViews, organicOptInViews, organicVslSessions, organicOptInSessions, organicBookingRate, organicVslConversion, organicVslCallBooked),
+      },
+      wholeSiteCallBooked: armFilter === "all" ? optInsEvents : armGaCallBooked,
+      armFilter,
       websiteViews,
+      websiteSessions,
+      adsSiteViews,
+      organicSiteViews,
+      adsSiteSessions,
+      organicSiteSessions,
+      optInPageViews,
       vslWatched,
       optIns,
       optInSource,
+      optInsSessions,
       bookings: bookings.length,
+      adsBookings: adsBookings.length,
+      organicBookings: organicBookings.length,
       showClose: purchases.length,
       closedRevenue: purchases.reduce((s, p) => s + Number(p.offer_price || 0), 0),
-      watchRate: websiteViews > 0 ? (vslWatched / websiteViews) * 100 : 0,
-      optInRate: websiteViews > 0 ? (optIns / websiteViews) * 100 : 0,
+      adsShowClose: adsPurchases.length,
+      organicShowClose: organicPurchases.length,
+      adsClosedRevenue: adsPurchases.reduce((s, p) => s + Number(p.offer_price || 0), 0),
+      organicClosedRevenue: organicPurchases.reduce((s, p) => s + Number(p.offer_price || 0), 0),
+      watchRate,
+      optInRate,
       bookRate: optIns > 0 ? (bookings.length / optIns) * 100 : 0,
+      adsVslViews,
+      organicVslViews,
+      adsOptInViews,
+      organicOptInViews,
+      adsVslSessions,
+      organicVslSessions,
+      adsOptInSessions,
+      organicOptInSessions,
+      adsBookingRate,
+      organicBookingRate,
+      adsVslConversion,
+      organicVslConversion,
     },
     country: {
       rows: countryRows,
+      totalViews: totalCountryViews,
+      websiteViews,
       mapRanges: [
         { label: "Low", color: "#bfdbfe" },
         { label: "Med", color: "#93c5fd" },
         { label: "High", color: "#60a5fa" },
         { label: "Top", color: "#2563eb" },
       ],
-      bestCountries: countryRows.slice().sort((a, b) => (b.optInToBook + b.showToClose) - (a.optInToBook + a.showToClose)).slice(0, 3).map((r) => [r.country, `${formatPct(r.optInToBook)} book rate · ${r.closes} closes`]),
-      underCountries: countryRows.slice().sort((a, b) => (a.optInToBook + a.showToClose) - (b.optInToBook + b.showToClose)).slice(0, 3).map((r) => [r.country, `${formatPct(r.optInToBook)} book · ${r.shows} shows`]),
+      bestCountries,
+      underCountries,
     },
     traffic: { rows: trafficRows },
-    funnel: { rows: countryRows },
     device: {
       mobilePct: totalDevice > 0 ? (deviceCounts.mobile / totalDevice) * 100 : 0,
       desktopPct: totalDevice > 0 ? (deviceCounts.desktop / totalDevice) * 100 : 0,
@@ -521,7 +950,7 @@ async function buildPerformanceData(range, timezone) {
       mobileOptInRate: deviceCounts.mobile > 0 ? (deviceOptIns.mobile / deviceCounts.mobile) * 100 : 0,
       desktopOptInRate: deviceCounts.desktop > 0 ? (deviceOptIns.desktop / deviceCounts.desktop) * 100 : 0,
       otherOptInRate: deviceCounts.other > 0 ? (deviceOptIns.other / deviceCounts.other) * 100 : 0,
-      deviceOptInSource: sumGaMetric(gaDeviceOptIns.rows) > 0 ? "GA call_booked by device" : "Unavailable",
+      deviceOptInSource: !gaUnavailable && sumGaMetricRows(gaDeviceOptIns) > 0 ? "GA call_booked by device" : "Unavailable",
       topLandingPages: landing,
     },
     engagement: {
@@ -529,16 +958,12 @@ async function buildPerformanceData(range, timezone) {
       vslCompletionPct,
       vslProgressRanges,
       vslFallbackRanges,
-      vslProgressUnavailable: !!gaVslProgressBreakdown.unavailable,
-      vslProgressHint: gaVslProgressBreakdown.hint,
     },
   };
-
-  return allData;
 }
 
-function useSectionData(section, initialRange = "last30") {
-  const [range, setRange] = useState(initialRange);
+/** Single page-wide data hook. All sections subscribe to the same payload. */
+function usePerformanceData(range, customStart, customEnd, armFilter) {
   const [state, setState] = useState({ loading: true, data: null, error: null, meta: null });
 
   useEffect(() => {
@@ -546,51 +971,90 @@ function useSectionData(section, initialRange = "last30") {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    fetchSectionData(section, range, timezone)
+    fetchPerformanceData(
+      range,
+      timezone,
+      range === "custom" ? customStart : null,
+      range === "custom" ? customEnd : null,
+      armFilter,
+    )
       .then((json) => {
         if (cancelled) return;
-        setState({
-          loading: false,
-          data: json?.[section] || null,
-          error: null,
-          meta: json?.meta || null,
-        });
+        setState({ loading: false, data: json, error: null, meta: json?.meta || null });
       })
       .catch((error) => {
         if (cancelled) return;
-        setState({ loading: false, data: null, error: error.message || "Failed to load", meta: null });
+        setState({ loading: false, data: null, error: error?.message || "Failed to load", meta: null });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [section, range]);
+  }, [range, customStart, customEnd, armFilter]);
 
-  return { ...state, range, setRange };
+  return state;
 }
 
-function FilterDropdown({ range, setRange }) {
+function SectionBadge({ children }) {
   return (
-    <select
-      value={range}
-      onChange={(e) => setRange(e.target.value)}
-      className="h-7 max-w-full shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
-      aria-label="Section range"
-    >
-      {FILTER_OPTIONS.map((opt) => (
-        <option key={opt.id} value={opt.id}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+    <span className="inline-flex h-6 min-w-0 max-w-full shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 shadow-sm">
+      <span className="truncate">{children}</span>
+    </span>
   );
 }
 
-function SectionBadge ( { children } ) {
+function PerformanceSectionHeader({
+  title,
+  titleAs: TitleTag = "h2",
+  titleClassName = "text-[16px] font-semibold tracking-normal text-slate-950",
+  subtitle,
+  badge,
+  tabs,
+  bordered = true,
+  className = "",
+}) {
+  const topRight = badge ? <SectionBadge>{badge}</SectionBadge> : tabs ? (
+    <SegmentedTabs
+      size="xs"
+      className="!w-fit shrink-0"
+      items={tabs.items}
+      activeId={tabs.activeId}
+      onChange={tabs.onChange}
+    />
+  ) : null;
+
   return (
-    <span className="inline-flex h-6 min-w-0 max-w-full items-center justify-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500 shadow-sm">
-      <span className="truncate">{children}</span>
-    </span>
+    <div
+      className={cx(
+        bordered && "rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_1px_3px_rgba(15,23,42,0.06)]",
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <TitleTag className={titleClassName}>{title}</TitleTag>
+          {subtitle ? (
+            typeof subtitle === "string" ? (
+              <p className="mt-1 text-[12px] font-medium italic leading-snug text-slate-500">{subtitle}</p>
+            ) : (
+              <div className="mt-1 text-[11px] font-medium leading-snug text-slate-500">{subtitle}</div>
+            )
+          ) : null}
+        </div>
+        {topRight}
+      </div>
+      {badge && tabs ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <SegmentedTabs
+            size="xs"
+            className="!w-fit shrink-0"
+            items={tabs.items}
+            activeId={tabs.activeId}
+            onChange={tabs.onChange}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -602,88 +1066,160 @@ function ShimmerText({ className = "" }) {
   return <span className={cx("inline-block animate-pulse rounded bg-slate-200/80 align-middle", className)} />;
 }
 
-function TopLineCard ( { card, loading } ) {
+function TopLineCard({ card, loading }) {
   return (
-    <article className="min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{card.label}</p>
-      <div className={cx( "mt-1.5 text-[21px] font-semibold leading-none tracking-normal", card.valueClass )}>
-        {loading ? <ShimmerText className="h-6 w-20" /> : card.value}
+    <article className="flex min-h-[92px] flex-col rounded-lg border border-slate-200 bg-white px-2.5 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-1">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.07em] text-slate-500 leading-tight">{card.label}</p>
+        {card.infoBody ? <MetricInfo title={card.infoTitle || card.label} body={card.infoBody} /> : <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
       </div>
-      <div className="mt-1">
-        <span className={cx( "inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold leading-none", card.badgeClass )}>
-          {loading ? <ShimmerText className="h-3 w-16" /> : card.badge}
-        </span>
+      <div className="mt-auto flex flex-1 flex-col justify-end pt-2">
+        <p className="text-[16px] font-semibold leading-none tracking-normal text-slate-900 tabular-nums">
+          {loading ? <ShimmerText className="h-5 w-16" /> : card.value}
+        </p>
+        <div className="mt-1.5 min-h-[18px]">
+          <span className="inline-flex max-w-full truncate rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-emerald-700" title={typeof card.badge === "string" ? card.badge : undefined}>
+            {loading ? <ShimmerText className="h-2.5 w-14" /> : card.badge}
+          </span>
+        </div>
       </div>
-      <p className="mt-1 truncate text-[10px] font-medium text-slate-500" title={card.note}>
-        {loading ? <ShimmerText className="h-3 w-28" /> : card.note}
-      </p>
     </article>
   );
 }
 
-function TopLineSection () {
-  const { loading, data, range, setRange, meta } = useSectionData("topline");
+/** One-row global filter bar — date range + (optional custom) + arm + range label. */
+function PerformanceGlobalFilters({
+  range,
+  onRangeChange,
+  customStart,
+  onCustomStartChange,
+  customEnd,
+  onCustomEndChange,
+  armFilter,
+  onArmFilterChange,
+  rangeBounds,
+  loading,
+}) {
+  const periodLabel = rangeBounds ? formatRangeBoundsLabel(rangeBounds.start, rangeBounds.end) : "—";
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedTabs
+          size="sm"
+          fit
+          items={FILTER_OPTIONS}
+          activeId={range}
+          onChange={onRangeChange}
+        />
+
+        {range === "custom" ? (
+          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1">
+            <input
+              type="date"
+              value={customStart || ""}
+              onChange={(e) => onCustomStartChange?.(e.target.value)}
+              className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+              aria-label="Custom start date"
+            />
+            <span className="text-[10px] font-semibold text-slate-500">–</span>
+            <input
+              type="date"
+              value={customEnd || ""}
+              onChange={(e) => onCustomEndChange?.(e.target.value)}
+              className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+              aria-label="Custom end date"
+            />
+          </div>
+        ) : null}
+
+        <span className="hidden h-5 w-px bg-slate-200 sm:inline-block" aria-hidden="true" />
+
+        <SegmentedTabs
+          size="sm"
+          fit
+          items={ARM_FILTER_ITEMS}
+          activeId={armFilter}
+          onChange={onArmFilterChange}
+        />
+
+        <div className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+          <Calendar className="h-3.5 w-3.5 text-slate-500" strokeWidth={2.2} />
+          <span className="text-[11px] font-semibold tabular-nums text-slate-700">
+            {loading ? <ShimmerText className="h-3 w-28" /> : periodLabel}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TopLineSection({ data, loading, meta, armFilter }) {
+  const gaUnavailable = Boolean(data?.gaUnavailable ?? meta?.gaUnavailable ?? meta?.gaMock);
 
   const cards = useMemo(() => {
     const source = data || {};
+    const callBooked = source.wholeSiteCallBooked ?? 0;
+
+    const adsSiteViews = source.adsSiteViews ?? 0;
+    const organicSiteViews = source.organicSiteViews ?? 0;
+    const adsSiteSessions = source.adsSiteSessions ?? 0;
+    const organicSiteSessions = source.organicSiteSessions ?? 0;
+    const organicOptInViews = source.organicOptInViews ?? 0;
+    const adsOptInViews = source.adsOptInViews ?? 0;
+    const organicOptInSessions = source.organicOptInSessions ?? 0;
+    const adsOptInSessions = source.adsOptInSessions ?? 0;
+
+    const websiteViews = pickArmMetric(organicSiteViews, adsSiteViews, armFilter);
+    const websiteSessions = pickArmMetric(organicSiteSessions, adsSiteSessions, armFilter);
+    const optInViews = pickArmMetric(organicOptInViews, adsOptInViews, armFilter);
+    const optInSessions = pickArmMetric(organicOptInSessions, adsOptInSessions, armFilter);
+
     return [
       {
         label: "Website views",
-        value: formatInt(source.websiteViews),
-        valueClass: "text-blue-600",
-        badge: source.websiteViews > 0 ? `${formatPct(source.optInRate)} opt-in rate` : "—",
-        badgeClass: "bg-emerald-100 text-emerald-700",
-        note: `Range: ${meta?.startDate || "—"} to ${meta?.endDate || "—"}`,
+        value: formatMetricValue(websiteViews, gaUnavailable),
+        badge: gaUnavailable ? "—" : `${formatInt(websiteSessions)} sessions`,
+        infoTitle: "Website views",
+        infoBody: "GA page views for All, Ads, or Organic (top filter).",
       },
       {
-        label: "VSL watched",
-        value: formatInt(source.vslWatched),
-        valueClass: "text-indigo-600",
-        badge: `${formatPct(source.watchRate)}`,
-        badgeClass: "bg-emerald-100 text-emerald-700",
-        note: "Sessions on VSL paths",
+        label: "Opt-in views",
+        value: formatMetricValue(optInViews, gaUnavailable),
+        badge: gaUnavailable ? "—" : `${formatInt(optInSessions)} sessions`,
+        infoTitle: "Opt-in views",
+        infoBody: "GA views on opt-in pages for All, Ads, or Organic.",
       },
       {
-        label: "Opt-ins",
-        value: formatInt(source.optIns),
-        valueClass: "text-violet-600",
-        badge: `${formatPct(source.optInRate)}`,
-        badgeClass: "bg-emerald-100 text-emerald-700",
-        note: `${source.optInSource || "GA/CRM"} in selected period`,
-      },
-      {
-        label: "Bookings",
-        value: formatInt(source.bookings),
-        valueClass: "text-amber-600",
-        badge: `${formatPct(source.bookRate)} of opt-ins`,
-        badgeClass: "bg-emerald-100 text-emerald-700",
-        note: "CRM calls.book_date in selected period",
-      },
-      {
-        label: "Show + close",
-        value: formatInt(source.showClose),
-        valueClass: "text-emerald-600",
-        badge: `${formatUsd(source.closedRevenue)}`,
-        badgeClass: "bg-emerald-100 text-emerald-700",
-        note: "Closed outcomes + paid_amount",
+        label: "Call booked",
+        value: formatMetricValue(callBooked, gaUnavailable),
+        badge: gaUnavailable ? "—" : armFilter === "all" ? "whole site" : armFilter,
+        infoTitle: "Call booked",
+        infoBody: armFilter === "all"
+          ? "GA call_booked events site-wide."
+          : "GA call_booked events for Ads or Organic pages only.",
       },
     ];
-  }, [data, meta]);
+  }, [data, gaUnavailable, armFilter]);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-2">
-      <div className="mb-2 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-        <h1 className="text-[16px] font-semibold tracking-normal text-slate-950">Global Performance</h1>
-        <FilterDropdown range={range} setRange={setRange} />
-      </div>
+    <section className="rounded-2xl border border-slate-200 bg-white p-1.5">
+      <PerformanceSectionHeader className="mb-1" title="Global Performance" titleAs="h1" />
 
-      <div className="grid grid-cols-2 gap-2">{cards.map((card) => <TopLineCard key={card.label} card={card} loading={loading} />)}</div>
+      {gaUnavailable ? <GaUnavailableNotice className="mb-1" /> : null}
+      {!gaUnavailable && meta?.gaError ? (
+        <p className="mb-1 rounded border border-red-200 bg-red-50 px-2 py-0.5 text-[9px] font-medium text-red-700">
+          Some website stats may be missing.
+        </p>
+      ) : null}
+
+      <div className="grid grid-cols-2 gap-1.5">{cards.map((card) => <TopLineCard key={card.label} card={card} loading={loading} />)}</div>
     </section>
   );
 }
 
-function countryMapStyle ( { countryValue }, maxViews = 0 ) {
-  if ( typeof countryValue === "undefined" ) {
+function countryMapStyle({ countryValue }, maxViews = 0) {
+  if (typeof countryValue === "undefined") {
     return {
       fill: "#e2e8f0",
       fillOpacity: 0.82,
@@ -714,13 +1250,13 @@ function countryMapStyle ( { countryValue }, maxViews = 0 ) {
   };
 }
 
-function CountryTable () {
-  const { loading, data, range, setRange } = useSectionData("country");
-  const [ mapTooltip, setMapTooltip ] = useState( null );
-  const [ mapZoom, setMapZoom ] = useState( 1 );
-  const [ mapPan, setMapPan ] = useState( { x: 0, y: 0 } );
-  const mapRef = useRef( null );
-  const mapDragRef = useRef( null );
+function CountryTable({ data, loading, meta }) {
+  const gaUnavailable = Boolean(meta?.gaUnavailable ?? meta?.gaMock);
+  const [mapTooltip, setMapTooltip] = useState(null);
+  const [mapZoom, setMapZoom] = useState(1);
+  const [mapPan, setMapPan] = useState({ x: 0, y: 0 });
+  const mapRef = useRef(null);
+  const mapDragRef = useRef(null);
 
   const countryRows = data?.rows || [];
   const worldMapData = useMemo(
@@ -741,142 +1277,142 @@ function CountryTable () {
     return lookup;
   }, [countryRows]);
 
-  useEffect( () => {
+  useEffect(() => {
     const mapElement = mapRef.current;
-    if ( !mapElement ) return;
+    if (!mapElement) return;
 
     const prepareMapPaths = () => {
-      mapElement.querySelectorAll( "path" ).forEach( ( path ) => {
-        const title = path.querySelector( "title" );
-        if ( title?.textContent ) path.dataset.countryName = title.textContent;
-        path.removeAttribute( "role" );
-        path.removeAttribute( "tabindex" );
-        path.removeAttribute( "aria-label" );
-      } );
-      mapElement.querySelectorAll( "title" ).forEach( ( title ) => title.remove() );
+      mapElement.querySelectorAll("path").forEach((path) => {
+        const title = path.querySelector("title");
+        if (title?.textContent) path.dataset.countryName = title.textContent;
+        path.removeAttribute("role");
+        path.removeAttribute("tabindex");
+        path.removeAttribute("aria-label");
+      });
+      mapElement.querySelectorAll("title").forEach((title) => title.remove());
     };
 
     prepareMapPaths();
-    const frameId = requestAnimationFrame( prepareMapPaths );
-    return () => cancelAnimationFrame( frameId );
-  }, [worldMapData] );
+    const frameId = requestAnimationFrame(prepareMapPaths);
+    return () => cancelAnimationFrame(frameId);
+  }, [worldMapData]);
 
-  const handleMapPointerMove = ( event ) => {
-    if ( mapDragRef.current ) {
+  const handleMapPointerMove = (event) => {
+    if (mapDragRef.current) {
       const { startPan, startX, startY } = mapDragRef.current;
-      setMapPan( { x: startPan.x + event.clientX - startX, y: startPan.y + event.clientY - startY } );
+      setMapPan({ x: startPan.x + event.clientX - startX, y: startPan.y + event.clientY - startY });
     }
 
-    const countryName = event.target?.closest?.( "path" )?.dataset?.countryName;
-    if ( !countryName ) {
-      setMapTooltip( null );
+    const countryName = event.target?.closest?.("path")?.dataset?.countryName;
+    if (!countryName) {
+      setMapTooltip(null);
       return;
     }
 
-    const row = countryLookup[ countryName ];
+    const row = countryLookup[countryName];
     const rect = event.currentTarget.getBoundingClientRect();
-    setMapTooltip( { countryName, containerWidth: rect.width, row, x: event.clientX - rect.left, y: event.clientY - rect.top } );
+    setMapTooltip({ countryName, containerWidth: rect.width, row, x: event.clientX - rect.left, y: event.clientY - rect.top });
   };
 
-  const handleMapPointerDown = ( event ) => {
-    if ( event.target.closest( "button" ) ) return;
+  const handleMapPointerDown = (event) => {
+    if (event.target.closest("button")) return;
     mapDragRef.current = { startPan: mapPan, startX: event.clientX, startY: event.clientY };
-    event.currentTarget.setPointerCapture?.( event.pointerId );
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
   const stopMapDrag = () => { mapDragRef.current = null; };
 
-  const changeMapZoom = ( amount ) => {
-    setMapZoom( ( currentZoom ) => {
-      const nextZoom = Math.min( 2.5, Math.max( 1, Number( ( currentZoom + amount ).toFixed( 2 ) ) ) );
-      if ( nextZoom === 1 ) setMapPan( { x: 0, y: 0 } );
+  const changeMapZoom = (amount) => {
+    setMapZoom((currentZoom) => {
+      const nextZoom = Math.min(2.5, Math.max(1, Number((currentZoom + amount).toFixed(2))));
+      if (nextZoom === 1) setMapPan({ x: 0, y: 0 });
       return nextZoom;
-    } );
+    });
   };
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-[220px] flex-1">
-          <h2 className="text-[18px] font-semibold leading-tight tracking-normal text-slate-950">Performance by Country — Geographic Breakdown</h2>
-          <p className="mt-2 text-[12px] font-medium italic text-slate-500">This is the core view — tells us WHERE to spend ad-dollars next month and WHICH countries to expand into.</p>
-        </div>
-        <div className="flex min-w-0 max-w-full shrink flex-wrap items-center justify-end gap-2">
-          <FilterDropdown range={range} setRange={setRange} />
-          <div className="min-w-0 max-w-[190px]">
-            <SectionBadge>Targeting Intelligence</SectionBadge>
-          </div>
-        </div>
-      </div>
+      <PerformanceSectionHeader
+        className="mb-3"
+        bordered={false}
+        title="Performance by Country — Geographic Breakdown"
+        titleClassName="text-[18px] font-semibold leading-tight tracking-normal text-slate-950"
+        subtitle="This is the core view — tells us WHERE to spend ad-dollars next month and WHICH countries to expand into."
+        badge="Targeting Intelligence"
+      />
+
+      {gaUnavailable ? <GaUnavailableNotice className="mb-3" /> : null}
 
       <div className="mt-3 grid items-stretch gap-3">
-          <div className="grid min-w-0 items-stretch gap-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)] xl:grid-cols-[minmax(0,1fr)_220px] 2xl:grid-cols-[minmax(0,1fr)_260px]">
-            <div className="flex h-full min-w-0 flex-col">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
+        <div className="grid min-w-0 items-stretch gap-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)] xl:grid-cols-[minmax(0,1fr)_220px] 2xl:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="flex h-full min-w-0 flex-col">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-start justify-between gap-2">
                   <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Website Views by Country</h3>
-                  <p className="mt-1 text-[12px] font-medium text-slate-500">Hover the map for country-level website views.</p>
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  {(data?.mapRanges || []).map( ( mapRange ) => (
-                    <span key={mapRange.label} className="flex items-center gap-1.5">
-                      <span className="inline-flex h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapRange.color }} />
-                      {mapRange.label}
-                    </span>
-                  ) )}
+                  <MetricInfo title="Views by country" body="GA views by geography. Rows below blend GA with CRM funnel by phone country." />
                 </div>
               </div>
-
-              <div
-                ref={mapRef}
-                className={cx("relative mt-2 flex flex-1 items-center overflow-hidden", mapDragRef.current ? "cursor-grabbing" : "cursor-grab")}
-                onPointerDown={handleMapPointerDown}
-                onPointerMove={handleMapPointerMove}
-                onPointerUp={stopMapDrag}
-                onPointerCancel={stopMapDrag}
-                onMouseLeave={() => { stopMapDrag(); setMapTooltip( null ); }}
-              >
-                <div className="h-full min-h-[218px] w-full" style={{ transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`, transformOrigin: "center", transition: mapDragRef.current ? "none" : "transform 160ms ease-out" }}>
-                  <WorldMap
-                    backgroundColor="transparent"
-                    borderColor="#cbd5e1"
-                    color="#2563eb"
-                    data={worldMapData}
-                    containerClassName="management-country-map h-full w-full"
-                    regionClassName="management-country-map-region"
-                    size="responsive"
-                    strokeOpacity={1}
-                    styleFunction={(styleArgs) => countryMapStyle(styleArgs, maxMapViews)}
-                    tooltipTextFunction={() => undefined}
-                  />
-                </div>
-                <div className="absolute right-2 top-2 z-10 flex overflow-hidden rounded-lg border border-slate-200 !bg-white shadow-sm">
-                  <button type="button" className="flex h-7 w-7 items-center justify-center border-0 !bg-white p-0 !text-slate-600 shadow-none transition hover:!bg-slate-50 hover:!text-blue-600 disabled:!bg-white disabled:!text-slate-300" disabled={mapZoom >= 2.5} onPointerDown={( event ) => event.stopPropagation()} onClick={( event ) => { event.stopPropagation(); changeMapZoom( 0.5 ); }} title="Zoom in">
-                    <ZoomIn className="h-3.5 w-3.5" strokeWidth={2.4} />
-                  </button>
-                  <button type="button" className="flex h-7 w-7 items-center justify-center border-0 border-l border-slate-200 !bg-white p-0 !text-slate-600 shadow-none transition hover:!bg-slate-50 hover:!text-blue-600 disabled:!bg-white disabled:!text-slate-300" disabled={mapZoom <= 1} onPointerDown={( event ) => event.stopPropagation()} onClick={( event ) => { event.stopPropagation(); changeMapZoom( -0.5 ); }} title="Zoom out">
-                    <ZoomOut className="h-3.5 w-3.5" strokeWidth={2.4} />
-                  </button>
-                </div>
-                {mapTooltip ? (
-                  <div className="pointer-events-none absolute z-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 shadow-lg" style={{ left: Math.min( mapTooltip.x + 12, Math.max( mapTooltip.containerWidth - 150, 8 ) ), top: Math.max( mapTooltip.y - 38, 8 ) }}>
-                    <div className="font-bold text-slate-950">{mapTooltip.row?.country || mapTooltip.countryName}</div>
-                    <div className="mt-0.5 text-blue-600">{loading ? "Loading..." : `${formatInt(mapTooltip.row?.views)} views`}</div>
-                  </div>
-                ) : null}
+              <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                {(data?.mapRanges || []).map((mapRange) => (
+                  <span key={mapRange.label} className="flex items-center gap-1.5">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-full" style={{ backgroundColor: mapRange.color }} />
+                    {mapRange.label}
+                  </span>
+                ))}
               </div>
             </div>
 
-            <div className="flex min-w-0 flex-col">
-              <div className="grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3 border-b border-dashed border-slate-200 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <div>Country</div><div className="text-right">Views</div>
+            <div
+              ref={mapRef}
+              className={cx("relative mt-2 flex flex-1 items-center overflow-hidden", mapDragRef.current ? "cursor-grabbing" : "cursor-grab")}
+              onPointerDown={handleMapPointerDown}
+              onPointerMove={handleMapPointerMove}
+              onPointerUp={stopMapDrag}
+              onPointerCancel={stopMapDrag}
+              onMouseLeave={() => { stopMapDrag(); setMapTooltip(null); }}
+            >
+              <div className="h-full min-h-[218px] w-full" style={{ transform: `translate(${mapPan.x}px, ${mapPan.y}px) scale(${mapZoom})`, transformOrigin: "center", transition: mapDragRef.current ? "none" : "transform 160ms ease-out" }}>
+                <WorldMap
+                  backgroundColor="transparent"
+                  borderColor="#cbd5e1"
+                  color="#2563eb"
+                  data={worldMapData}
+                  containerClassName="management-country-map h-full w-full"
+                  regionClassName="management-country-map-region"
+                  size="responsive"
+                  strokeOpacity={1}
+                  styleFunction={(styleArgs) => countryMapStyle(styleArgs, maxMapViews)}
+                  tooltipTextFunction={() => undefined}
+                />
               </div>
+              <div className="absolute right-2 top-2 z-10 flex overflow-hidden rounded-lg border border-slate-200 !bg-white shadow-sm">
+                <button type="button" className="flex h-7 w-7 items-center justify-center border-0 !bg-white p-0 !text-slate-600 shadow-none transition hover:!bg-slate-50 hover:!text-blue-600 disabled:!bg-white disabled:!text-slate-300" disabled={mapZoom >= 2.5} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); changeMapZoom(0.5); }} title="Zoom in">
+                  <ZoomIn className="h-3.5 w-3.5" strokeWidth={2.4} />
+                </button>
+                <button type="button" className="flex h-7 w-7 items-center justify-center border-0 border-l border-slate-200 !bg-white p-0 !text-slate-600 shadow-none transition hover:!bg-slate-50 hover:!text-blue-600 disabled:!bg-white disabled:!text-slate-300" disabled={mapZoom <= 1} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); changeMapZoom(-0.5); }} title="Zoom out">
+                  <ZoomOut className="h-3.5 w-3.5" strokeWidth={2.4} />
+                </button>
+              </div>
+              {mapTooltip ? (
+                <div className="pointer-events-none absolute z-10 rounded-md border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 shadow-lg" style={{ left: Math.min(mapTooltip.x + 12, Math.max(mapTooltip.containerWidth - 150, 8)), top: Math.max(mapTooltip.y - 38, 8) }}>
+                  <div className="font-bold text-slate-950">{mapTooltip.row?.country || mapTooltip.countryName}</div>
+                  <div className="mt-0.5 text-blue-600">{loading ? "Loading..." : (gaUnavailable ? "— views" : `${formatInt(mapTooltip.row?.views)} views`)}</div>
+                </div>
+              ) : null}
+            </div>
+          </div>
 
-              <div className="divide-y divide-dashed divide-slate-100">
-                {(countryRows.length ? countryRows : Array.from({ length: 6 }).map((_, i) => ({ country: `row-${i}`, code: "OTHER", views: 0 }))).map( ( row ) => {
-                  const maxViews = Math.max(...countryRows.map((r) => Number(r.views || 0)), 1);
-                  const width = Math.min(100, Math.round((Number(row.views || 0) / maxViews) * 100));
-                  return (
+          <div className="flex min-w-0 flex-col">
+            <div className="grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3 border-b border-dashed border-slate-200 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <div>Country</div><div className="text-right">Views</div>
+            </div>
+
+            <div className="divide-y divide-dashed divide-slate-100">
+              {(countryRows.length ? countryRows : Array.from({ length: 6 }).map((_, i) => ({ country: `row-${i}`, code: "OTHER", views: 0 }))).map((row) => {
+                const maxViews = Math.max(...countryRows.map((r) => Number(r.views || 0)), 1);
+                const width = Math.min(100, Math.round((Number(row.views || 0) / maxViews) * 100));
+                return (
                   <div key={row.country} className="grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3 py-1.5">
                     <div className="min-w-0">
                       <div className="flex items-center justify-between gap-3">
@@ -889,155 +1425,256 @@ function CountryTable () {
                         <div className="h-full rounded-full bg-blue-500" style={{ width: `${loading ? 30 : width}%` }} />
                       </div>
                     </div>
-                    <div className="text-right text-[13px] font-semibold text-slate-950">{loading ? <ShimmerText className="h-3 w-10" /> : formatInt(row.views)}</div>
+                    <div className="text-right text-[13px] font-semibold text-slate-950">{loading ? <ShimmerText className="h-3 w-10" /> : (gaUnavailable ? "—" : formatInt(row.views))}</div>
                   </div>
-                )})}
-              </div>
+                );
+              })}
             </div>
           </div>
+        </div>
+      </div>
+
+      <p className="mt-2 text-right text-[11px] font-medium text-slate-600">
+        Total views:{" "}
+        {loading ? (
+          <ShimmerText className="inline-block h-3 w-12 align-middle" />
+        ) : gaUnavailable ? (
+          "—"
+        ) : (
+          <span className="font-semibold tabular-nums text-slate-900">{formatInt(data?.totalViews ?? 0)}</span>
+        )}
+      </p>
+    </section>
+  );
+}
+
+function CountryInsights({ data, loading }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <PerformanceSectionHeader
+        className="mb-2"
+        bordered={false}
+        title={(
+          <span className="inline-flex items-center gap-1.5">
+            Country Insights
+            <MetricInfo
+              title="Country Insights"
+              body="CRM show-up and close rates by lead phone country. Filtered by All, Ads, or Organic and your date range."
+            />
+          </span>
+        )}
+      />
+      <div className="flex flex-col gap-3">
+        <CountryInsightBlock
+          title="Best performers"
+          infoBody="Highest close rate after a show-up (≥2 bookings, ≥1 show, ≥1 close)."
+          Icon={TrendingUp}
+          rows={loading ? [] : (data?.bestCountries || [])}
+          action="Scale spend where close-after-show is strongest."
+          tone="good"
+          loading={loading}
+        />
+        <CountryInsightBlock
+          title="Under performers"
+          infoBody="Lowest show-up rate (shows ÷ bookings). Includes 0% with zero shows."
+          Icon={TrendingDown}
+          rows={loading ? [] : (data?.underCountries || [])}
+          action="Fix localization and follow-up before scaling spend."
+          tone="bad"
+          loading={loading}
+        />
       </div>
     </section>
   );
 }
 
-function CountryInsights () {
-  const { loading, data, range, setRange } = useSectionData("country");
+function CountryInsightBlock({ title, infoBody, Icon, rows, action, tone, loading, className = "" }) {
+  const isGood = tone === "good";
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-3">
-      <div className="flex items-center justify-end"><FilterDropdown range={range} setRange={setRange} /></div>
-      <CountryInsightCard title="Best-Performing Countries" Icon={TrendingUp} rows={loading ? [] : (data?.bestCountries || [])} action="Increase spend where book/show/close are strongest." tone="good" />
-      <CountryInsightCard title="Under-Performing Countries" Icon={TrendingDown} rows={loading ? [] : (data?.underCountries || [])} action="Improve localization and follow-up before scaling spend." tone="bad" />
+    <div
+      className={cx(
+        "rounded-xl border p-3",
+        isGood ? "border-emerald-200/80 bg-emerald-50/40" : "border-red-200/80 bg-red-50/40",
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+          {Icon ? <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2.2} /> : null}
+          {title}
+        </h3>
+        {infoBody ? <MetricInfo title={title} body={infoBody} /> : null}
+      </div>
+
+      <div className="mt-2.5 space-y-1.5">
+        {loading ? (
+          <>
+            <ShimmerBlock className="h-10 w-full rounded-lg" />
+            <ShimmerBlock className="h-10 w-full rounded-lg" />
+            <ShimmerBlock className="h-10 w-full rounded-lg" />
+          </>
+        ) : rows.length === 0 ? (
+          <p className="py-2 text-[11px] font-medium text-slate-500">No countries with enough data in this range.</p>
+        ) : (
+          rows.map((row) => (
+            <div
+              key={row.code || row.name}
+              className={cx(
+                "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2",
+                isGood ? "border-emerald-100 bg-white/90" : row.zeroShows ? "border-red-200 bg-white" : "border-red-100/80 bg-white/90",
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-base leading-none" aria-hidden="true">{row.flag}</span>
+                <span className="truncate text-[12px] font-medium text-slate-800">{row.name}</span>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className={cx("text-[12px] font-semibold tabular-nums", isGood ? "text-emerald-700" : row.zeroShows ? "text-red-700" : "text-slate-900")}>
+                  {row.metric}
+                  <span className="ml-1 text-[10px] font-medium text-slate-500">{row.metricLabel}</span>
+                </p>
+                <p className="text-[10px] font-medium tabular-nums text-slate-500">{row.sub}</p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className={cx("mt-2.5 rounded-lg px-2.5 py-2 text-[10px] font-medium leading-snug", isGood ? "bg-emerald-100/90 text-emerald-800" : "bg-red-100/90 text-red-800")}>
+        <span className="font-semibold">Action:</span> {action}
+      </div>
     </div>
   );
 }
 
-function CountryInsightCard ( { title, Icon, rows, action, tone } ) {
-  const isGood = tone === "good";
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <h3 className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">{Icon ? <Icon className="mr-1 inline h-3.5 w-3.5 align-[-2px]" strokeWidth={2.2} /> : null}{title}</h3>
-
-      <div className="mt-2 divide-y divide-dashed divide-slate-100">
-        {rows.map( ( [ country, detail ] ) => (
-          <div key={country} className="flex items-center justify-between gap-3 py-1.5">
-            <span className="text-[12px] font-medium text-slate-700">{country}</span>
-            <span className="text-right text-[12px] font-semibold text-slate-950">{detail}</span>
-          </div>
-        ) )}
-      </div>
-
-      <div className={cx("mt-2 rounded-md px-2.5 py-2 text-[11px] font-medium", isGood ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700")}>
-        <span className="font-semibold">Action:</span> {action}
-      </div>
-    </section>
-  );
-}
-
-function TrafficSources () {
-  const { loading, data, range, setRange } = useSectionData("traffic");
+function TrafficSources({ data, loading, meta }) {
+  const gaUnavailable = Boolean(meta?.gaUnavailable ?? meta?.gaMock);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="mb-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[16px] font-semibold tracking-normal text-slate-950">Traffic Sources</h2>
-          <FilterDropdown range={range} setRange={setRange} />
-        </div>
-        <p className="mt-1 text-[11px] font-medium text-slate-500">Channel performance</p>
-      </div>
+      <PerformanceSectionHeader
+        className="mb-2"
+        title="Traffic Sources"
+        subtitle={(
+          <span className="inline-flex items-center gap-1.5 not-italic">
+            <span>Sorted by GA views (highest first)</span>
+            <MetricInfo title="Traffic sources" body="GA views and opt-ins by source. CRM shows bookings, revenue, and close rate." />
+          </span>
+        )}
+      />
+
+      {gaUnavailable ? <GaUnavailableNotice className="mb-2" /> : null}
 
       <div className="rounded-xl border border-slate-200 bg-white p-3">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Top sources</h3>
 
-          <div className="mt-2 divide-y divide-dashed divide-slate-100">
-            {((data?.rows?.length ? data.rows : Array.from({ length: 5 }).map((_, i) => ({ name: `source-${i}`, views: 0, optIns: 0, conversion: 0, revenue: 0 })))) .map( ( source ) => {
-              const Icon = sourceIcon(source.name);
-              const meta = `${formatInt(source.views)} views · ${formatInt(source.optIns)} opt-ins · ${formatPct(source.optInRate ?? source.conversion)} opt-in`;
-              const detailTitle = `${meta}${source.closeRate != null ? ` · ${formatPct(source.closeRate)} close/show` : ""}${source.optInSource ? ` · opt-ins from ${source.optInSource}` : ""}`;
-              return (
+        <div className="mt-2 divide-y divide-dashed divide-slate-100">
+          {((data?.rows?.length ? data.rows : Array.from({ length: 5 }).map((_, i) => ({ name: `source-${i}`, views: 0, optIns: 0, conversion: 0, revenue: 0 })))).map((source) => {
+            const Icon = sourceIcon(source.name);
+            const rowMeta = gaUnavailable
+              ? `${formatInt(source.optIns)} CRM bookings`
+              : `${formatInt(source.views)} views · ${formatInt(source.optIns)} opt-ins · ${formatPct(source.optInRate ?? source.conversion)} opt-in`;
+            const detailTitle = `${rowMeta}${source.closeRate != null ? ` · ${formatPct(source.closeRate)} close/show` : ""}${source.optInSource ? ` · opt-ins from ${source.optInSource}` : ""}`;
+            return (
               <div key={source.name} className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 py-2">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-indigo-50"><Icon className="h-4 w-4 text-indigo-600" strokeWidth={2.2} /></span>
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center justify-between gap-2"><div className="truncate text-[12px] font-semibold text-slate-950">{String(source.name).startsWith("source-") ? "—" : source.name}</div></div>
-                  <div className="min-w-0"><div className="mt-0.5 truncate text-[10px] font-medium text-slate-500" title={detailTitle}>{loading ? <ShimmerText className="h-3 w-36" /> : meta}</div></div>
+                  <div className="min-w-0"><div className="mt-0.5 truncate text-[10px] font-medium text-slate-500" title={detailTitle}>{loading ? <ShimmerText className="h-3 w-36" /> : rowMeta}</div></div>
                 </div>
                 <div className="text-right text-[12px] font-semibold text-slate-950">{loading ? <ShimmerText className="h-3 w-14" /> : formatUsd(source.revenue)}</div>
               </div>
-            )})}
-          </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
 }
 
-function FunnelDrilldown () {
-  const { loading, data, range, setRange } = useSectionData("funnel");
-
+function FunnelDrilldown({ rows, loading }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-        <h2 className="min-w-[220px] flex-1 text-[18px] font-semibold leading-tight tracking-normal text-slate-950">Funnel Performance by Country (Drill-down)</h2>
-        <div className="flex min-w-0 max-w-full shrink flex-wrap items-center justify-end gap-2">
-          <FilterDropdown range={range} setRange={setRange} />
-          <div className="min-w-0 max-w-[190px]">
-            <SectionBadge>Conversion Comparison</SectionBadge>
-          </div>
-        </div>
-      </div>
+      <PerformanceSectionHeader
+        className="mb-3"
+        bordered={false}
+        title={(
+          <span className="inline-flex items-start gap-2">
+            <span>Funnel Performance by Country (Drill-down)</span>
+            <MetricInfo title="Country funnel" body="CRM funnel by country plus GA visits and opt-ins in the same columns." />
+          </span>
+        )}
+        titleClassName="text-[18px] font-semibold leading-tight tracking-normal text-slate-950"
+        badge="Conversion Comparison"
+      />
 
-      <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
         <div className="grid grid-cols-[100px_repeat(4,minmax(80px,1fr))_64px_58px] items-end gap-2 border-b border-slate-200 pb-3 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-          <div>Country</div><div className=" leading-tight"><span className="block">Views</span><span className="ml-3 block">↓</span><span className="block">Opt-in</span></div><div className=" leading-tight"><span className="block">Opt-in</span><span className="ml-3 block">↓</span><span className="block">Book</span></div><div className=" leading-tight"><span className="block">Book</span><span className="ml-3 block">↓</span><span className="block">Show</span></div><div className=" leading-tight"><span className="block">Show</span><span className="ml-3 block">↓</span><span className="block">Close</span></div><div className=" leading-tight"><span className="block">End</span><span className="block">to end</span></div><div className="">Avg AOV</div>
+          <div>Country</div>
+          <div className="leading-tight" title="Visit → signed up">
+            <span className="block">Views</span><span className="ml-3 block">↓</span><span className="block">Opt-in</span>
+          </div>
+          <div className="leading-tight" title="Signed up → booked call">
+            <span className="block">Opt-in</span><span className="ml-3 block">↓</span><span className="block">Book</span>
+          </div>
+          <div className="leading-tight" title="Booked → showed up">
+            <span className="block">Book</span><span className="ml-3 block">↓</span><span className="block">Show</span>
+          </div>
+          <div className="leading-tight" title="Showed up → bought">
+            <span className="block">Show</span><span className="ml-3 block">↓</span><span className="block">Close</span>
+          </div>
+          <div className="leading-tight" title="Visit → sale">
+            <span className="block">End</span><span className="block">to end</span>
+          </div>
+          <div title="Avg sale amount">AOV</div>
         </div>
 
-          <div className="divide-y divide-slate-100">
-            {((data?.rows?.length ? data.rows : Array.from({ length: 6 }).map((_, i) => ({ country: `row-${i}`, code: "OTHER", optIns: 0, viewsToOptIn: 0, bookings: 0, optInToBook: 0, shows: 0, bookToShow: 0, closes: 0, showToClose: 0, endToEnd: 0, aov: 0 })))) .map( ( row ) => {
-              const endClass = row.endToEnd >= 0.08 ? "bg-emerald-100 text-emerald-700" : row.endToEnd >= 0.04 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600";
-              return (
+        <div className="divide-y divide-slate-100">
+          {((rows?.length ? rows : Array.from({ length: 6 }).map((_, i) => ({ country: `row-${i}`, code: "OTHER", optIns: 0, viewsToOptIn: 0, bookings: 0, optInToBook: 0, shows: 0, bookToShow: 0, closes: 0, showToClose: 0, endToEnd: 0, aov: 0 })))).map((row) => {
+            const endClass = row.endToEnd >= 0.08 ? "bg-emerald-100 text-emerald-700" : row.endToEnd >= 0.04 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600";
+            return (
               <div key={row.country} className="grid grid-cols-[100px_repeat(4,minmax(80px,1fr))_64px_58px] items-center gap-2 py-3">
                 <div className="min-w-0 truncate text-[11px] font-medium text-slate-700"><span className="mr-1.5 text-[12px]" aria-hidden="true">{countryFlag(row.code)}</span>{String(row.country).startsWith("row-") ? "—" : row.country}</div>
                 <div className="text-[11px] font-medium text-slate-700 tabular-nums">{loading ? <ShimmerText className="h-3 w-16" /> : `${formatInt(row.optIns)}(${formatPct(row.viewsToOptIn)})`}</div>
                 <div className="text-[11px] font-medium text-slate-700 tabular-nums">{loading ? <ShimmerText className="h-3 w-16" /> : `${formatInt(row.bookings)}(${formatPct(row.optInToBook)})`}</div>
                 <div className="text-[11px] font-medium text-slate-700 tabular-nums">{loading ? <ShimmerText className="h-3 w-16" /> : `${formatInt(row.shows)}(${formatPct(row.bookToShow)})`}</div>
                 <div className="text-[11px] font-medium text-slate-700 tabular-nums">{loading ? <ShimmerText className="h-3 w-16" /> : `${formatInt(row.closes)}(${formatPct(row.showToClose)})`}</div>
-                <div><span className={cx( "inline-flex rounded-full px-1.5 py-1 text-[9px] font-semibold", endClass )}>{loading ? <ShimmerText className="h-3 w-10" /> : formatPct(row.endToEnd, 3)}</span></div>
+                <div><span className={cx("inline-flex rounded-full px-1.5 py-1 text-[9px] font-semibold", endClass)}>{loading ? <ShimmerText className="h-3 w-10" /> : formatPct(row.endToEnd, 3)}</span></div>
                 <div className="text-[11px] font-medium text-slate-700">{loading ? <ShimmerText className="h-3 w-10" /> : formatUsd(row.aov)}</div>
               </div>
-            )})}
-          </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
 }
 
-function DevicePagePerformance () {
-  const deviceState = useSectionData("device");
-  const engagementState = useSectionData("engagement");
-  const loading = deviceState.loading || engagementState.loading;
+function DevicePagePerformance({ device, engagement, loading, meta }) {
+  const gaUnavailable = Boolean(meta?.gaUnavailable ?? meta?.gaMock);
 
-  const device = deviceState.data || {};
-  const engagement = engagementState.data || {};
+  const deviceData = device || {};
+  const engagementData = engagement || {};
   const deviceSegments = [
     {
       label: "Mobile",
-      pct: Number(device.mobilePct || 0),
-      optInRate: Number(device.mobileOptInRate || 0),
+      pct: Number(deviceData.mobilePct || 0),
+      optInRate: Number(deviceData.mobileOptInRate || 0),
       className: "bg-blue-600",
       dotClassName: "bg-blue-600",
     },
     {
       label: "Desktop",
-      pct: Number(device.desktopPct || 0),
-      optInRate: Number(device.desktopOptInRate || 0),
+      pct: Number(deviceData.desktopPct || 0),
+      optInRate: Number(deviceData.desktopOptInRate || 0),
       className: "bg-violet-600",
       dotClassName: "bg-violet-600",
     },
     {
       label: "Other",
-      pct: Number(device.otherPct || 0),
-      optInRate: Number(device.otherOptInRate || 0),
+      pct: Number(deviceData.otherPct || 0),
+      optInRate: Number(deviceData.otherOptInRate || 0),
       className: "bg-slate-400",
       dotClassName: "bg-slate-400",
     },
@@ -1045,17 +1682,20 @@ function DevicePagePerformance () {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-2">
-      <div className="mb-3 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[18px] font-semibold tracking-normal text-slate-950">Device &amp; Page Performance</h2>
-          <FilterDropdown range={deviceState.range} setRange={(r) => { deviceState.setRange(r); engagementState.setRange(r); }} />
-        </div>
-        <p className="mt-1 text-[12px] font-medium text-slate-500">UX signals</p>
-      </div>
+      <PerformanceSectionHeader
+        className="mb-3"
+        title="Device &amp; Page Performance"
+        titleClassName="text-[18px] font-semibold tracking-normal text-slate-950"
+      />
 
-      <div className="grid grid-cols-1 gap-3">
+      {gaUnavailable ? <GaUnavailableNotice className="mb-2" /> : null}
+
+      <div className="grid grid-cols-1 gap-2">
         <section className="rounded-xl border border-slate-200 bg-white p-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Device Split</h3>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Device Split</h3>
+            <MetricInfo title="Device split" body="GA sessions by device. Book rate lines use GA call_booked splits." />
+          </div>
           <div className="mt-3 flex h-8 overflow-visible rounded-md bg-slate-100">
             {deviceSegments.map((segment) => {
               const width = Math.max(segment.pct, segment.pct > 0 ? 3 : 0);
@@ -1065,14 +1705,16 @@ function DevicePagePerformance () {
                   className={cx("group relative flex h-full min-w-0 items-center justify-center px-1 text-[10px] font-bold text-white first:rounded-l-md last:rounded-r-md", segment.className)}
                   style={{ width: `${width}%` }}
                 >
-                  {loading ? <ShimmerText className="h-3 w-8" /> : <span className="truncate">{formatPct(segment.pct, 0)}</span>}
+                  {loading ? <ShimmerText className="h-3 w-8" /> : <span className="truncate">{gaUnavailable ? "—" : formatPct(segment.pct, 0)}</span>}
                   <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-max max-w-[190px] -translate-x-1/2 rounded-md border border-slate-200 bg-white px-2.5 py-2 text-left text-[11px] font-semibold leading-snug text-slate-700 shadow-lg group-hover:block">
                     {loading ? "Loading..." : (
                       <>
                         <div className="text-slate-950">{segment.label}</div>
                         <div className="mt-0.5 font-medium text-slate-500">Traffic: {formatPct(segment.pct, 1)}</div>
                         {segment.optInRate == null ? null : (
-                          <div className="font-medium text-slate-500">Opt-in: {formatPct(segment.optInRate, 1)}</div>
+                          <div className="font-medium text-slate-500">
+                            Book rate: {formatPct(segment.optInRate, 1)}
+                          </div>
                         )}
                       </>
                     )}
@@ -1086,35 +1728,43 @@ function DevicePagePerformance () {
               <span key={segment.label} className="inline-flex items-center gap-1.5">
                 <span className={cx("h-2.5 w-2.5 rounded-full", segment.dotClassName)} />
                 <span>{segment.label}: </span>
-                <span className="font-semibold text-slate-700">{loading ? <ShimmerText className="h-3 w-10" /> : formatPct(segment.pct, 1)}</span>
+                <span className="font-semibold text-slate-700">{loading ? <ShimmerText className="h-3 w-10" /> : (gaUnavailable ? "—" : formatPct(segment.pct, 1))}</span>
               </span>
             ))}
           </div>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Top Landing Pages</h3>
-            <div className="mt-3 divide-y divide-dashed divide-slate-100">
-              {(device.topLandingPages?.length ? device.topLandingPages : Array.from({ length: 4 }).map((_, i) => ({ page: `page-${i}`, sessions: 0, share: 0 }))).map((page) => (
-                <div key={page.page} className="flex items-center justify-between gap-4 py-2">
-                  <span className="truncate text-[13px] font-medium text-slate-700">{String(page.page).startsWith("page-") ? "—" : page.page}</span>
-                  <span className="shrink-0 text-right text-[12px] font-semibold leading-tight text-slate-950">
-                    {loading ? <ShimmerText className="h-3 w-14" /> : (
-                      <>
-                        <span className="block">{formatInt(page.sessions)} sessions</span>
-                        <span className="block text-[10px] font-medium text-slate-500">{formatPct(page.share)} share</span>
-                      </>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Top Landing Pages</h3>
+            <MetricInfo title="Landing pages" body="GA session share on funnel landing URLs (/ and /pro only)." />
+          </div>
+          <div className="mt-3 divide-y divide-dashed divide-slate-100">
+            {(deviceData.topLandingPages?.length ? deviceData.topLandingPages : Array.from({ length: 4 }).map((_, i) => ({ page: `page-${i}`, sessions: 0, share: 0 }))).map((page) => (
+              <div key={page.page} className="flex items-center justify-between gap-4 py-2">
+                <span className="truncate text-[13px] font-medium text-slate-700">{String(page.page).startsWith("page-") ? "—" : page.page}</span>
+                <span className="shrink-0 text-right text-[12px] font-semibold leading-tight text-slate-950">
+                  {loading ? <ShimmerText className="h-3 w-14" /> : (
+                    <>
+                      <span className="block">{gaUnavailable ? "—" : `${formatInt(page.sessions)} sessions`}</span>
+                      <span className="block text-[10px] font-medium text-slate-500">{gaUnavailable ? "" : `${formatPct(page.share)} share`}</span>
+                    </>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-3">
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Avg Time on Page</h3>
-          <div className="mt-3 text-[28px] font-semibold leading-none text-blue-600">{loading ? <ShimmerText className="h-8 w-16" /> : secondsToClock(engagement.avgTimeSec)}</div>
-          <p className="mt-2 text-[12px] font-medium text-slate-500">VSL 50%+ watched: {loading ? <ShimmerText className="h-3 w-12" /> : (engagement.vslCompletionPct == null ? "—" : formatPct(engagement.vslCompletionPct, 0))}</p>
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Avg Time on Page</h3>
+            <MetricInfo title="Time on site" body="GA average time on page for All, Ads, or Organic. Completion = video_complete ÷ video_start." />
+          </div>
+          <div className="mt-3 text-[28px] font-semibold leading-none text-blue-600">{loading ? <ShimmerText className="h-8 w-16" /> : (gaUnavailable ? "—" : secondsToClock(engagementData.avgTimeSec))}</div>
+          <p className="mt-2 text-[12px] font-medium text-slate-500" title="video_complete divided by video_start on the selected VSL page(s).">
+            VSL completion: {loading ? <ShimmerText className="h-3 w-12" /> : (gaUnavailable || engagementData.vslCompletionPct == null ? "—" : formatPct(engagementData.vslCompletionPct, 0))}
+          </p>
           <div className="mt-3 space-y-1.5">
             {loading ? (
               <>
@@ -1122,21 +1772,21 @@ function DevicePagePerformance () {
                 <ShimmerBlock className="h-4 w-4/5" />
                 <ShimmerBlock className="h-4 w-3/5" />
               </>
-            ) : (engagement.vslProgressRanges?.length ? engagement.vslProgressRanges : []).map((range) => (
+            ) : (engagementData.vslProgressRanges?.length ? engagementData.vslProgressRanges : []).map((range) => (
               <div key={range.percent} className="flex items-center justify-between gap-3 text-[11px] font-medium">
                 <span className="text-slate-500">{formatPct(range.percent, 0)} watched</span>
                 <span className="font-semibold text-slate-950">{formatInt(range.events)} events</span>
               </div>
             ))}
-            {!loading && !engagement.vslProgressRanges?.length && engagement.vslFallbackRanges?.length ? engagement.vslFallbackRanges.map((range) => (
+            {!loading && !engagementData.vslProgressRanges?.length && engagementData.vslFallbackRanges?.length ? engagementData.vslFallbackRanges.map((range) => (
               <div key={range.label} className="flex items-center justify-between gap-3 text-[11px] font-medium">
                 <span className="text-slate-500">{range.label}</span>
                 <span className="font-semibold text-slate-950">{formatInt(range.events)} events</span>
               </div>
             )) : null}
-            {!loading && !engagement.vslProgressRanges?.length && !engagement.vslFallbackRanges?.length ? (
+            {!loading && !engagementData.vslProgressRanges?.length && !engagementData.vslFallbackRanges?.length ? (
               <div className="text-[11px] font-medium text-slate-400">
-                {engagement.vslProgressUnavailable ? "Video percent is not exposed in GA Data API" : "No VSL video events found"}
+                {"No VSL video events found"}
               </div>
             ) : null}
           </div>
@@ -1146,25 +1796,69 @@ function DevicePagePerformance () {
   );
 }
 
-export default function Performance () {
+export default function Performance() {
+  const [range, setRange] = useState("mtd");
+
+  const customFallback = useMemo(() => getPerformanceRangeBounds("mtd"), []);
+  const [customStart, setCustomStart] = useState(() => isoDay(customFallback.start));
+  const [customEnd, setCustomEnd] = useState(() => isoDay(customFallback.end));
+
+  const [armFilter, setArmFilter] = useState("all");
+
+  const { loading, data, meta, error } = usePerformanceData(range, customStart, customEnd, armFilter);
+
+  const rangeBounds = useMemo(
+    () => getPerformanceRangeBounds(range, customStart, customEnd),
+    [range, customStart, customEnd],
+  );
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-4">
+      <PerformanceGlobalFilters
+        range={range}
+        onRangeChange={setRange}
+        customStart={customStart}
+        onCustomStartChange={setCustomStart}
+        customEnd={customEnd}
+        onCustomEndChange={setCustomEnd}
+        armFilter={armFilter}
+        onArmFilterChange={setArmFilter}
+        rangeBounds={rangeBounds}
+        loading={loading}
+      />
+
+      {error ? (
+        <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-700">
+          Failed to load performance data: {error}
+        </p>
+      ) : null}
+
       <div className="grid grid-cols-8 gap-2">
         <div className="col-span-2 flex flex-col gap-3">
-          <TopLineSection />
-          <DevicePagePerformance />
+          <TopLineSection
+            data={data?.topline}
+            loading={loading}
+            meta={meta}
+            armFilter={armFilter}
+          />
+          <DevicePagePerformance
+            device={data?.device}
+            engagement={data?.engagement}
+            loading={loading}
+            meta={meta}
+          />
         </div>
 
         <div className="col-span-4 flex flex-col gap-3">
-          <CountryTable />
-          <div className="">
-            <FunnelDrilldown />
+          <CountryTable data={data?.country} loading={loading} meta={meta} />
+          <div>
+            <FunnelDrilldown rows={data?.country?.rows} loading={loading} />
           </div>
         </div>
 
         <div className="col-span-2 flex flex-col gap-3">
-          <TrafficSources />
-          <CountryInsights />
+          <TrafficSources data={data?.traffic} loading={loading} meta={meta} />
+          <CountryInsights data={data?.country} loading={loading} />
         </div>
       </div>
     </div>
