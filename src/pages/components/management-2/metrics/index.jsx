@@ -67,11 +67,26 @@ const METRIC_RANGE_ITEMS = [
   { id: "lastMonth", label: "Last mo" },
 ];
 
-const COHORT_RANGE_ITEMS = [
-  { id: "last30", label: "Last 30 days" },
-  { id: "last90", label: "Last 90 days" },
+const NORTH_STAR_RANGE_ITEMS = [
   { id: "mtd", label: "MTD" },
+  { id: "lastWeek", label: "Last wk" },
   { id: "lastMonth", label: "Last mo" },
+  { id: "custom", label: "Custom" },
+];
+
+const HEALTH_RANGE_ITEMS = [
+  { id: "mtd", label: "MTD" },
+  { id: "lastWeek", label: "Last wk" },
+  { id: "lastMonth", label: "Last mo" },
+  { id: "custom", label: "Custom" },
+];
+
+const COHORT_RANGE_ITEMS = [
+  { id: "mtd", label: "MTD" },
+  { id: "lastWeek", label: "Last wk" },
+  { id: "last90", label: "Last 90 days" },
+  { id: "lastMonth", label: "Last mo" },
+  { id: "custom", label: "Custom" },
 ];
 
 const HEATMAP_RANGE_ITEMS = [
@@ -96,7 +111,7 @@ function isoDay ( date ) {
   return date.toISOString().slice( 0, 10 );
 }
 
-function getRangeBounds ( range ) {
+function getRangeBounds ( range, customStart = null, customEnd = null ) {
   const now = new Date();
   const todayStart = startOfUTCDate( now );
   const todayEnd = endOfUTCDate( now );
@@ -122,6 +137,9 @@ function getRangeBounds ( range ) {
     const monthRange = DateHelpers.getMonthRangeInTimezone( previousMonth, DateHelpers.DEFAULT_TIMEZONE );
     return { start: monthRange.startDate, end: monthRange.endDate };
   }
+  if ( range === "custom" ) {
+    return normalizeCustomBounds( customStart, customEnd );
+  }
   if ( range === "mtd" ) {
     const monthRange = DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE );
     return { start: monthRange.startDate, end: now };
@@ -138,8 +156,18 @@ function getPriorRangeBounds ( start, end ) {
   return { start: priorStart, end: priorEnd };
 }
 
+function normalizeCustomBounds ( startDateText, endDateText ) {
+  const fallback = getRangeBounds( "mtd" );
+  if ( !startDateText || !endDateText ) return fallback;
+  const start = new Date( `${startDateText}T00:00:00.000Z` );
+  const end = new Date( `${endDateText}T23:59:59.999Z` );
+  if ( Number.isNaN( start.getTime() ) || Number.isNaN( end.getTime() ) ) return fallback;
+  if ( start > end ) return fallback;
+  return { start, end };
+}
+
 function rangeLabel ( range ) {
-  const item = [ ...METRIC_RANGE_ITEMS, ...COHORT_RANGE_ITEMS, ...HEATMAP_RANGE_ITEMS ].find( ( option ) => option.id === range );
+  const item = [ ...NORTH_STAR_RANGE_ITEMS, ...METRIC_RANGE_ITEMS, ...COHORT_RANGE_ITEMS, ...HEATMAP_RANGE_ITEMS ].find( ( option ) => option.id === range );
   return item?.label || "Selected range";
 }
 
@@ -214,11 +242,38 @@ function sumNetTransactions ( rows, startISO, endISO ) {
   }, 0 );
 }
 
+function isResolvedInRange ( row, startISO, endISO ) {
+  return row?.payment_resolved_at != null
+    && row.payment_resolved_at >= startISO
+    && row.payment_resolved_at <= endISO
+    && ( row.effective_date == null || row.effective_date < startISO || row.effective_date > endISO );
+}
+
+function isSuccessfulChargeRow ( row, startISO, endISO ) {
+  const resolvedInRange = isResolvedInRange( row, startISO, endISO );
+  if ( resolvedInRange ) return true;
+
+  const action = String( row?.action || ( Number( row?.amount_in_cents || 0 ) >= 0 ? "charge" : "refund" ) ).toLowerCase();
+  return action === "charge" && !isFailedTransaction( row, action );
+}
+
+function getCohortAccountingDate ( row, startISO, endISO ) {
+  return isResolvedInRange( row, startISO, endISO )
+    ? row.payment_resolved_at
+    : ( row.effective_date || row.created_at_kajabi || null );
+}
+
 function metricBadge ( current, previous, label ) {
-  if ( !previous ) {
+  if ( previous == null ) {
     return {
       badge: `No ${label} data`,
       badgeClass: "bg-slate-100 text-slate-600",
+    };
+  }
+  if ( previous === 0 ) {
+    return {
+      badge: current === 0 ? `No change vs ${label}` : `New ${label} data`,
+      badgeClass: current === 0 ? "bg-slate-100 text-slate-600" : "bg-emerald-100 text-emerald-700",
     };
   }
   const delta = ( ( current - previous ) / Math.abs( previous ) ) * 100;
@@ -226,6 +281,22 @@ function metricBadge ( current, previous, label ) {
     badge: `${delta >= 0 ? "▲" : "▼"} ${Math.abs( round1( delta ) )}% vs ${label}`,
     badgeClass: delta >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
   };
+}
+
+function MetricInfo ( { title, body } ) {
+  return (
+    <span className="group relative inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 text-[9px] font-semibold leading-none text-slate-500 cursor-default">
+      i
+      <span className="pointer-events-none invisible absolute right-0 top-full z-20 mt-1 w-[160px] rounded-md border border-slate-200 bg-white px-2 py-1 text-[9px] font-medium leading-snug text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.14)] group-hover:visible">
+        <span className="block text-[9px] font-semibold text-slate-900">
+          {title}
+        </span>
+        <span className="block">
+          {body}
+        </span>
+      </span>
+    </span>
+  );
 }
 
 async function fetchTransactions ( start, end ) {
@@ -357,6 +428,55 @@ async function loadGaFunnel ( start, end ) {
   };
 }
 
+function funnelTooltipMeta ( row, previousRow, gaOptInsAvailable ) {
+  const formula = previousRow
+    ? `${row.label.toLowerCase()} / ${previousRow.label.toLowerCase()} = share percentage`
+    : "baseline row = 100%";
+
+  if ( row.label === "Website Visitors" ) {
+    return {
+      source: "GA",
+      sourceText: "website page views",
+      formula,
+    };
+  }
+  if ( row.label === "VSL Watched" ) {
+    return {
+      source: "GA",
+      sourceText: "VSL page sessions",
+      formula,
+    };
+  }
+  if ( row.label === "Opt-ins" ) {
+    return {
+      source: gaOptInsAvailable ? "GA" : "CRM",
+      sourceText: gaOptInsAvailable
+        ? "opt-in events/sessions"
+        : "booked calls fallback",
+      formula,
+    };
+  }
+  if ( row.label === "Calls Booked" ) {
+    return {
+      source: "CRM",
+      sourceText: "calls by book date",
+      formula,
+    };
+  }
+  if ( row.label === "Show-ups" ) {
+    return {
+      source: "CRM",
+      sourceText: "showed-up calls",
+      formula,
+    };
+  }
+  return {
+    source: "CRM",
+    sourceText: "closed sales",
+    formula,
+  };
+}
+
 function buildFunnel ( ga, callsBooked, showUps, closedSales ) {
   const optIns = ga.optIns > 0 ? ga.optIns : callsBooked;
   const counts = [
@@ -379,13 +499,17 @@ function buildFunnel ( ga, callsBooked, showUps, closedSales ) {
       stepPct: round1( stepPct ),
     };
   } );
-  const leaks = rows.slice( 1 ).filter( ( row ) => row.rawValue > 0 || row.stepPct > 0 );
+  const rowsWithTooltips = rows.map( ( row, index ) => ( {
+    ...row,
+    tooltipMeta: funnelTooltipMeta( row, index === 0 ? null : rows[ index - 1 ], ga.optIns > 0 ),
+  } ) );
+  const leaks = rowsWithTooltips.slice( 1 ).filter( ( row ) => row.rawValue > 0 || row.stepPct > 0 );
   const leak = leaks.length ? leaks.reduce( ( min, row ) => row.stepPct < min.stepPct ? row : min, leaks[ 0 ] ) : null;
-  const leakIndex = leak ? rows.indexOf( leak ) : -1;
+  const leakIndex = leak ? rowsWithTooltips.indexOf( leak ) : -1;
   return {
-    rows,
+    rows: rowsWithTooltips,
     visitorToCustomer: formatPct( pct( closedSales, counts[ 0 ].value ) ),
-    biggestLeak: leak ? `Biggest leak: ${rows[ leakIndex - 1 ]?.label || "Previous"} → ${leak.label} (${formatPct( leak.stepPct )})` : "Biggest leak: not enough funnel data yet",
+    biggestLeak: leak ? `Biggest leak: ${rowsWithTooltips[ leakIndex - 1 ]?.label || "Previous"} → ${leak.label} (${formatPct( leak.stepPct )})` : "Biggest leak: not enough funnel data yet",
     gaAvailable: ga.available,
   };
 }
@@ -462,19 +586,21 @@ async function loadClosedSalesCount ( start, end ) {
   );
 }
 
-async function buildCohortCards ( start90, now ) {
+async function buildCohortCards ( start90, now, cohortRange ) {
   const txRows = await fetchTransactions( start90, now );
-  const gross = sumGrossTransactions( txRows, start90.toISOString(), now.toISOString() );
-  const net = sumNetTransactions( txRows, start90.toISOString(), now.toISOString() );
+  const startISO = start90.toISOString();
+  const endISO = now.toISOString();
+  const gross = sumGrossTransactions( txRows, startISO, endISO );
+  const net = sumNetTransactions( txRows, startISO, endISO );
   const refunds = txRows.reduce( ( sum, row ) => {
     const action = String( row?.action || "" ).toLowerCase();
     return action === "refund" || action === "dispute" || Number( row?.amount_in_cents || 0 ) < 0
       ? sum + txAmountUsd( row )
       : sum;
-  }, 0 );
+    }, 0 );
   const payingCustomers = new Set(
     txRows
-      .filter( ( row ) => String( row?.action || "" ).toLowerCase() === "charge" && !isFailedTransaction( row ) )
+      .filter( ( row ) => isSuccessfulChargeRow( row, startISO, endISO ) )
       .map( ( row ) => row?.kajabi_customer_id )
       .filter( Boolean ),
   );
@@ -484,11 +610,11 @@ async function buildCohortCards ( start90, now ) {
   // Numerator   = of those, customers with at least one consecutive month pair (M and M+1).
   const customerMonths = new Map(); // kajabi_customer_id -> Set<'YYYY-MM'>
   for ( const row of txRows ) {
-    const action = String( row?.action || "" ).toLowerCase();
-    if ( action !== "charge" || isFailedTransaction( row, action ) ) continue;
+    if ( !isSuccessfulChargeRow( row, startISO, endISO ) ) continue;
     const customerId = row?.kajabi_customer_id;
     if ( !customerId ) continue;
-    const d = new Date( row?.created_at_kajabi );
+    const accountingDate = getCohortAccountingDate( row, startISO, endISO );
+    const d = new Date( accountingDate );
     if ( isNaN( d.getTime() ) ) continue;
     const mk = `${d.getUTCFullYear()}-${String( d.getUTCMonth() + 1 ).padStart( 2, "0" )}`;
     if ( !customerMonths.has( customerId ) ) customerMonths.set( customerId, new Set() );
@@ -515,22 +641,28 @@ async function buildCohortCards ( start90, now ) {
 
   return [
     {
-      label: "Avg LTV (90d)",
+      label: "Avg LTV",
       value: formatUsd( payingCustomers.size ? net / payingCustomers.size : 0 ),
       valueClass: "text-blue-600",
-      note: `${formatInt( payingCustomers.size )} paying customers in last 90 days`,
+      note: `${rangeLabel( cohortRange )} · ${formatInt( payingCustomers.size )} paying customers`,
+      infoTitle: "Avg LTV",
+      infoBody: "Net revenue ÷ paying customers. Higher means more revenue per buyer.",
     },
     {
       label: "Refund / chargeback %",
       value: formatPct( refundPct ),
       valueClass: refundPct > 5 ? "text-red-600" : "text-emerald-600",
       note: "Refunds and disputes as share of gross charges",
+      infoTitle: "Refund rate",
+      infoBody: "Refunds + disputes ÷ gross charges.",
     },
     {
       label: "Retention (M+1)",
       value: retentionDenominator > 0 ? formatPct( retentionPct ) : "—",
       valueClass: retentionPct >= 60 ? "text-emerald-600" : retentionPct >= 40 ? "text-amber-600" : "text-rose-600",
       note: `${formatInt( retainedCount )} of ${formatInt( retentionDenominator )} multi-month payers had consecutive months`,
+      infoTitle: "Retention",
+      infoBody: "Customers who paid in one month and again the next.",
     },
   ];
 }
@@ -587,12 +719,16 @@ async function buildSpeedCards ( recentStart, now ) {
             ? "text-amber-600"
             : "text-rose-600",
       note: avgMinutes == null ? "Zoom analysis unavailable" : "Target: <5 min",
+      infoTitle: "Avg time to 1st call",
+      infoBody: "Average minutes from booking to the first outbound call.",
     },
     {
       label: "Leads not yet contacted",
       value: formatInt( notContacted ),
       valueClass: notContacted > 0 ? "text-red-600" : "text-emerald-600",
       note: "Recent bookings older than 1 hour",
+      infoTitle: "Leads not yet contacted",
+      infoBody: "Booked calls older than 1 hour that still have no first call.",
     },
     {
       label: "Open follow-up queue",
@@ -708,9 +844,12 @@ function MetricCard ( { metric, compact = false } ) {
         compact ? "min-h-[112px] px-2.5 py-2.5" : "min-h-[132px] px-4 py-4 sm:px-5",
       )}
     >
-      <p className={cx( "min-h-[22px] font-semibold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px] leading-[11px]" : "text-[11px]" )}>
-        {metric.label}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p className={cx( "min-h-[22px] font-semibold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px] leading-[11px]" : "text-[11px]" )}>
+          {metric.label}
+        </p>
+        <MetricInfo title={metric.infoTitle || metric.label} body={metric.infoBody || metric.note} />
+      </div>
       <div className={cx( compact ? "mt-1 text-[22px]" : "mt-3 text-[30px]", "font-semibold leading-none tracking-normal", metric.valueClass )}>
         {metric.value}
       </div>
@@ -832,9 +971,17 @@ function FunnelSection ( { funnel, loading, range, onRangeChange } ) {
         </div>
         <div className="flex w-full items-center justify-between gap-2">
           <SectionBadge>Visitor → Customer</SectionBadge>
-          <span className={cx( "shrink-0 text-[11px] font-semibold", !loading && getSuccessClass( parseMetricNumber( funnel?.visitorToCustomer ) || 0 ) )}>
-            {loading ? "—" : funnel?.visitorToCustomer || "—"}
-          </span>
+          <div className="relative shrink-0 flex items-center gap-1">
+            <span className={cx( "text-[11px] font-semibold", !loading && getSuccessClass( parseMetricNumber( funnel?.visitorToCustomer ) || 0 ) )}>
+              {loading ? "—" : funnel?.visitorToCustomer || "—"}
+            </span>
+            <span className="group relative inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-slate-300 text-[9px] font-semibold leading-none text-slate-500 cursor-default">
+              i
+              <span className="pointer-events-none invisible absolute right-0 top-full z-20 mt-1 w-[160px] rounded-md border border-slate-200 bg-white px-2 py-1 text-[9px] font-medium leading-snug text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.14)] group-hover:visible">
+                Closed (Sale) / Website Visitors in selected range.
+              </span>
+            </span>
+          </div>
         </div>
         <div className="w-full">
           <SectionRangeSelect
@@ -866,36 +1013,36 @@ function FunnelSection ( { funnel, loading, range, onRangeChange } ) {
 
         {hoveredRow ? (
           <div
-            className="pointer-events-none absolute z-20 w-[166px] rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
+            className="pointer-events-none absolute z-20 w-[176px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left shadow-[0_8px_18px_rgba(15,23,42,0.14)]"
             style={{
-              left: Math.min( Math.max( hoveredRow.x, 88 ), 184 ),
-              top: hoveredRow.y < 86 ? hoveredRow.y + 28 : hoveredRow.y - 86,
+              left: Math.min( Math.max( hoveredRow.x, 90 ), 196 ),
+              top: hoveredRow.y < 106 ? hoveredRow.y + 26 : hoveredRow.y - 106,
               transform: "translateX(-50%)",
             }}
           >
             <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-[11px] font-semibold text-slate-950">
+              <p className="truncate text-[10px] font-semibold text-slate-950">
                 {hoveredRow.row.label}
               </p>
               <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-blue-700">
                 {hoveredRow.row.percent}
               </span>
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+            <div className="mt-1.5 grid grid-cols-2 gap-2 border-t border-slate-100 pt-1.5">
               <div>
-                <p className="text-[8px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                <p className="text-[7px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                   Count
                 </p>
-                <p className="mt-0.5 text-[12px] font-semibold leading-none text-slate-900">
+                <p className="mt-0.5 text-[11px] font-semibold leading-none text-slate-900">
                   {hoveredRow.row.value}
                 </p>
               </div>
               <div>
-                <p className="text-[8px] font-semibold uppercase tracking-[0.1em] text-slate-400">
+                <p className="text-[7px] font-semibold uppercase tracking-[0.08em] text-slate-400">
                   Share
                 </p>
                 <p className={cx(
-                  "mt-0.5 text-[12px] font-semibold leading-none",
+                  "mt-0.5 text-[11px] font-semibold leading-none",
                   hoveredRow.row.label === "Show-ups"
                     ? getShowUpClass( hoveredRow.row.stepPct )
                     : hoveredRow.row.label === "Closed (Sale)"
@@ -905,6 +1052,15 @@ function FunnelSection ( { funnel, loading, range, onRangeChange } ) {
                   {hoveredRow.row.percent}
                 </p>
               </div>
+            </div>
+            <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+              <p className="text-[9px] font-medium leading-snug text-slate-600">
+                <span className="font-semibold text-slate-800">{hoveredRow.row.tooltipMeta?.source}:</span>{" "}
+                {hoveredRow.row.tooltipMeta?.sourceText}
+              </p>
+              <p className="mt-1 text-[9px] font-semibold leading-snug text-slate-900">
+                {hoveredRow.row.tooltipMeta?.formula}
+              </p>
             </div>
           </div>
         ) : null}
@@ -936,9 +1092,12 @@ function SmallMetricCard ( { card, compact = false } ) {
         compact ? "min-h-[76px] px-2.5 py-2.5" : "min-h-[106px] px-4 py-4",
       )}
     >
-      <p className={cx( "font-semibold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px]" : "text-[10px]" )}>
-        {card.label}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p className={cx( "font-semibold uppercase tracking-[0.08em] text-slate-500", compact ? "text-[9px]" : "text-[10px]" )}>
+          {card.label}
+        </p>
+        <MetricInfo title={card.infoTitle || card.label} body={card.infoBody || card.note} />
+      </div>
       <div className={cx( compact ? "mt-2 text-[20px]" : "mt-4 text-[25px]", "font-semibold leading-none tracking-normal", performanceTextForCard( card ) )}>
         {card.value}
       </div>
@@ -962,7 +1121,20 @@ function SmallMetricCardShimmer ( { compact = false } ) {
   );
 }
 
-function CardGridSection ( { title, badge, cards, compact = false, loading = false, range, onRangeChange, rangeItems = METRIC_RANGE_ITEMS } ) {
+function CardGridSection ( {
+  title,
+  badge,
+  cards,
+  compact = false,
+  loading = false,
+  range,
+  onRangeChange,
+  rangeItems = METRIC_RANGE_ITEMS,
+  customStart,
+  customEnd,
+  onCustomStartChange,
+  onCustomEndChange,
+} ) {
   return (
     <section className={compact ? "min-w-0" : ""}>
       <div className={cx(
@@ -982,6 +1154,28 @@ function CardGridSection ( { title, badge, cards, compact = false, loading = fal
         </div>
       </div>
 
+      {range === "custom" ? (
+        <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+          <input
+            type="date"
+            value={customStart || ""}
+            onChange={( event ) => onCustomStartChange?.( event.target.value )}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+            aria-label={`${title} custom start date`}
+          />
+          <span className="text-[10px] font-semibold text-slate-500">
+            –
+          </span>
+          <input
+            type="date"
+            value={customEnd || ""}
+            onChange={( event ) => onCustomEndChange?.( event.target.value )}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+            aria-label={`${title} custom end date`}
+          />
+        </div>
+      ) : null}
+
       <div className={cx( "grid grid-cols-1", compact ? "mt-2 gap-2" : "mt-4 gap-4 md:grid-cols-3" )}>
         {loading
           ? Array.from( { length: 3 } ).map( ( _, index ) => (
@@ -995,7 +1189,16 @@ function CardGridSection ( { title, badge, cards, compact = false, loading = fal
   );
 }
 
-function NorthStarSection ( { metrics, loading, range, onRangeChange } ) {
+function NorthStarSection ( {
+  metrics,
+  loading,
+  range,
+  onRangeChange,
+  customStart,
+  customEnd,
+  onCustomStartChange,
+  onCustomEndChange,
+} ) {
   return (
     <DashboardPanel>
       <div className="flex flex-col items-start gap-2">
@@ -1009,9 +1212,32 @@ function NorthStarSection ( { metrics, loading, range, onRangeChange } ) {
           <SectionRangeSelect
             value={range}
             onChange={onRangeChange}
+            items={NORTH_STAR_RANGE_ITEMS}
             label="North-star metrics range"
           />
         </div>
+
+        {range === "custom" ? (
+          <div className="flex w-full flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+            <input
+              type="date"
+              value={customStart || ""}
+              onChange={( event ) => onCustomStartChange?.( event.target.value )}
+              className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+              aria-label="North-star custom start date"
+            />
+            <span className="text-[10px] font-semibold text-slate-500">
+              –
+            </span>
+            <input
+              type="date"
+              value={customEnd || ""}
+              onChange={( event ) => onCustomEndChange?.( event.target.value )}
+              className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+              aria-label="North-star custom end date"
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -1025,7 +1251,17 @@ function NorthStarSection ( { metrics, loading, range, onRangeChange } ) {
   );
 }
 
-function HealthAlertsSection ( { alerts, loading, error, range, onRangeChange } ) {
+function HealthAlertsSection ( {
+  alerts,
+  loading,
+  error,
+  range,
+  onRangeChange,
+  customStart,
+  customEnd,
+  onCustomStartChange,
+  onCustomEndChange,
+} ) {
   return (
     <DashboardPanel className="p-4">
       <div className="flex items-start justify-between gap-4">
@@ -1042,10 +1278,33 @@ function HealthAlertsSection ( { alerts, loading, error, range, onRangeChange } 
           <SectionRangeSelect
             value={range}
             onChange={onRangeChange}
+            items={HEALTH_RANGE_ITEMS}
             label="Health alerts range"
           />
         </div>
       </div>
+
+      {range === "custom" ? (
+        <div className="mt-2 flex w-full flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
+          <input
+            type="date"
+            value={customStart || ""}
+            onChange={( event ) => onCustomStartChange?.( event.target.value )}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+            aria-label="Health alerts custom start date"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">
+            –
+          </span>
+          <input
+            type="date"
+            value={customEnd || ""}
+            onChange={( event ) => onCustomEndChange?.( event.target.value )}
+            className="h-7 w-full rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+            aria-label="Health alerts custom end date"
+          />
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {loading
@@ -1061,7 +1320,24 @@ function HealthAlertsSection ( { alerts, loading, error, range, onRangeChange } 
   );
 }
 
-function ValueVelocityPanel ( { cohortCards, speedCards, cohortLoading, speedLoading, cohortRange, onCohortRangeChange, speedRange, onSpeedRangeChange } ) {
+function ValueVelocityPanel ( {
+  cohortCards,
+  speedCards,
+  cohortLoading,
+  speedLoading,
+  cohortRange,
+  onCohortRangeChange,
+  speedRange,
+  onSpeedRangeChange,
+  cohortCustomStart,
+  cohortCustomEnd,
+  onCohortCustomStartChange,
+  onCohortCustomEndChange,
+  speedCustomStart,
+  speedCustomEnd,
+  onSpeedCustomStartChange,
+  onSpeedCustomEndChange,
+} ) {
   return (
     <DashboardPanel className="space-y-4">
       <CardGridSection
@@ -1073,6 +1349,10 @@ function ValueVelocityPanel ( { cohortCards, speedCards, cohortLoading, speedLoa
         range={cohortRange}
         onRangeChange={onCohortRangeChange}
         rangeItems={COHORT_RANGE_ITEMS}
+        customStart={cohortCustomStart}
+        customEnd={cohortCustomEnd}
+        onCustomStartChange={onCohortCustomStartChange}
+        onCustomEndChange={onCohortCustomEndChange}
       />
 
       <CardGridSection
@@ -1083,6 +1363,11 @@ function ValueVelocityPanel ( { cohortCards, speedCards, cohortLoading, speedLoa
         loading={speedLoading}
         range={speedRange}
         onRangeChange={onSpeedRangeChange}
+        rangeItems={NORTH_STAR_RANGE_ITEMS}
+        customStart={speedCustomStart}
+        customEnd={speedCustomEnd}
+        onCustomStartChange={onSpeedCustomStartChange}
+        onCustomEndChange={onSpeedCustomEndChange}
       />
     </DashboardPanel>
   );
@@ -1253,7 +1538,7 @@ function ActivityHeatmapSection ( { heatmapDays, loading, range, onRangeChange }
 }
 
 export default function Metrics () {
-  const { monthlyRevenueGoal } = useRevenueGoal();
+  const { monthlyRevenueGoal, loading: revenueGoalLoading } = useRevenueGoal();
   const [ metrics, setMetrics ] = useState( EMPTY_METRICS );
   const [ loading, setLoading ] = useState( {
     northStar: true,
@@ -1264,33 +1549,61 @@ export default function Metrics () {
     speed: true,
   } );
   const [ error, setError ] = useState( "" );
-  const [ northStarRange, setNorthStarRange ] = useState( "today" );
+  const [ northStarRange, setNorthStarRange ] = useState( "mtd" );
+  const [ northStarCustomStart, setNorthStarCustomStart ] = useState( () => {
+    const now = new Date();
+    return DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE )?.startDate.toISOString().slice( 0, 10 ) || now.toISOString().slice( 0, 10 );
+  } );
+  const [ northStarCustomEnd, setNorthStarCustomEnd ] = useState( () => new Date().toISOString().slice( 0, 10 ) );
   const [ funnelRange, setFunnelRange ] = useState( "mtd" );
   const [ healthRange, setHealthRange ] = useState( "mtd" );
+  const [ healthCustomStart, setHealthCustomStart ] = useState( () => {
+    const now = new Date();
+    return DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE )?.startDate.toISOString().slice( 0, 10 ) || now.toISOString().slice( 0, 10 );
+  } );
+  const [ healthCustomEnd, setHealthCustomEnd ] = useState( () => new Date().toISOString().slice( 0, 10 ) );
   const [ heatmapRange, setHeatmapRange ] = useState( "last7" );
-  const [ cohortRange, setCohortRange ] = useState( "last90" );
-  const [ speedRange, setSpeedRange ] = useState( "last7" );
+  const [ cohortRange, setCohortRange ] = useState( "mtd" );
+  const [ speedRange, setSpeedRange ] = useState( "mtd" );
+  const [ cohortCustomStart, setCohortCustomStart ] = useState( () => {
+    const now = new Date();
+    return DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE )?.startDate.toISOString().slice( 0, 10 ) || now.toISOString().slice( 0, 10 );
+  } );
+  const [ cohortCustomEnd, setCohortCustomEnd ] = useState( () => new Date().toISOString().slice( 0, 10 ) );
+  const [ speedCustomStart, setSpeedCustomStart ] = useState( () => {
+    const now = new Date();
+    return DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE )?.startDate.toISOString().slice( 0, 10 ) || now.toISOString().slice( 0, 10 );
+  } );
+  const [ speedCustomEnd, setSpeedCustomEnd ] = useState( () => new Date().toISOString().slice( 0, 10 ) );
 
   useEffect( () => {
     let cancelled = false;
 
     async function loadNorthStar () {
+      if ( revenueGoalLoading ) return;
       setLoading( ( previous ) => ( { ...previous, northStar: true } ) );
       try {
         const now = new Date();
-        const northBounds = getRangeBounds( northStarRange );
+        const northBounds = getRangeBounds( northStarRange, northStarCustomStart, northStarCustomEnd );
         const northPrior = getPriorRangeBounds( northBounds.start, northBounds.end );
         const monthRange = DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE );
         const daysInMonth = monthRange.endDate.getUTCDate();
         const dailyTarget = monthlyRevenueGoal / daysInMonth;
 
-        const [ northTx, northPriorTx, northBookings, northPriorBookings, northCalls, northPriorCalls ] = await Promise.all( [
+        const [
+          northTx,
+          northPriorTx,
+          northLeadCalls,
+          northPriorLeadCalls,
+          northBookedCalls,
+          northPriorBookedCalls,
+        ] = await Promise.all( [
           fetchTransactions( northBounds.start, northBounds.end ),
           fetchTransactions( northPrior.start, northPrior.end ),
-          loadCallsInRange( northBounds.start, northBounds.end, "book_date" ),
-          loadCallsInRange( northPrior.start, northPrior.end, "book_date" ),
           loadCallsInRange( northBounds.start, northBounds.end, "call_date" ),
           loadCallsInRange( northPrior.start, northPrior.end, "call_date" ),
+          loadCallsInRange( northBounds.start, northBounds.end, "book_date" ),
+          loadCallsInRange( northPrior.start, northPrior.end, "book_date" ),
         ] );
 
         const northStartISO = northBounds.start.toISOString();
@@ -1301,9 +1614,10 @@ export default function Metrics () {
         const northPriorNet = sumNetTransactions( northPriorTx, northPriorStartISO, northPriorEndISO );
         const northGross = sumGrossTransactions( northTx, northStartISO, northEndISO );
         const northPriorGross = sumGrossTransactions( northPriorTx, northPriorStartISO, northPriorEndISO );
-        const confirmedCalls = northCalls.filter( ( call ) => call.confirmed === true || call.confirmed === "true" ).length;
-        const organicLeads = northBookings.filter( ( call ) => sourceBucket( call.source_type ) === "organic" ).length;
-        const paidLeads = northBookings.filter( ( call ) => sourceBucket( call.source_type ) === "paid" ).length;
+        const confirmedCalls = northBookedCalls.filter( ( call ) => call.confirmed === true ).length;
+        const pendingCalls = northBookedCalls.filter( ( call ) => call.confirmed === false ).length;
+        const organicLeads = northLeadCalls.filter( ( call ) => sourceBucket( call.source_type ) === "organic" ).length;
+        const paidLeads = northLeadCalls.filter( ( call ) => sourceBucket( call.source_type ) === "paid" ).length;
 
         const metricCards = [
           {
@@ -1316,6 +1630,8 @@ export default function Metrics () {
                 : "text-rose-600",
             ...metricBadge( northNet, northPriorNet, "prior period" ),
             note: `${rangeLabel( northStarRange )} · Goal-pace: ${formatUsd( dailyTarget )}/day`,
+            infoTitle: "Net revenue",
+            infoBody: "Revenue after refunds.",
           },
           {
             label: northStarRange === "today" ? "Cash collected today" : "Cash collected",
@@ -1323,22 +1639,28 @@ export default function Metrics () {
             valueClass: "text-blue-600",
             ...metricBadge( northGross, northPriorGross, "prior period" ),
             note: "Successful Kajabi charges before refunds",
+            infoTitle: "Cash collected",
+            infoBody: "Successful charges before refunds.",
           },
           {
             label: northStarRange === "today" ? "New leads today" : "New leads",
-            value: formatInt( northBookings.length ),
+            value: formatInt( northLeadCalls.length ),
             valueClass: "text-violet-600",
-            badge: `${northBookings.length - northPriorBookings.length >= 0 ? "▲" : "▼"} ${Math.abs( northBookings.length - northPriorBookings.length )} vs prior period`,
-            badgeClass: northBookings.length >= northPriorBookings.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
+            badge: `${northLeadCalls.length - northPriorLeadCalls.length >= 0 ? "▲" : "▼"} ${Math.abs( northLeadCalls.length - northPriorLeadCalls.length )} vs prior period`,
+            badgeClass: northLeadCalls.length >= northPriorLeadCalls.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
             note: `${formatInt( organicLeads )} organic · ${formatInt( paidLeads )} paid`,
+            infoTitle: "New leads",
+            infoBody: "New calls in the selected range.",
           },
           {
             label: northStarRange === "today" ? "Booked calls today" : "Booked calls",
-            value: formatInt( northCalls.length ),
+            value: formatInt( northBookedCalls.length ),
             valueClass: "text-amber-600",
-            badge: `${northCalls.length >= northPriorCalls.length ? "▲" : "▼"} ${Math.abs( northCalls.length - northPriorCalls.length )} vs prior period`,
-            badgeClass: northCalls.length >= northPriorCalls.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
-            note: `${formatInt( confirmedCalls )} confirmed · ${formatInt( Math.max( northCalls.length - confirmedCalls, 0 ) )} pending`,
+            badge: `${northBookedCalls.length >= northPriorBookedCalls.length ? "▲" : "▼"} ${Math.abs( northBookedCalls.length - northPriorBookedCalls.length )} vs prior period`,
+            badgeClass: northBookedCalls.length >= northPriorBookedCalls.length ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
+            note: `${formatInt( confirmedCalls )} confirmed · ${formatInt( pendingCalls )} pending`,
+            infoTitle: "Booked calls",
+            infoBody: "Booked calls in the selected range.",
           },
         ];
 
@@ -1363,7 +1685,7 @@ export default function Metrics () {
     return () => {
       cancelled = true;
     };
-  }, [ monthlyRevenueGoal, northStarRange ] );
+  }, [ monthlyRevenueGoal, revenueGoalLoading, northStarRange, northStarCustomStart, northStarCustomEnd ] );
 
   useEffect( () => {
     let cancelled = false;
@@ -1402,11 +1724,12 @@ export default function Metrics () {
     let cancelled = false;
 
     async function loadHealth () {
+      if ( revenueGoalLoading ) return;
       setLoading( ( previous ) => ( { ...previous, health: true } ) );
       setError( "" );
       try {
         const now = new Date();
-        const healthBounds = getRangeBounds( healthRange );
+        const healthBounds = getRangeBounds( healthRange, healthCustomStart, healthCustomEnd );
         const healthPrior = getPriorRangeBounds( healthBounds.start, healthBounds.end );
         const monthRange = DateHelpers.getMonthRangeInTimezone( now, DateHelpers.DEFAULT_TIMEZONE );
         const monthEnd = monthRange.endDate;
@@ -1475,7 +1798,7 @@ export default function Metrics () {
     return () => {
       cancelled = true;
     };
-  }, [ healthRange, monthlyRevenueGoal ] );
+  }, [ healthRange, healthCustomStart, healthCustomEnd, monthlyRevenueGoal, revenueGoalLoading ] );
 
   useEffect( () => {
     let cancelled = false;
@@ -1506,8 +1829,8 @@ export default function Metrics () {
     async function loadCohorts () {
       setLoading( ( previous ) => ( { ...previous, cohort: true } ) );
       try {
-        const cohortBounds = getRangeBounds( cohortRange );
-        const cohortCards = await buildCohortCards( cohortBounds.start, cohortBounds.end );
+        const cohortBounds = getRangeBounds( cohortRange, cohortCustomStart, cohortCustomEnd );
+        const cohortCards = await buildCohortCards( cohortBounds.start, cohortBounds.end, cohortRange );
         if ( cancelled ) return;
         setMetrics( ( previous ) => ( { ...previous, cohortCards } ) );
       } catch ( err ) {
@@ -1521,7 +1844,7 @@ export default function Metrics () {
     return () => {
       cancelled = true;
     };
-  }, [ cohortRange ] );
+  }, [ cohortRange, cohortCustomStart, cohortCustomEnd ] );
 
   useEffect( () => {
     let cancelled = false;
@@ -1529,7 +1852,7 @@ export default function Metrics () {
     async function loadSpeed () {
       setLoading( ( previous ) => ( { ...previous, speed: true } ) );
       try {
-        const speedBounds = getRangeBounds( speedRange );
+        const speedBounds = getRangeBounds( speedRange, speedCustomStart, speedCustomEnd );
         const speedCards = await buildSpeedCards( speedBounds.start, speedBounds.end );
         if ( cancelled ) return;
         setMetrics( ( previous ) => ( { ...previous, speedCards } ) );
@@ -1544,7 +1867,7 @@ export default function Metrics () {
     return () => {
       cancelled = true;
     };
-  }, [ speedRange ] );
+  }, [ speedRange, speedCustomStart, speedCustomEnd ] );
 
   return (
     <div className="grid grid-cols-1 gap-2 xl:grid-cols-8 xl:items-start">
@@ -1554,6 +1877,10 @@ export default function Metrics () {
           loading={loading.northStar}
           range={northStarRange}
           onRangeChange={setNorthStarRange}
+          customStart={northStarCustomStart}
+          customEnd={northStarCustomEnd}
+          onCustomStartChange={setNorthStarCustomStart}
+          onCustomEndChange={setNorthStarCustomEnd}
         />
         <div className="mt-4">
           <FunnelSection
@@ -1572,6 +1899,10 @@ export default function Metrics () {
           error={error}
           range={healthRange}
           onRangeChange={setHealthRange}
+          customStart={healthCustomStart}
+          customEnd={healthCustomEnd}
+          onCustomStartChange={setHealthCustomStart}
+          onCustomEndChange={setHealthCustomEnd}
         />
 
         <DashboardPanel className="p-4">
@@ -1594,6 +1925,14 @@ export default function Metrics () {
           onCohortRangeChange={setCohortRange}
           speedRange={speedRange}
           onSpeedRangeChange={setSpeedRange}
+          cohortCustomStart={cohortCustomStart}
+          cohortCustomEnd={cohortCustomEnd}
+          onCohortCustomStartChange={setCohortCustomStart}
+          onCohortCustomEndChange={setCohortCustomEnd}
+          speedCustomStart={speedCustomStart}
+          speedCustomEnd={speedCustomEnd}
+          onSpeedCustomStartChange={setSpeedCustomStart}
+          onSpeedCustomEndChange={setSpeedCustomEnd}
         />
       </div>
     </div>

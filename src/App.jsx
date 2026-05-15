@@ -52,7 +52,9 @@ function AppRoutes() {
         path="/management"
         element={
           <ProtectedRoute>
-            <ManagementPage />
+            <Layout>
+              <Management2 />
+            </Layout>
           </ProtectedRoute>
         }
       />
@@ -60,9 +62,7 @@ function AppRoutes() {
         path="/management-2"
         element={
           <ProtectedRoute>
-            <Layout>
-              <Management2 />
-            </Layout>
+            <ManagementPage />
           </ProtectedRoute>
         }
       />

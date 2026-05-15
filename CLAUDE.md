@@ -1,5 +1,11 @@
 # CLAUDE.md — Inglés Ahorita CRM
 
+## Agent session protocol
+
+Same as `AGENTS.md` (keep in sync). Order: **(1)** skim `AGENTS.md` / this file, **(2)** read `.agents/rules/graphify.md` every chat, **(3)** read `graphify-out/GRAPH_REPORT.md`, **(4)** `.agents/skills/.../SKILL.md` when Supabase/Postgres/graphify CLI applies, **(5)** narrow exploration (prefer graphify over grep when cross-module), **(6)** `graphify update .` after substantive edits. Cursor: `.cursor/rules/session-boot.mdc`.
+
+---
+
 ## What this project is
 
 A sales CRM + commission management system for **Inglés Ahorita**, a Spanish-language English teaching business. The CRM tracks:
@@ -208,9 +214,10 @@ export default function MyPage() {
 
 ## Knowledge Graph (graphify)
 
-This project uses **graphify** to maintain a navigable knowledge graph of the architecture.
+Policy: **`.agents/rules/graphify.md`** (every chat; steps 2–3 of [Agent session protocol](#agent-session-protocol)). Cursor: `.cursor/rules/session-boot.mdc`.
 
-- **Context**: Read `graphify-out/GRAPH_REPORT.md` at the start of a session for god nodes and community structure.
-- **Visualization**: Open `graphify-out/graph.html` in a browser for a 3D view of the codebase.
-- **Updates**: After modifying code, run `graphify update .` to keep the graph and report current.
-- **Queries**: Use `graphify query "..."` or `graphify explain "..."` for cross-module navigation.
+- **Rules**: `.agents/rules/graphify.md`
+- **Context**: `graphify-out/GRAPH_REPORT.md`
+- **Visualization**: `graphify-out/graph.html`
+- **Updates**: `graphify update .` after substantive edits
+- **Queries**: graphify MCP or CLI — prefer over grep for cross-module navigation

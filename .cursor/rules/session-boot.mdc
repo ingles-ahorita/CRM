@@ -1,0 +1,25 @@
+---
+description: Session boot — AGENTS.md, graphify rules, report, skills; narrow exploration last
+alwaysApply: true
+---
+
+# Session boot (every repo task)
+
+Do these **in order** before writing code or giving architecture answers. Skip only what clearly does not apply (e.g. no DB work → skip Supabase skills).
+
+1. **`AGENTS.md`** — Skim stack, folders, routing/API patterns, env vars, key tables. Canonical agent orientation doc.
+
+2. **`.agents/rules/graphify.md`** — **Read every chat.** Canonical graphify policy; follow all bullets below.
+
+3. **`graphify-out/GRAPH_REPORT.md`** — Per graphify rules: read **God nodes** and **Community hubs** for this task before research. Optional: `graphify-out/graph.html` for spatial layout.
+
+4. **Project skills** (read when the task matches):
+   - Supabase: `.agents/skills/supabase/SKILL.md`
+   - Postgres performance: `.agents/skills/supabase-postgres-best-practices/SKILL.md`
+   - Graphify CLI: `~/.agents/skills/graphify/SKILL.md` if present.
+
+5. **Narrow exploration** — `grep` / read only files the graph and task pointed to. Prefer graphify MCP/CLI over grep for cross-module questions (see `.agents/rules/graphify.md`).
+
+6. **After non-trivial code changes** — Run `graphify update .` from repo root (see `.agents/rules/graphify.md`).
+
+Do not skip steps 1–3 for multi-file or unfamiliar work.
