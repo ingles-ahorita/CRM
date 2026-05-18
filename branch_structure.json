@@ -1,0 +1,21 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "2026-02-16-l8pj",
+    "2026-04-07-l2xd",
+    "main",
+    "staging"
+  ],
+  "parent": {
+    "2026-02-16-l8pj": "main",
+    "2026-04-07-l2xd": "main",
+    "main": null,
+    "staging": "main"
+  },
+  "order": [
+    "main",
+    "2026-02-16-l8pj",
+    "2026-04-07-l2xd",
+    "staging"
+  ]
+}

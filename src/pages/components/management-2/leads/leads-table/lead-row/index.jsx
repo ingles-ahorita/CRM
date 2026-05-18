@@ -25,22 +25,44 @@ function callTimeColor ( time, isRescheduled, called ) {
   return "#e5e7eb";
 }
 
+function getZoomCallLogUrl ( phone, bookDate ) {
+  if ( !phone || !bookDate ) return "#";
+  const fromDate = new Date( bookDate );
+  fromDate.setDate( fromDate.getDate() - 1 );
+  const toDate = new Date( bookDate );
+  toDate.setMonth( toDate.getMonth() + 1 );
+  const from = `${fromDate.getFullYear()}-${fromDate.getMonth() + 1}-${fromDate.getDate()} `;
+  const to = `${toDate.getFullYear()}-${toDate.getMonth() + 1}-${toDate.getDate()} `;
+  const phoneCleaned = "+" + phone.toString().replace( /\D/g, "" );
+  return `https://us06web.zoom.us/pbx/page/telephone/callLog#/recording-list?page_size=15&page_number=1&recordingReport=0&from=${encodeURIComponent( from )}&to=${encodeURIComponent( to )}&keyword=${encodeURIComponent( phoneCleaned )}`;
+}
+
 function ResponsePill ( { lead } ) {
+  const phone = lead?.leads?.phone || lead?.phone;
+  const href = getZoomCallLogUrl( phone, lead?.book_date );
+
   return (
-    <span
-      className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[12px] font-semibold"
-      style={{
-        backgroundColor: callTimeColor(
-          lead?.responseTimeMinutes,
-          lead?.is_reschedule,
-          lead?.called,
-        ),
-        color: "#343434ff",
-      }}
-      title="Response"
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={( e ) => e.stopPropagation()}
     >
-      {lead?.called ? `${lead?.responseTimeMinutes}m` : "Not called"}
-    </span>
+      <span
+        className="inline-flex items-center justify-center rounded-md px-2 py-1 text-[12px] font-semibold"
+        style={{
+          backgroundColor: callTimeColor(
+            lead?.responseTimeMinutes,
+            lead?.is_reschedule,
+            lead?.called,
+          ),
+          color: "#343434ff",
+        }}
+        title="Response"
+      >
+        {lead?.called ? `${lead?.responseTimeMinutes}m` : "Not called"}
+      </span>
+    </a>
   );
 }
 

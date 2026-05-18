@@ -470,13 +470,13 @@ function matchesTrafficArm(name, armFilter) {
   return armFilter === "ads" ? isAd : !isAd;
 }
 
-async function fetchPerformanceData(range, timezone, customStart = null, customEnd = null, armFilter = "all") {
-  const cacheKey = `${range}:${timezone}:${customStart || ""}:${customEnd || ""}:${armFilter}`;
+async function fetchPerformanceData(range, timezone, customStart = null, customEnd = null, armFilter = "all", countryFilterGa = "") {
+  const cacheKey = `${range}:${timezone}:${customStart || ""}:${customEnd || ""}:${armFilter}:${countryFilterGa || ""}`;
   const cached = performanceDataCache.get(cacheKey);
 
   if (cached) return cached;
 
-  const request = buildPerformanceData(range, timezone, customStart, customEnd, armFilter).catch((error) => {
+  const request = buildPerformanceData(range, timezone, customStart, customEnd, armFilter, countryFilterGa).catch((error) => {
     performanceDataCache.delete(cacheKey);
     throw error;
   });
@@ -508,7 +508,65 @@ async function runSupabaseQuery(queryFactory, label) {
   }
 }
 
-async function buildPerformanceData(range, timezone, customStart = null, customEnd = null, armFilter = "all") {
+/** GA `country` dimension value (e.g. "Mexico") must match exactly. */
+function gaRowMatchesCountryFilter(row, countryFilterGa) {
+  if (!countryFilterGa) return true;
+  return String(row?.dimensions?.country ?? "").trim() === countryFilterGa;
+}
+
+function sumGaCountryMetric(payload, countryFilterGa) {
+  if (!countryFilterGa) return 0;
+  return gaRows(payload).reduce((sum, r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return sum;
+    return sum + (Number(r.metric || 0) || 0);
+  }, 0);
+}
+
+function computeTopCountryFilterChoices(gaCountryViewsPayload) {
+  const totals = new Map();
+  for (const r of gaRows(gaCountryViewsPayload)) {
+    const name = String(r?.dimensions?.country ?? "").trim();
+    if (!name || name === "(not set)") continue;
+    totals.set(name, (totals.get(name) || 0) + (Number(r.metric || 0) || 0));
+  }
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([value, views]) => ({ value, label: `${value} (${formatInt(views)})` }));
+}
+
+function isOptInPagePathForViews(p) {
+  const path = String(p || "").trim();
+  if (!path) return false;
+  if (path === ADS_OPT_IN_PATH) return true;
+  if (path === "/pro" || path === "/") return true;
+  return false;
+}
+
+function sumOptInPathViewsFromPageCountry(payload, countryFilterGa) {
+  return gaRows(payload).reduce((sum, r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return sum;
+    const path = String(r?.dimensions?.pagePath ?? "").trim();
+    if (!isOptInPagePathForViews(path)) return sum;
+    return sum + (Number(r.metric || 0) || 0);
+  }, 0);
+}
+
+function filterCrmRowsByGaCountry(rows, countryFilterGa, getPhone) {
+  if (!countryFilterGa || !rows?.length) return rows;
+  const key = String(countryFilterGa).trim().toLowerCase();
+  const targetCode =
+    COUNTRY_CODE_BY_NAME[key] ||
+    Object.entries(COUNTRY_NAME_BY_CODE).find(([, n]) => String(n).toLowerCase() === key)?.[0];
+  if (!targetCode || targetCode === "OTHER") return rows;
+  return rows.filter((row) => {
+    const c = getCountryFromPhone(getPhone(row));
+    const code = !c || c === "Unknown" ? "OTHER" : String(c).split("/")[0].toUpperCase();
+    return code === targetCode;
+  });
+}
+
+async function buildPerformanceData(range, timezone, customStart = null, customEnd = null, armFilter = "all", countryFilterGa = "") {
   const { start, end } = getPerformanceRangeBounds(range, customStart, customEnd);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
@@ -526,11 +584,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     : armFilter === "ads" ? ADS_VSL_PATH
     : vslPathsParam;
 
-  const [
-    rawCallsByDate,
-    rawBookings,
-    rawPurchases,
-  ] = await Promise.all([
+  let [rawCallsByDate, rawBookings, rawPurchases] = await Promise.all([
     runSupabaseQuery(
       () => supabase
         .from("calls")
@@ -581,6 +635,10 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     ),
   ]);
 
+  rawCallsByDate = filterCrmRowsByGaCountry(rawCallsByDate, countryFilterGa, (r) => r.phone || r.leads?.phone);
+  rawBookings = filterCrmRowsByGaCountry(rawBookings, countryFilterGa, (r) => r.phone || r.leads?.phone);
+  rawPurchases = filterCrmRowsByGaCountry(rawPurchases, countryFilterGa, (r) => r.calls?.phone || r.calls?.leads?.phone);
+
   const [
     gaAdsSiteViews,
     gaOrganicSiteViews,
@@ -595,6 +653,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     gaAdsOptInSessions,
     gaOrganicOptInSessions,
     gaCountryViews,
+    gaCountrySessions,
     gaDeviceSessions,
     gaSourceViews,
     gaSourceOptIns,
@@ -606,6 +665,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     gaVideoComplete,
     gaAvgDuration,
     gaSessionsByDate,
+    gaPagePathCountryViews,
   ] = await Promise.all([
     fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ADS_PAGE_PREFIX })),
     fetchGaJson(gaApiUrl(startDate, endDate, { excludePagePath: ADS_PAGE_PREFIX })),
@@ -621,16 +681,17 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePaths: ORGANIC_OPT_IN_PATHS })),
     // Country views: arm-aware via pagePath/excludePagePath
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "country", metricName: "screenPageViews", ...armPathParams })),
-    // Device sessions: arm-aware
-    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "deviceCategory", metricName: "sessions", ...armPathParams })),
-    // Source views (whole-site; client filters by source-name arm match)
-    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "sessionSource", metricName: "screenPageViews" })),
-    // Source opt-ins (call_booked); whole-site, client filters by source-name arm match
-    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "sessionSource", metricName: "eventCount" })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "country", metricName: "sessions", ...armPathParams })),
+    // Device sessions: arm-aware + country (aggregated client-side)
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "deviceCategory,country", metricName: "sessions", ...armPathParams })),
+    // Source views: sessionSource + country (aggregated client-side)
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "sessionSource,country", metricName: "screenPageViews" })),
+    // Source opt-ins (call_booked); whole-site; sessionSource + country
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "sessionSource,country", metricName: "eventCount" })),
     // Country opt-ins (call_booked): arm-aware
     fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "country", metricName: "eventCount", ...armPathParams })),
-    // Device opt-ins (call_booked): arm-aware
-    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "deviceCategory", metricName: "eventCount", ...armPathParams })),
+    // Device opt-ins (call_booked): arm-aware + country
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "deviceCategory,country", metricName: "eventCount", ...armPathParams })),
     // Whole-site call_booked totals (for "all" arm in TopLine "Call booked" card)
     fetchGaJson(gaApiUrl(startDate, endDate, { wholeSite: "1" })),
     // VSL video aggregates only (no video_percent breakdown — GA4 often rejects that dimension in Data API).
@@ -641,6 +702,8 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     // reflects the selected funnel arm rather than the whole property.
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "date", metricName: "averageSessionDuration", ...armPathParams })),
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "date", metricName: "sessions", ...armPathParams })),
+    // Page path × country views (arm-aware) for detailed "Page views by path" table
+    fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "pagePath,country", metricName: "screenPageViews", ...armPathParams })),
   ]);
 
   [
@@ -652,7 +715,24 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     gaOrganicVslViews,
     gaAdsOptInViews,
     gaOrganicOptInViews,
+    gaAdsVslSessions,
+    gaOrganicVslSessions,
+    gaAdsOptInSessions,
+    gaOrganicOptInSessions,
+    gaCountryViews,
+    gaCountrySessions,
+    gaDeviceSessions,
+    gaSourceViews,
+    gaSourceOptIns,
+    gaCountryOptIns,
+    gaDeviceOptIns,
     gaOptInEvents,
+    gaVideoStart,
+    gaVideoProgressTotal,
+    gaVideoComplete,
+    gaAvgDuration,
+    gaSessionsByDate,
+    gaPagePathCountryViews,
   ].forEach((payload) => {
     if (payload?.failed && payload?.error) gaErrors.push(payload.error);
   });
@@ -667,6 +747,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     gaOptInEvents,
   ];
   const gaUnavailable = !isGaConfigured(coreGaPayloads);
+  const countryFilterChoices = !gaUnavailable ? computeTopCountryFilterChoices(gaCountryViews) : [];
 
   const rescheduledLeadIds = new Set(rawCallsByDate.filter((call) => call.is_reschedule === true).map((call) => call.lead_id));
   const callsByDateAll = rawCallsByDate.filter((call) => call.is_reschedule === true || !rescheduledLeadIds.has(call.lead_id));
@@ -716,13 +797,34 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
   const organicVslConversion = organicOptInSessions > 0 ? (organicVslSessions / organicOptInSessions) * 100 : null;
 
   const optInsEvents = sumGaRows(gaOptInEvents, "eventCount");
-  const armGaCallBooked = sumGaMetricRows(gaDeviceOptIns);
+  const armGaCallBooked = countryFilterGa
+    ? gaRows(gaDeviceOptIns).reduce(
+        (s, r) => (gaRowMatchesCountryFilter(r, countryFilterGa) ? s + (Number(r.metric || 0) || 0) : s),
+        0,
+      )
+    : sumGaMetricRows(gaDeviceOptIns);
   const armCallBooked = pickArmMetric(organicVslCallBooked, adsVslCallBooked, armFilter);
   const optIns = gaUnavailable
     ? bookings.length
     : (armFilter === "all" && optInsEvents > 0
       ? optInsEvents
       : (armCallBooked > 0 ? armCallBooked : (optInsSessions > 0 ? optInsSessions : bookings.length)));
+
+  let websiteViewsForTop = websiteViews;
+  let websiteSessionsForTop = websiteSessions;
+  let optInPageViewsForTop = optInPageViews;
+  let optInsForTop = optIns;
+  if (countryFilterGa && !gaUnavailable) {
+    const cv = sumGaCountryMetric(gaCountryViews, countryFilterGa);
+    if (cv > 0) websiteViewsForTop = cv;
+    const cs = sumGaCountryMetric(gaCountrySessions, countryFilterGa);
+    if (cs > 0) websiteSessionsForTop = cs;
+    const ov = sumOptInPathViewsFromPageCountry(gaPagePathCountryViews, countryFilterGa);
+    if (ov > 0) optInPageViewsForTop = ov;
+    const co = sumGaCountryMetric(gaCountryOptIns, countryFilterGa);
+    optInsForTop = co > 0 ? co : bookings.length;
+  }
+
   const optInSource = gaUnavailable
     ? "CRM bookings (GA unavailable)"
     : (armFilter === "all" && optInsEvents > 0
@@ -784,11 +886,13 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
   });
 
   gaRows(gaSourceViews).forEach((r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return;
     const name = normalizeGaSource(r?.dimensions?.sessionSource);
     if (!matchesTrafficArm(name, armFilter)) return;
     ensureSource(name).views += Number(r.metric || 0);
   });
   gaRows(gaSourceOptIns).forEach((r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return;
     const name = normalizeGaSource(r?.dimensions?.sessionSource);
     if (!matchesTrafficArm(name, armFilter)) return;
     ensureSource(name).gaOptIns += Number(r.metric || 0);
@@ -796,6 +900,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
 
   // Country GA views/opt-ins are arm-aware via pagePath filter (see armPathParams).
   gaRows(gaCountryViews).forEach((r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return;
     const rawCountry = String(r?.dimensions?.country || "");
     const code = codeFromCountryName(rawCountry);
     const country = ensureCountry(code);
@@ -803,6 +908,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     country.views += Number(r.metric || 0);
   });
   gaRows(gaCountryOptIns).forEach((r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return;
     const rawCountry = String(r?.dimensions?.country || "");
     const code = codeFromCountryName(rawCountry);
     const country = ensureCountry(code);
@@ -810,7 +916,11 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     country.gaOptIns += Number(r.metric || 0);
   });
 
-  const hasGaCountryOptIns = !gaUnavailable && sumGaMetricRows(gaCountryOptIns) > 0;
+  const hasGaCountryOptIns =
+    !gaUnavailable &&
+    (countryFilterGa
+      ? sumGaCountryMetric(gaCountryOptIns, countryFilterGa) > 0
+      : sumGaMetricRows(gaCountryOptIns) > 0);
   const allCountryRows = Object.values(countryAgg).map((r) => mapCountryMetrics(r, hasGaCountryOptIns));
   const totalCountryViews = allCountryRows.reduce((sum, r) => sum + Number(r.views || 0), 0);
   const countryRows = allCountryRows
@@ -841,6 +951,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
   const deviceCounts = { mobile: 0, desktop: 0, other: 0 };
   const deviceOptIns = { mobile: 0, desktop: 0, other: 0 };
   gaRows(gaDeviceSessions).forEach((r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return;
     const key = String(r?.dimensions?.deviceCategory || "").toLowerCase();
     const val = Number(r.metric || 0);
     if (key === "mobile") deviceCounts.mobile += val;
@@ -848,6 +959,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     else deviceCounts.other += val;
   });
   gaRows(gaDeviceOptIns).forEach((r) => {
+    if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return;
     const key = String(r?.dimensions?.deviceCategory || "").toLowerCase();
     const val = Number(r.metric || 0);
     if (key === "mobile") deviceOptIns.mobile += val;
@@ -855,6 +967,40 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     else deviceOptIns.other += val;
   });
   const totalDevice = deviceCounts.mobile + deviceCounts.desktop + deviceCounts.other;
+
+  const pathCountryRows = [];
+  if (!gaUnavailable && !gaPagePathCountryViews?.failed && !gaPagePathCountryViews?.unavailable) {
+    gaRows(gaPagePathCountryViews).forEach((r) => {
+      if (!gaRowMatchesCountryFilter(r, countryFilterGa)) return;
+      const path = String(r?.dimensions?.pagePath ?? "").trim() || "(not set)";
+      const country = String(r?.dimensions?.country ?? "").trim() || "(not set)";
+      const views = Number(r.metric || 0);
+      if (views > 0) pathCountryRows.push({ path, country, views });
+    });
+  }
+  const pathViewsByPath = new Map();
+  for (const row of pathCountryRows) {
+    pathViewsByPath.set(row.path, (pathViewsByPath.get(row.path) || 0) + row.views);
+  }
+  const pathViewsTotal = [...pathViewsByPath.values()].reduce((a, b) => a + b, 0);
+  const topPathsForCard = [...pathViewsByPath.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([path, views]) => ({
+      path,
+      views,
+      share: pathViewsTotal > 0 ? (views / pathViewsTotal) * 100 : 0,
+    }));
+  const pageViewsDetail = {
+    pathCountryRows,
+    topPaths: topPathsForCard,
+    totalViews: pathCountryRows.reduce((s, r) => s + r.views, 0),
+    error: gaPagePathCountryViews?.failed
+      ? gaPagePathCountryViews.error
+      : gaPagePathCountryViews?.unavailable
+        ? gaPagePathCountryViews.reason || "GA page path report unavailable"
+        : null,
+  };
 
   const funnelLanding = collectFunnelLandingPages(
     ...(armFilter === "ads"
@@ -870,7 +1016,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
   const avgTimeSec = gaUnavailable ? null : weightedAvgSessionDuration(gaAvgDuration, gaSessionsByDate);
 
   const watchRate = optInsSessions > 0 ? (vslWatched / optInsSessions) * 100 : 0;
-  const optInRate = optInPageViews > 0 ? (optIns / optInPageViews) * 100 : 0;
+  const optInRate = optInPageViewsForTop > 0 ? (optInsForTop / optInPageViewsForTop) * 100 : 0;
 
   return {
     meta: {
@@ -884,6 +1030,8 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
       gaMock: gaUnavailable,
       gaError: gaErrors.length > 0 ? gaErrors[0] : null,
       armFilter,
+      countryFilter: countryFilterGa || "",
+      countryFilterChoices,
     },
     topline: {
       gaUnavailable,
@@ -891,17 +1039,18 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
         ads: buildArmSnapshot(adsVslViews, adsOptInViews, adsVslSessions, adsOptInSessions, adsBookingRate, adsVslConversion, adsVslCallBooked),
         organic: buildArmSnapshot(organicVslViews, organicOptInViews, organicVslSessions, organicOptInSessions, organicBookingRate, organicVslConversion, organicVslCallBooked),
       },
-      wholeSiteCallBooked: armFilter === "all" ? optInsEvents : armGaCallBooked,
+      wholeSiteCallBooked:
+        countryFilterGa && !gaUnavailable ? optInsForTop : armFilter === "all" ? optInsEvents : armGaCallBooked,
       armFilter,
-      websiteViews,
-      websiteSessions,
+      websiteViews: websiteViewsForTop,
+      websiteSessions: websiteSessionsForTop,
       adsSiteViews,
       organicSiteViews,
       adsSiteSessions,
       organicSiteSessions,
-      optInPageViews,
+      optInPageViews: optInPageViewsForTop,
       vslWatched,
-      optIns,
+      optIns: optInsForTop,
       optInSource,
       optInsSessions,
       bookings: bookings.length,
@@ -915,7 +1064,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
       organicClosedRevenue: organicPurchases.reduce((s, p) => s + Number(p.offer_price || 0), 0),
       watchRate,
       optInRate,
-      bookRate: optIns > 0 ? (bookings.length / optIns) * 100 : 0,
+      bookRate: optInsForTop > 0 ? (bookings.length / optInsForTop) * 100 : 0,
       adsVslViews,
       organicVslViews,
       adsOptInViews,
@@ -932,7 +1081,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     country: {
       rows: countryRows,
       totalViews: totalCountryViews,
-      websiteViews,
+      websiteViews: websiteViewsForTop,
       mapRanges: [
         { label: "Low", color: "#bfdbfe" },
         { label: "Med", color: "#93c5fd" },
@@ -950,7 +1099,13 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
       mobileOptInRate: deviceCounts.mobile > 0 ? (deviceOptIns.mobile / deviceCounts.mobile) * 100 : 0,
       desktopOptInRate: deviceCounts.desktop > 0 ? (deviceOptIns.desktop / deviceCounts.desktop) * 100 : 0,
       otherOptInRate: deviceCounts.other > 0 ? (deviceOptIns.other / deviceCounts.other) * 100 : 0,
-      deviceOptInSource: !gaUnavailable && sumGaMetricRows(gaDeviceOptIns) > 0 ? "GA call_booked by device" : "Unavailable",
+      deviceOptInSource:
+        !gaUnavailable &&
+        (countryFilterGa
+          ? gaRows(gaDeviceOptIns).some((r) => gaRowMatchesCountryFilter(r, countryFilterGa) && Number(r.metric || 0) > 0)
+          : sumGaMetricRows(gaDeviceOptIns) > 0)
+          ? "GA call_booked by device"
+          : "Unavailable",
       topLandingPages: landing,
     },
     engagement: {
@@ -959,11 +1114,12 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
       vslProgressRanges,
       vslFallbackRanges,
     },
+    pageViewsDetail,
   };
 }
 
 /** Single page-wide data hook. All sections subscribe to the same payload. */
-function usePerformanceData(range, customStart, customEnd, armFilter) {
+function usePerformanceData(range, customStart, customEnd, armFilter, countryFilterGa) {
   const [state, setState] = useState({ loading: true, data: null, error: null, meta: null });
 
   useEffect(() => {
@@ -977,6 +1133,7 @@ function usePerformanceData(range, customStart, customEnd, armFilter) {
       range === "custom" ? customStart : null,
       range === "custom" ? customEnd : null,
       armFilter,
+      countryFilterGa || "",
     )
       .then((json) => {
         if (cancelled) return;
@@ -990,7 +1147,7 @@ function usePerformanceData(range, customStart, customEnd, armFilter) {
     return () => {
       cancelled = true;
     };
-  }, [range, customStart, customEnd, armFilter]);
+  }, [range, customStart, customEnd, armFilter, countryFilterGa]);
 
   return state;
 }
@@ -1097,6 +1254,9 @@ function PerformanceGlobalFilters({
   onCustomEndChange,
   armFilter,
   onArmFilterChange,
+  countryFilter,
+  onCountryFilterChange,
+  countryFilterChoices,
   rangeBounds,
   loading,
 }) {
@@ -1143,6 +1303,29 @@ function PerformanceGlobalFilters({
           onChange={onArmFilterChange}
         />
 
+        <span className="hidden h-5 w-px bg-slate-200 sm:inline-block" aria-hidden="true" />
+
+        <div className="flex min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1">
+          <label htmlFor="perf-country-filter" className="sr-only">
+            Country filter
+          </label>
+          <select
+            id="perf-country-filter"
+            value={countryFilter || ""}
+            onChange={(e) => onCountryFilterChange?.(e.target.value)}
+            disabled={loading || !countryFilterChoices?.length}
+            className="h-6 max-w-[min(100%,200px)] cursor-pointer rounded border border-slate-200 bg-white px-1.5 text-[11px] font-semibold text-slate-700 !outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Filter by country"
+          >
+            <option value="">All countries</option>
+            {(countryFilterChoices || []).map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
           <Calendar className="h-3.5 w-3.5 text-slate-500" strokeWidth={2.2} />
           <span className="text-[11px] font-semibold tabular-nums text-slate-700">
@@ -1170,9 +1353,12 @@ function TopLineSection({ data, loading, meta, armFilter }) {
     const organicOptInSessions = source.organicOptInSessions ?? 0;
     const adsOptInSessions = source.adsOptInSessions ?? 0;
 
-    const websiteViews = pickArmMetric(organicSiteViews, adsSiteViews, armFilter);
-    const websiteSessions = pickArmMetric(organicSiteSessions, adsSiteSessions, armFilter);
-    const optInViews = pickArmMetric(organicOptInViews, adsOptInViews, armFilter);
+    const websiteViews =
+      source.websiteViews != null ? Number(source.websiteViews) : pickArmMetric(organicSiteViews, adsSiteViews, armFilter);
+    const websiteSessions =
+      source.websiteSessions != null ? Number(source.websiteSessions) : pickArmMetric(organicSiteSessions, adsSiteSessions, armFilter);
+    const optInViews =
+      source.optInPageViews != null ? Number(source.optInPageViews) : pickArmMetric(organicOptInViews, adsOptInViews, armFilter);
     const optInSessions = pickArmMetric(organicOptInSessions, adsOptInSessions, armFilter);
 
     return [
@@ -1651,8 +1837,10 @@ function FunnelDrilldown({ rows, loading }) {
   );
 }
 
-function DevicePagePerformance({ device, engagement, loading, meta }) {
+function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, meta }) {
   const gaUnavailable = Boolean(meta?.gaUnavailable ?? meta?.gaMock);
+  /** Set true to show the funnel landing URLs card (/ and /pro). */
+  const showTopLandingPages = false;
 
   const deviceData = device || {};
   const engagementData = engagement || {};
@@ -1734,6 +1922,7 @@ function DevicePagePerformance({ device, engagement, loading, meta }) {
           </div>
         </section>
 
+        {showTopLandingPages ? (
         <section className="rounded-xl border border-slate-200 bg-white p-3">
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Top Landing Pages</h3>
@@ -1754,6 +1943,40 @@ function DevicePagePerformance({ device, engagement, loading, meta }) {
               </div>
             ))}
           </div>
+        </section>
+        ) : null}
+
+        <section className="rounded-xl border border-slate-200 bg-white p-3" id="page-views-detail">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Page views by path</h3>
+            <MetricInfo
+              title="Page views by path"
+              body="Top paths by GA screenPageViews for the selected period, traffic arm, and country filter."
+            />
+          </div>
+          <div className="mt-3 divide-y divide-dashed divide-slate-100">
+            {(pageViewsDetail?.topPaths?.length
+              ? pageViewsDetail.topPaths
+              : Array.from({ length: 5 }).map((_, i) => ({ path: `page-${i}`, views: 0, share: 0 }))
+            ).map((row) => (
+              <div key={row.path} className="flex items-center justify-between gap-4 py-2">
+                <span className="truncate text-[13px] font-medium text-slate-700">
+                  {String(row.path).startsWith("page-") ? "—" : row.path}
+                </span>
+                <span className="shrink-0 text-right text-[12px] font-semibold leading-tight text-slate-950">
+                  {loading ? <ShimmerText className="h-3 w-14" /> : (
+                    <>
+                      <span className="block">{gaUnavailable ? "—" : `${formatInt(row.views)} views`}</span>
+                      <span className="block text-[10px] font-medium text-slate-500">{gaUnavailable ? "" : `${formatPct(row.share)} share`}</span>
+                    </>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+          {!gaUnavailable && pageViewsDetail?.error ? (
+            <p className="mt-2 text-[10px] font-medium text-amber-700">{pageViewsDetail.error}</p>
+          ) : null}
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-3">
@@ -1804,8 +2027,15 @@ export default function Performance() {
   const [customEnd, setCustomEnd] = useState(() => isoDay(customFallback.end));
 
   const [armFilter, setArmFilter] = useState("all");
+  const [countryFilter, setCountryFilter] = useState("");
 
-  const { loading, data, meta, error } = usePerformanceData(range, customStart, customEnd, armFilter);
+  const { loading, data, meta, error } = usePerformanceData(range, customStart, customEnd, armFilter, countryFilter);
+
+  useEffect(() => {
+    const choices = meta?.countryFilterChoices;
+    if (!countryFilter || !choices?.length) return;
+    if (!choices.some((c) => c.value === countryFilter)) setCountryFilter("");
+  }, [meta, countryFilter]);
 
   const rangeBounds = useMemo(
     () => getPerformanceRangeBounds(range, customStart, customEnd),
@@ -1823,6 +2053,9 @@ export default function Performance() {
         onCustomEndChange={setCustomEnd}
         armFilter={armFilter}
         onArmFilterChange={setArmFilter}
+        countryFilter={countryFilter}
+        onCountryFilterChange={setCountryFilter}
+        countryFilterChoices={meta?.countryFilterChoices ?? []}
         rangeBounds={rangeBounds}
         loading={loading}
       />
@@ -1844,6 +2077,7 @@ export default function Performance() {
           <DevicePagePerformance
             device={data?.device}
             engagement={data?.engagement}
+            pageViewsDetail={data?.pageViewsDetail}
             loading={loading}
             meta={meta}
           />

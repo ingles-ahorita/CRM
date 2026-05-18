@@ -11,6 +11,45 @@ function statusClasses(status) {
   return "bg-gray-100 border-gray-200";
 }
 
+function tagClasses(status) {
+  if (status === "red") return "bg-red-100/80 text-red-800 ring-red-200/60";
+  if (status === "green") return "bg-green-100/80 text-green-800 ring-green-200/60";
+  return "bg-slate-200/70 text-slate-600 ring-slate-300/50";
+}
+
+const LEGEND = [
+  {
+    status: "gray",
+    text: "Under 30 days",
+    textClass: "text-slate-500",
+  },
+  {
+    status: "red",
+    text: "1 Kajabi pay, 30+ days, no payoff",
+    textClass: "text-red-600",
+  },
+  {
+    status: "green",
+    text: "2 Kajabi pays or payoff in CRM",
+    textClass: "text-green-700",
+  },
+];
+
+function LegendSwatch({ status }) {
+  const swatch =
+    status === "red"
+      ? "bg-red-400"
+      : status === "green"
+        ? "bg-green-500"
+        : "bg-slate-300";
+  return (
+    <span
+      className={cx("h-1.5 w-1.5 shrink-0 rounded-sm", swatch)}
+      aria-hidden
+    />
+  );
+}
+
 export default function KajabiMultipay({ loading = false, entries }) {
   const navigate = useNavigate();
   const rows = Array.isArray(entries) ? entries : [];
@@ -23,12 +62,23 @@ export default function KajabiMultipay({ loading = false, entries }) {
           <span className="text-[12px] text-slate-500">(Last month)</span>
         </div>
 
-        <div className="mt-2 text-[10px] text-slate-400">
-          Gray / red (1 pay, &gt;1 mo) / green (2 pay)
-        </div>
+        <ul
+          className="mt-1.5 space-y-0.5"
+          aria-label="Row color legend"
+        >
+          {LEGEND.map((item) => (
+            <li
+              key={item.status}
+              className="flex items-center gap-1.5 text-[9px] leading-tight"
+            >
+              <LegendSwatch status={item.status} />
+              <span className={item.textClass}>{item.text}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
-      <div className="px-4 pb-3 space-y-1.5 flex flex-col gap-2">
+      <div className="px-4 pb-3 flex flex-col gap-2">
         {loading ? (
           <div className="py-2 text-[12px] text-slate-500">Loading...</div>
         ) : rows.length === 0 ? (
@@ -67,15 +117,28 @@ export default function KajabiMultipay({ loading = false, entries }) {
                 >
                   {row.name}
                 </span>
-                <span className="shrink-0 text-[10px] text-slate-400">
+                <span className="shrink-0 text-[10px] text-slate-400 tabular-nums">
                   {row.date}
                 </span>
               </div>
-              <div
-                className="mt-0.5 text-[10px] text-slate-500 truncate"
-                title={row.email}
-              >
-                {row.email}
+              <div className="mt-0.5 flex items-center justify-between gap-2 min-w-0">
+                <span
+                  className="text-[10px] text-slate-500 truncate min-w-0"
+                  title={row.email}
+                >
+                  {row.email}
+                </span>
+                {row.statusLabel ? (
+                  <span
+                    className={cx(
+                      "shrink-0 inline-flex rounded px-1 py-px text-[9px] font-semibold leading-tight ring-1 ring-inset max-w-[52%] truncate",
+                      tagClasses(row.status),
+                    )}
+                    title={row.statusTitle || row.statusLabel}
+                  >
+                    {row.statusLabel}
+                  </span>
+                ) : null}
               </div>
             </div>
           ))

@@ -29,16 +29,57 @@ const UNIFIED_INCOME_MIX_DEFS = [
   { key: "old", label: "Old income", color: PERFORMANCE_COLORS.OK },
 ];
 
+/** Short classification rule shown in Income Source Mix tooltips. */
+const INCOME_MIX_SLICE_FORMULA = {
+  pif: "PIF = cash from paid-in-full offers (excludes payment plans, lock-in, and payoff).",
+  new: "New = payment-plan cash where the agreement started inside the selected range.",
+  old: "Old = payment-plan cash where the agreement started before the selected range.",
+};
+
 const TIME_RANGE_ITEMS = [
   { id: "mtd", label: "MTD", title: "This month (MTD)" },
-  { id: "lastMonth", label: "Last mo", title: "Last month" },
   { id: "last7", label: "7 days", title: "Last 7 days" },
   { id: "lastWeek", label: "Last wk", title: "Last week" },
+  { id: "byMonth", label: "By Month", title: "Filter by calendar month" },
   { id: "custom", label: "Custom", title: "Custom date range" },
 ];
 
+/** Rolling 12 months ending with the current calendar month (oldest → newest). */
+function getIncomeMixMonthTabItems(referenceDate = new Date()) {
+  const ym = DateHelpers.getYearMonthInTimezone(referenceDate, DateHelpers.DEFAULT_TIMEZONE);
+  const year = ym?.year ?? referenceDate.getUTCFullYear();
+  const month = ym?.month ?? referenceDate.getUTCMonth() + 1;
+  const items = [];
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const mid = new Date(Date.UTC(year, month - 1 - offset, 15));
+    const tabYm = DateHelpers.getYearMonthInTimezone(mid, DateHelpers.DEFAULT_TIMEZONE);
+    const monthKey =
+      tabYm?.monthKey ??
+      `${mid.getUTCFullYear()}-${String(mid.getUTCMonth() + 1).padStart(2, "0")}`;
+    const tabYear = tabYm?.year ?? mid.getUTCFullYear();
+    const tabMonth = tabYm?.month ?? mid.getUTCMonth() + 1;
+    items.push({
+      id: monthKey,
+      label: new Date(Date.UTC(tabYear, tabMonth - 1, 1)).toLocaleDateString("en-US", {
+        month: "short",
+        timeZone: "UTC",
+      }),
+      title: monthKey,
+    });
+  }
+  return items;
+}
+
+function currentIncomeMixMonthKey(referenceDate = new Date()) {
+  const ym = DateHelpers.getYearMonthInTimezone(referenceDate, DateHelpers.DEFAULT_TIMEZONE);
+  return (
+    ym?.monthKey ??
+    `${referenceDate.getUTCFullYear()}-${String(referenceDate.getUTCMonth() + 1).padStart(2, "0")}`
+  );
+}
+
 const FORECAST_RANGE_ITEMS = [
-  { id: "mtd", label: "MTD" },
+  { id: "dtm", label: "DTM", title: "Today through month end" },
   { id: "next7", label: "Next 7 days" },
   { id: "nextWeek", label: "Next wk" },
   { id: "nextMonth", label: "Next mo" },
@@ -91,6 +132,22 @@ function getSnapshotRangeBounds(range, customStart, customEnd) {
     start: bounds.start,
     end: now < bounds.end ? now : bounds.end,
   };
+}
+
+function getIncomeMixRangeBounds(range, customStart, customEnd, byMonthKey) {
+  if (range === "byMonth") {
+    const key = String(byMonthKey || "");
+    const match = key.match(/^(\d{4})-(\d{2})$/);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const mid = new Date(Date.UTC(year, month - 1, 15));
+      const monthRange = DateHelpers.getMonthRangeInTimezone(mid, DateHelpers.DEFAULT_TIMEZONE);
+      if (monthRange) return { start: monthRange.startDate, end: monthRange.endDate };
+    }
+    return getSnapshotRangeBounds("mtd", customStart, customEnd);
+  }
+  return getSnapshotRangeBounds(range, customStart, customEnd);
 }
 
 function calculateSnapshotGoalUsd(monthlyGoal, start, end) {
@@ -426,6 +483,13 @@ function getForecastRangeBounds(range) {
     );
     return { start: monthRange.startDate, end: monthRange.endDate };
   }
+  if (range === "dtm" || range === "mtd") {
+    const currentRange = DateHelpers.getMonthRangeInTimezone(
+      now,
+      DateHelpers.DEFAULT_TIMEZONE,
+    );
+    return { start: startOfUTCDate(now), end: currentRange.endDate };
+  }
   return getRangeBounds(range);
 }
 
@@ -497,6 +561,7 @@ function rangeTitle(range, customStart, customEnd) {
   if (range === "lastWeek") return "Last week";
   if (range === "nextWeek") return "Next week";
   if (range === "nextMonth") return "Next month";
+  if (range === "dtm" || range === "mtd") return "Rest of month";
   if (range === "custom") return `${customStart || "Custom"} to ${customEnd || "Custom"}`;
   return "Month to date";
 }
@@ -891,24 +956,44 @@ function RefundsPanel({
   );
 }
 
+function incomeMixPercentOfTotal(sliceCents, headlineCents) {
+  const headline = Number(headlineCents) || 0;
+  if (headline === 0) return null;
+  return pct(sliceCents, headline);
+}
+
 /** Tooltip body for income mix pie (used with fixed-position portal following cursor). */
-function IncomeMixTooltipCard({ p }) {
+function IncomeMixTooltipCard({ p, totalBasis = "net" }) {
   if (!p) return null;
   const tx = Number(p.txCount) || 0;
   const rawCents = p.displayCents != null ? Number(p.displayCents) : Number(p.value);
   const valueCents = Number.isFinite(rawCents) ? rawCents : 0;
+  const sliceKey = p.sliceKey != null ? String(p.sliceKey) : "";
+  const percent = p.pctOfTotal != null ? p.pctOfTotal : incomeMixPercentOfTotal(valueCents, p.headlineCents);
+  const totalLabel = totalBasis === "gross" ? "total gross" : "total net";
+  const formula = INCOME_MIX_SLICE_FORMULA[sliceKey] || "";
   return (
     <div
       className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-[0_8px_24px_rgba(15,23,42,0.14)]"
-      style={{ fontSize: "10px", outline: "none", maxWidth: "14rem" }}
+      style={{ fontSize: "10px", outline: "none", maxWidth: "16rem" }}
     >
       <p className="text-[11px] font-extrabold text-slate-950">{p.name}</p>
       <p className="mt-1 text-[12px] font-extrabold text-slate-800">
         {formatCents(valueCents)}
       </p>
+      {percent != null ? (
+        <p className="mt-0.5 text-[10px] font-semibold text-slate-600">
+          {percent}% of {totalLabel} · slice ÷ {totalLabel} income
+        </p>
+      ) : null}
       <p className="mt-0.5 text-[10px] font-semibold text-slate-600">
         {tx} transaction{tx !== 1 ? "s" : ""}
       </p>
+      {formula ? (
+        <p className="mt-1.5 border-t border-slate-100 pt-1.5 text-[9px] font-medium leading-snug text-slate-500">
+          {formula}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -924,8 +1009,8 @@ function clampIncomeTooltipPosition(clientX, clientY) {
   }
   const pad = 10;
   const offset = 14;
-  const estW = 240;
-  const estH = 200;
+  const estW = 260;
+  const estH = 240;
   let left = clientX + offset;
   let top = clientY + offset;
   left = Math.min(left, window.innerWidth - estW - pad);
@@ -939,6 +1024,8 @@ function IncomeMixPanel({
   unifiedMix,
   range,
   setRange,
+  incomeMixMonth,
+  setIncomeMixMonth,
   customStart,
   setCustomStart,
   customEnd,
@@ -964,10 +1051,21 @@ function IncomeMixPanel({
     color: row.color,
     txCount: row.txCount,
     sliceKey: row.key,
+    headlineCents,
+    pctOfTotal: incomeMixPercentOfTotal(row.valueCents, headlineCents),
   }));
   const hasPieSlices = chartData.length > 0;
 
   const [incomeCursorTip, setIncomeCursorTip] = useState(null);
+
+  const incomeMixMonthItems = getIncomeMixMonthTabItems();
+
+  const handleRangeChange = (id) => {
+    if (id === "byMonth" && range !== "byMonth") {
+      setIncomeMixMonth(currentIncomeMixMonthKey());
+    }
+    setRange(id);
+  };
 
   useEffect(() => {
     if (
@@ -1016,13 +1114,24 @@ function IncomeMixPanel({
         <SegmentedTabs
           items={TIME_RANGE_ITEMS}
           activeId={range}
-          onChange={setRange}
+          onChange={handleRangeChange}
           size="xs"
           className="w-max border-slate-200/90 bg-slate-100/80"
           activeClassName="!bg-sky-100 !text-blue-700 !ring-sky-200/80"
         />
       </div>
-      {range === "custom" ? (
+      {range === "byMonth" ? (
+        <div className="mt-2 min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+          <SegmentedTabs
+            items={incomeMixMonthItems}
+            activeId={String(incomeMixMonth)}
+            onChange={(id) => setIncomeMixMonth(id)}
+            size="xs"
+            className="w-max border-slate-200 bg-white"
+            activeClassName="!bg-sky-100 !text-blue-700 !ring-sky-200/80"
+          />
+        </div>
+      ) : range === "custom" ? (
         <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5 bg-white sm:flex-nowrap">
           <input
             type="date"
@@ -1112,7 +1221,7 @@ function IncomeMixPanel({
                     incomeCursorTip.clientY,
                   )}
                 >
-                  <IncomeMixTooltipCard p={incomeCursorTip.p} />
+                  <IncomeMixTooltipCard p={incomeCursorTip.p} totalBasis={incomeTotalBasis} />
                 </div>,
                 document.body,
               )
@@ -1154,6 +1263,11 @@ function IncomeMixPanel({
                     <p className="text-[10px] font-extrabold tabular-nums leading-none text-slate-950">
                       {formatCents(row.valueCents)}
                     </p>
+                    {headlineCents !== 0 ? (
+                      <p className="mt-0.5 text-[9px] font-semibold tabular-nums leading-none text-slate-500">
+                        {incomeMixPercentOfTotal(row.valueCents, headlineCents)}%
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ))}
@@ -1639,7 +1753,8 @@ export default function Sales() {
   const [customEnd, setCustomEnd] = useState(
     customFallback.end.toISOString().slice(0, 10),
   );
-  const [forecastRange, setForecastRange] = useState("mtd");
+  const [incomeMixMonth, setIncomeMixMonth] = useState(() => currentIncomeMixMonthKey());
+  const [forecastRange, setForecastRange] = useState("dtm");
   const [forecastCustomStart, setForecastCustomStart] = useState(
     customFallback.start.toISOString().slice(0, 10),
   );
@@ -2013,15 +2128,17 @@ export default function Sales() {
       setMixError(null);
 
       try {
-        const { start, end } = getSnapshotRangeBounds(range, customStart, customEnd);
+        const { start, end } = getIncomeMixRangeBounds(range, customStart, customEnd, incomeMixMonth);
         const startISO = start.toISOString();
         const endISO = end.toISOString();
+        const queryStartISO = startISO;
+        const queryEndISO = endISO;
 
         const [txResult, offersResult, purchasesResult] = await Promise.all([
           supabase
             .from("kajabi_transactions")
             .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, kajabi_offer_id, kajabi_customer_id, kajabi_purchase_id")
-            .or(`and(created_at_kajabi.gte.${startISO},created_at_kajabi.lte.${endISO}),and(effective_date.gte.${startISO},effective_date.lte.${endISO}),and(payment_resolved_at.gte.${startISO},payment_resolved_at.lte.${endISO})`),
+            .or(`and(created_at_kajabi.gte.${queryStartISO},created_at_kajabi.lte.${queryEndISO}),and(effective_date.gte.${queryStartISO},effective_date.lte.${queryEndISO}),and(payment_resolved_at.gte.${queryStartISO},payment_resolved_at.lte.${queryEndISO})`),
           supabase
             .from("offers")
             .select("kajabi_id, name, price, is_subscription, installments"),
@@ -2120,16 +2237,15 @@ export default function Sales() {
           }) || matches[0] || null;
         }
 
-        const classifyCtx = {
+        const classifyCtxBase = {
           offersById,
           payoffOfferIds,
           treatmentByPurchaseId,
           outcomeByMainPurchaseId,
           outcomeByPayoffPurchaseId,
           resolvePurchase,
-          startISO,
-          endISO,
         };
+        const classifyCtx = { ...classifyCtxBase, startISO, endISO };
 
         const netAgg = createEmptyIncomeMixAgg();
         for (const tx of txRows) {
@@ -2173,7 +2289,7 @@ export default function Sales() {
 
     loadIncomeMixData();
     return () => { cancelled = true; };
-  }, [range, customStart, customEnd]);
+  }, [range, customStart, customEnd, incomeMixMonth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2426,6 +2542,8 @@ export default function Sales() {
             unifiedMix={incomeMixUnified}
             range={range}
             setRange={setRange}
+            incomeMixMonth={incomeMixMonth}
+            setIncomeMixMonth={setIncomeMixMonth}
             customStart={customStart}
             setCustomStart={setCustomStart}
             customEnd={customEnd}
