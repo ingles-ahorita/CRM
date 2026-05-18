@@ -222,6 +222,21 @@ export default function MyPage() {
 
 ---
 
+## RTK (token-saving shell proxy)
+
+[RTK](https://github.com/rtk-ai/rtk) compresses verbose Shell tool output (git, eslint, npm, etc.) before it reaches the agent. Project hook: **`.cursor/hooks.json`** (`preToolUse` → `rtk hook cursor`). Only **Shell** commands are rewritten; Cursor Read/Grep are unchanged.
+
+**One-time setup (each machine):**
+
+```bash
+brew install rtk jq    # verify: rtk gain
+rtk init -g --agent cursor --auto-patch
+```
+
+Restart Cursor after global init. Check savings: `rtk gain`, missed commands: `rtk discover`. Raw output for one command: `RTK_DISABLED=1 <cmd>`.
+
+---
+
 ## Knowledge Graph (graphify)
 
 Policy lives in **`.agents/rules/graphify.md`** (steps 2–3 of [Agent session protocol](#agent-session-protocol)); Cursor enforces via `.cursor/rules/session-boot.mdc`.

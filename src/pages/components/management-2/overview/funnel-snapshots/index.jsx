@@ -51,11 +51,16 @@ function formatPct(v) {
   return `${Number(v).toFixed(1)}%`;
 }
 
+/** Format YYYY-MM-DD for badges — UTC matches `/api/management-series` keys and TrendsChartPanel `date` labels. */
 function toBadgeDate(isoDate) {
   if (!isoDate) return "—";
   const d = new Date(`${isoDate}T00:00:00Z`);
   return d
-    .toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    .toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    })
     .toUpperCase();
 }
 

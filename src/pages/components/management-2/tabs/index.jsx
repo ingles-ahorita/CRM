@@ -5,12 +5,13 @@ import { useTodayNewLeadsCount } from "../../../../hooks/useTodayNewLeadsCount";
 
 const TABS = [
   { id: "overview", label: "Overview" },
-  { id: "closer", label: "Closer" },
   { id: "leads", label: "Leads" },
-  { id: "setter", label: "Setter" },
+  { id: "closer", label: "Closers" },
+  { id: "setter", label: "Setters" },
   { id: "metrics", label: "Metrics" },
   { id: "sales", label: "Sales" },
   { id: "performance", label: "Performance" },
+  { id: "organic", label: "Organic Stats" },
 ];
 
 function cx(...c) {
@@ -18,31 +19,31 @@ function cx(...c) {
 }
 
 export default function Tabs({ activeTab, onTabChange }) {
-  const todayNewLeads = useTodayNewLeadsCount();
+  const todayBookedStats = useTodayNewLeadsCount();
 
   const items = useMemo(
     () =>
       TABS.map((t) => {
         if (t.id !== "leads") return t;
         const trailing =
-          todayNewLeads == null ? null : (
+          todayBookedStats == null ? null : (
             <span
               className={cx(
                 "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums leading-none shadow-sm ring-1 ring-inset",
-                todayNewLeads > 0
+                todayBookedStats.booked > todayBookedStats.confirmed
                   ? "bg-red-600 text-white ring-red-700/30"
                   : "bg-slate-200/90 text-slate-600 ring-slate-400/20",
               )}
-              title={`${todayNewLeads} call${todayNewLeads === 1 ? "" : "s"} with call date today (same as Leads → Today when sorted by call date)`}
-              aria-label={`${todayNewLeads} call${todayNewLeads === 1 ? "" : "s"} with call date today`}
+              title={`${todayBookedStats.booked} booked today, ${todayBookedStats.confirmed} confirmed`}
+              aria-label={`${todayBookedStats.booked} booked today, ${todayBookedStats.confirmed} confirmed`}
             >
               <Bell className="h-3 w-3 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
-              {todayNewLeads}
+              {todayBookedStats.booked}/{todayBookedStats.confirmed}
             </span>
           );
         return { ...t, trailing };
       }),
-    [todayNewLeads],
+    [todayBookedStats],
   );
 
   return (

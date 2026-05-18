@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3 } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
-import { fetchPurchases as fetchKajabiPurchases } from '../../lib/kajabiApi';
+import { loadMultipayPurchasesLastMonth } from '../../utils/loadMultipayPurchasesLastMonth';
+import KajabiMultipay from './closer/closer-aside/components/kajabi-multipay';
 import { getCloserCommissionForMonth } from '../../lib/closerCommission';
 import * as DateHelpers from '../../utils/dateHelpers';
 
@@ -88,7 +89,7 @@ export default function CloserDashboardCards({ closer }) {
         };
       }));
 
-      const multipay = await loadMultipayPurchasesLastMonth(closer);
+      const multipay = await loadMultipayPurchasesLastMonth(supabase, closer);
       if (!cancelled) setMultipayPurchases(multipay);
 
       setLoading(false);
@@ -204,97 +205,6 @@ export default function CloserDashboardCards({ closer }) {
       return wc !== null && wc !== undefined;
     }).length;
     return Math.round((downsellCount / total) * 1000) / 10;
-  }
-
-  async function loadMultipayPurchasesLastMonth(closerId) {
-    const now = new Date();
-    const lastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-    const firstDayLastMonth = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth(), 1, 0, 0, 0, 0));
-    const endDate = new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + 1, 0, 23, 59, 59, 999));
-    const startTs = firstDayLastMonth.getTime();
-    const endTs = endDate.getTime();
-    const oneMonthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-
-    const allInRange = [];
-    let page = 1;
-    const perPage = 100;
-    let done = false;
-    while (!done) {
-      const result = await fetchKajabiPurchases({ page, perPage, sort: '-created_at' });
-      const data = result.data || [];
-      if (data.length === 0) break;
-      for (const p of data) {
-        const createdAt = p.attributes?.created_at;
-        if (!createdAt) continue;
-        const ts = new Date(createdAt).getTime();
-        if (ts >= startTs && ts <= endTs) allInRange.push(p);
-      }
-      const oldestInBatch = data[data.length - 1].attributes?.created_at;
-      const oldestTs = oldestInBatch ? new Date(oldestInBatch).getTime() : 0;
-      if (oldestTs > 0 && oldestTs < startTs) done = true;
-      else if (data.length < perPage) done = true;
-      else page++;
-    }
-
-    const multipayOnly = allInRange.filter(
-      (p) => String(p.attributes?.payment_type || '').toLowerCase() === 'multipay'
-    );
-
-    const customerIds = [...new Set(multipayOnly.map((p) => p.relationships?.customer?.data?.id).filter(Boolean))];
-    const leadByCustomerId = {};
-    let leadIdsForCloser = new Set();
-    if (customerIds.length > 0 && closerId) {
-      const ids = customerIds.map((id) => String(id));
-      const { data: leadRows } = await supabase
-        .from('leads')
-        .select('id, name, email, customer_id')
-        .in('customer_id', ids);
-      (leadRows || []).forEach((row) => {
-        const cid = row.customer_id != null ? String(row.customer_id) : null;
-        if (cid) leadByCustomerId[cid] = { id: row.id, name: row.name ?? null, email: row.email ?? null };
-      });
-      const leadIds = (leadRows || []).map((r) => r.id).filter(Boolean);
-      if (leadIds.length > 0) {
-        const { data: callsWithCloser } = await supabase
-          .from('calls')
-          .select('lead_id')
-          .eq('closer_id', closerId)
-          .in('lead_id', leadIds);
-        (callsWithCloser || []).forEach((c) => {
-          if (c.lead_id != null) leadIdsForCloser.add(c.lead_id);
-        });
-      }
-    }
-
-    const forThisCloser = closerId
-      ? multipayOnly.filter((p) => {
-          const customerId = p.relationships?.customer?.data?.id;
-          const lead = customerId ? leadByCustomerId[String(customerId)] : null;
-          return lead && leadIdsForCloser.has(lead.id);
-        })
-      : multipayOnly;
-
-    return forThisCloser.map((p) => {
-      const attrs = p.attributes || {};
-      const createdAt = attrs.created_at;
-      const customerId = p.relationships?.customer?.data?.id;
-      const lead = customerId ? leadByCustomerId[String(customerId)] : null;
-      const createdTs = createdAt ? new Date(createdAt).getTime() : 0;
-      const isPastOneMonth = createdTs > 0 && createdTs < oneMonthAgo;
-      const paymentsMade = attrs.multipay_payments_made != null ? Number(attrs.multipay_payments_made) : 0;
-
-      let status = 'gray';
-      if (isPastOneMonth && paymentsMade === 1) status = 'red';
-      else if (paymentsMade === 2) status = 'green';
-
-      return {
-        lead_id: lead?.id ?? null,
-        name: lead?.name ?? '—',
-        email: lead?.email ?? '—',
-        date: createdAt ? new Date(createdAt).toLocaleDateString('en-US', { dateStyle: 'medium' }) : '—',
-        status
-      };
-    });
   }
 
   function getNamedDateRange(range) {
@@ -588,36 +498,7 @@ export default function CloserDashboardCards({ closer }) {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Kajabi multipay (last month)</h2>
-            <p className="text-xs text-gray-400 mb-2">Gray / red (1 pay, &gt;1 mo) / green (2 pay)</p>
-            <ul className="space-y-1">
-              {loading ? (
-                <li className="text-gray-500 text-xs py-1">Loading…</li>
-              ) : multipayPurchases.length === 0 ? (
-                <li className="text-gray-500 text-xs py-1">No multipay in last month</li>
-              ) : (
-                multipayPurchases.map((row, i) => (
-                  <li
-                    key={i}
-                    role={row.lead_id ? 'button' : undefined}
-                    tabIndex={row.lead_id ? 0 : undefined}
-                    onClick={row.lead_id ? () => navigate(`/lead/${row.lead_id}`) : undefined}
-                    onKeyDown={row.lead_id ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/lead/${row.lead_id}`); } } : undefined}
-                    className={`flex flex-col text-xs py-1 px-2 rounded min-w-0 ${
-                      row.status === 'gray' ? 'bg-gray-100' : row.status === 'red' ? 'bg-red-50' : 'bg-green-50'
-                    } ${row.lead_id ? 'cursor-pointer hover:opacity-80' : ''}`}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '6px', minWidth: 0 }}>
-                      <span className="font-medium text-gray-900 truncate" title={row.name}>{row.name}</span>
-                      <span className="text-gray-400 shrink-0" style={{ fontSize: '10px' }}>{row.date}</span>
-                    </div>
-                    <div className="text-gray-500 truncate" style={{ fontSize: '10px' }} title={row.email}>{row.email}</div>
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
+          <KajabiMultipay loading={loading} entries={multipayPurchases} />
         </div>
       </div>
     </div>

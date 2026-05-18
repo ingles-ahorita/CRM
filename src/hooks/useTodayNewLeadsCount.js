@@ -3,33 +3,47 @@ import { supabase } from "../lib/supabaseClient";
 import { getDayBoundsLocal } from "../utils/dateHelpers";
 
 /**
- * Count of `calls` whose `call_date` falls on the user's local calendar today.
- * Matches the Management → Leads "Today" sub-tab with default **Call date** mode
- * (see `fetchLeads`: `dateFilterField` defaults to `call_date`).
- *
- * Not the same as counting new rows in the `leads` table (`created_at`).
+ * Calls booked today (`book_date` in local calendar day) vs how many are confirmed.
+ * Matches Leads stats: confirmed = not cancelled and `confirmed === true`.
  */
 export function useTodayNewLeadsCount() {
-  const [count, setCount] = useState(null);
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       const { dayStart, dayEnd } = getDayBoundsLocal(new Date());
-      const { count: c, error } = await supabase
-        .from("calls")
-        .select("*", { count: "exact", head: true })
-        .gte("call_date", dayStart.toISOString())
-        .lte("call_date", dayEnd.toISOString());
+      const from = dayStart.toISOString();
+      const to = dayEnd.toISOString();
+
+      const [bookedRes, confirmedRes] = await Promise.all([
+        supabase
+          .from("calls")
+          .select("*", { count: "exact", head: true })
+          .gte("book_date", from)
+          .lte("book_date", to),
+        supabase
+          .from("calls")
+          .select("*", { count: "exact", head: true })
+          .gte("book_date", from)
+          .lte("book_date", to)
+          .eq("confirmed", true)
+          .or("cancelled.is.null,cancelled.eq.false"),
+      ]);
 
       if (cancelled) return;
-      if (error) {
-        console.error("[useTodayNewLeadsCount]", error);
-        setCount(0);
+
+      if (bookedRes.error || confirmedRes.error) {
+        console.error("[useTodayNewLeadsCount]", bookedRes.error || confirmedRes.error);
+        setStats({ booked: 0, confirmed: 0 });
         return;
       }
-      setCount(typeof c === "number" ? c : 0);
+
+      setStats({
+        booked: typeof bookedRes.count === "number" ? bookedRes.count : 0,
+        confirmed: typeof confirmedRes.count === "number" ? confirmedRes.count : 0,
+      });
     }
 
     load();
@@ -51,5 +65,5 @@ export function useTodayNewLeadsCount() {
     };
   }, []);
 
-  return count;
+  return stats;
 }

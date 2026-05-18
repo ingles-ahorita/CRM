@@ -11,12 +11,22 @@ import SetterTab from "./components/management-2/setter";
 import MetricsTab from "./components/management-2/metrics";
 import SalesTab from "./components/management-2/sales";
 import PerformanceTab from "./components/management-2/performance";
+import OrganicStatsTab from "./components/management-2/organic-stats";
 
 export default function Management2() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Validate and parse the current tab from URL
-  const validTabs = ["overview", "closer", "leads", "setter", "metrics", "sales", "performance"];
+  const validTabs = [
+    "overview",
+    "leads",
+    "closer",
+    "setter",
+    "metrics",
+    "sales",
+    "performance",
+    "organic",
+  ];
   const currentTab = searchParams.get("tab");
   const activeTab = validTabs.includes(currentTab) ? currentTab : "overview";
 
@@ -52,6 +62,7 @@ export default function Management2() {
           {activeTab === "metrics" && <MetricsTab />}
           {activeTab === "sales" && <SalesTab />}
           {activeTab === "performance" && <PerformanceTab />}
+          {activeTab === "organic" && <OrganicStatsTab />}
         </div>
       </div>
     </div>
