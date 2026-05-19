@@ -1,0 +1,27 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "changes/bug-fixes",
+    "main",
+    "preview",
+    "revamp-closer",
+    "revamp-dashboard",
+    "revamp-management"
+  ],
+  "parent": {
+    "changes/bug-fixes": "main",
+    "main": null,
+    "preview": "main",
+    "revamp-closer": "main",
+    "revamp-dashboard": "main",
+    "revamp-management": "main"
+  },
+  "order": [
+    "main",
+    "changes/bug-fixes",
+    "preview",
+    "revamp-closer",
+    "revamp-dashboard",
+    "revamp-management"
+  ]
+}

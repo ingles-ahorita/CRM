@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { Bell } from "lucide-react";
 import SegmentedTabs from "../segmented-tabs";
+import NotificationsTabButton from "./notifications-tab-button";
 import { useTodayNewLeadsCount } from "../../../../hooks/useTodayNewLeadsCount";
 
 const TABS = [
@@ -20,6 +21,9 @@ function cx(...c) {
 
 export default function Tabs({ activeTab, onTabChange }) {
   const todayBookedStats = useTodayNewLeadsCount();
+  const handleNotificationsClick = useCallback(() => {
+    onTabChange?.("notifications");
+  }, [onTabChange]);
 
   const items = useMemo(
     () =>
@@ -34,8 +38,8 @@ export default function Tabs({ activeTab, onTabChange }) {
                   ? "bg-red-600 text-white ring-red-700/30"
                   : "bg-slate-200/90 text-slate-600 ring-slate-400/20",
               )}
-              title={`${todayBookedStats.booked} booked today, ${todayBookedStats.confirmed} confirmed`}
-              aria-label={`${todayBookedStats.booked} booked today, ${todayBookedStats.confirmed} confirmed`}
+              title={`${todayBookedStats.booked} booked today (book date), ${todayBookedStats.confirmed} confirmed`}
+              aria-label={`${todayBookedStats.booked} booked today by book date, ${todayBookedStats.confirmed} confirmed`}
             >
               <Bell className="h-3 w-3 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
               {todayBookedStats.booked}/{todayBookedStats.confirmed}
@@ -46,12 +50,21 @@ export default function Tabs({ activeTab, onTabChange }) {
     [todayBookedStats],
   );
 
+  const segmentedActiveId = activeTab === "notifications" ? null : activeTab;
+
   return (
-    <SegmentedTabs
-      items={items}
-      activeId={activeTab}
-      onChange={onTabChange}
-      tabInline
-    />
+    <div className="flex max-w-full flex-nowrap items-stretch gap-1.5">
+      <SegmentedTabs
+        items={items}
+        activeId={segmentedActiveId}
+        onChange={onTabChange}
+        tabInline
+        className="min-w-0 flex-1"
+      />
+      <NotificationsTabButton
+        active={activeTab === "notifications"}
+        onClick={handleNotificationsClick}
+      />
+    </div>
   );
 }

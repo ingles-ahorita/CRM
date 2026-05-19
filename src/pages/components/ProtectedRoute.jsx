@@ -1,7 +1,8 @@
 // ProtectedRoute.js
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 
 export default function ProtectedRoute({ children}) {
+  const navigate = useNavigate();
   const email = localStorage.getItem('userEmail');
   const expiresAt = localStorage.getItem('expiresAt');
   const role = localStorage.getItem('userRole');
@@ -40,7 +41,7 @@ export default function ProtectedRoute({ children}) {
           You don't have permission to access this page.
         </p>
         <button
-          onClick={() => window.history.back()}
+          onClick={() => navigate('/')}
           style={{
             padding: '10px 20px',
             backgroundColor: '#3b82f6',
@@ -52,7 +53,7 @@ export default function ProtectedRoute({ children}) {
             cursor: 'pointer'
           }}
         >
-          Go Back
+          Back to Login
         </button>
       </div>
     </div>

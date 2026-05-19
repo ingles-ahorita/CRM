@@ -19,11 +19,42 @@ export async function fetchMonthlyRevenueGoalUsd() {
     : DEFAULT_MONTHLY_REVENUE_GOAL_USD;
 }
 
+function normalizeMonthlyRevenueGoalUsd(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.round(parsed);
+}
+
+export async function updateMonthlyRevenueGoalUsd(value) {
+  const monthlyRevenueGoal = normalizeMonthlyRevenueGoalUsd(value);
+  if (!monthlyRevenueGoal) {
+    throw new Error("Revenue goal must be a positive dollar amount");
+  }
+
+  const { data, error } = await supabase
+    .from("app_settings")
+    .update({
+      value: monthlyRevenueGoal,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("key", MONTHLY_REVENUE_GOAL_KEY)
+    .select("value")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error("Revenue goal setting was not updated");
+
+  const saved = normalizeMonthlyRevenueGoalUsd(data?.value);
+  if (!saved) throw new Error("Saved revenue goal was invalid");
+  return saved;
+}
+
 export function useRevenueGoal() {
   const [monthlyRevenueGoal, setMonthlyRevenueGoal] = useState(
     DEFAULT_MONTHLY_REVENUE_GOAL_USD,
   );
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -53,5 +84,27 @@ export function useRevenueGoal() {
     };
   }, []);
 
-  return { monthlyRevenueGoal, loading, error };
+  async function saveMonthlyRevenueGoal(value) {
+    setSaving(true);
+    setError(null);
+
+    try {
+      const saved = await updateMonthlyRevenueGoalUsd(value);
+      setMonthlyRevenueGoal(saved);
+      return saved;
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return {
+    monthlyRevenueGoal,
+    loading,
+    saving,
+    error,
+    saveMonthlyRevenueGoal,
+  };
 }
