@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useMemo, useState } from "react";
 import { PERFORMANCE_COLORS } from "../../../../../utils/performanceBenchmarks";
+import { Pencil, X } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -169,8 +170,11 @@ function MetricCard({ className = "", children }) {
 }
 
 export default function ManagementDashboard() {
-  const { monthlyRevenueGoal } = useRevenueGoal();
-  const netGradientId = useId().replace(/:/g, "");
+  const {
+    monthlyRevenueGoal,
+    saving: revenueGoalSaving,
+    saveMonthlyRevenueGoal,
+  } = useRevenueGoal();
   const commissionChartId = useId().replace(/:/g, "");
   const [range, setRange] = useState("mtd");
   const customFallback = useMemo(() => getRangeBounds("custom"), []);
@@ -183,6 +187,42 @@ export default function ManagementDashboard() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [metrics, setMetrics] = useState(EMPTY_METRICS);
+  const [goalModalOpen, setGoalModalOpen] = useState(false);
+  const [goalDraft, setGoalDraft] = useState(String(monthlyRevenueGoal));
+  const [goalError, setGoalError] = useState("");
+
+  useEffect(() => {
+    if (!goalModalOpen) setGoalDraft(String(monthlyRevenueGoal));
+  }, [goalModalOpen, monthlyRevenueGoal]);
+
+  async function handleSaveRevenueGoal() {
+    const parsed = Number(goalDraft);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setGoalError("Enter a positive dollar amount.");
+      return;
+    }
+
+    setGoalError("");
+    try {
+      const saved = await saveMonthlyRevenueGoal(parsed);
+      setGoalDraft(String(saved));
+      setGoalModalOpen(false);
+    } catch (err) {
+      setGoalError(err?.message || "Failed to save revenue goal.");
+    }
+  }
+
+  function openRevenueGoalModal() {
+    setGoalDraft(String(monthlyRevenueGoal));
+    setGoalError("");
+    setGoalModalOpen(true);
+  }
+
+  function closeRevenueGoalModal() {
+    setGoalDraft(String(monthlyRevenueGoal));
+    setGoalError("");
+    setGoalModalOpen(false);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -195,11 +235,6 @@ export default function ManagementDashboard() {
           : getRangeBounds(range);
       const startISO = start.toISOString();
       const endISO = end.toISOString();
-
-      const now = new Date();
-      const mtdRange = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
-      const mtdStartISO = mtdRange.startDate.toISOString();
-      const mtdEndISO = now.toISOString();
 
       try {
         const [
@@ -450,6 +485,7 @@ export default function ManagementDashboard() {
   }, [commissionSplitPie]);
 
   return (
+    <>
     <div className="border border-slate-200 rounded-2xl p-2 bg-white">
       {/* Header */}
       <div className="mb-4 flex flex-col gap-2 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] py-1.5 px-2 sm:px-3 rounded-lg border border-slate-200">
@@ -612,8 +648,28 @@ export default function ManagementDashboard() {
 
             return (
               <div className="flex flex-col justify-center flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
-                  {label} · Net revenue
+                <div className="mb-2 flex min-h-8 items-start justify-between gap-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    {label} · Net revenue
+                  </div>
+                  <div className="group relative shrink-0">
+                    <button
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                      aria-label="Edit monthly revenue goal"
+                      onClick={openRevenueGoalModal}
+                    >
+                      <Pencil
+                        size={14}
+                        strokeWidth={2.5}
+                        className="block shrink-0"
+                        aria-hidden
+                      />
+                    </button>
+                    <div className="pointer-events-none absolute right-0 top-8 z-30 w-52 rounded-md bg-slate-950 px-2.5 py-1.5 text-[11px] font-semibold leading-4 text-white opacity-0 shadow-[0_10px_24px_rgba(2,6,23,0.3)] transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                      Update the global monthly revenue goal. Current filters only prorate it for this card.
+                    </div>
+                  </div>
                 </div>
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-[28px] font-bold tabular-nums leading-none" style={{ color: barColor }}>
@@ -874,5 +930,121 @@ export default function ManagementDashboard() {
         </MetricCard>
       </div>
     </div>
+    {goalModalOpen ? (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 px-4 py-6"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !revenueGoalSaving) {
+            closeRevenueGoalModal();
+          }
+        }}
+      >
+        <div
+          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-[0_24px_80px_rgba(15,23,42,0.24)]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="monthly-revenue-goal-title"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700 ring-1 ring-blue-100">
+                  <Pencil size={15} strokeWidth={2.5} aria-hidden />
+                </span>
+                <h2
+                  id="monthly-revenue-goal-title"
+                  className="text-[15px] font-bold text-slate-950"
+                >
+                  Edit monthly revenue goal
+                </h2>
+              </div>
+              <div className="mt-1 text-[12px] font-medium text-slate-500">
+                Current saved goal: {formatUsd(monthlyRevenueGoal)}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Close revenue goal editor"
+              disabled={revenueGoalSaving}
+              onClick={closeRevenueGoalModal}
+            >
+              <X size={16} strokeWidth={2.5} className="block shrink-0" aria-hidden />
+            </button>
+          </div>
+
+          <form
+            className="mt-4 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleSaveRevenueGoal();
+            }}
+          >
+            <div>
+              <label
+                className="text-[11px] font-bold uppercase tracking-wider text-slate-500"
+                htmlFor="monthly-revenue-goal-modal"
+              >
+                Monthly goal
+              </label>
+              <div className="mt-1 flex h-10 items-center rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-500 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+                <span>$</span>
+                <input
+                  id="monthly-revenue-goal-modal"
+                  className="ml-2 w-full border-0 bg-transparent p-0 text-[15px] font-bold tabular-nums text-slate-950 outline-none"
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={goalDraft}
+                  disabled={revenueGoalSaving}
+                  autoFocus
+                  onChange={(event) => {
+                    setGoalDraft(event.target.value);
+                    if (goalError) setGoalError("");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      if (!revenueGoalSaving) closeRevenueGoalModal();
+                    }
+                  }}
+                />
+              </div>
+              {goalError ? (
+                <div className="mt-1 text-[11px] font-semibold text-red-600">
+                  {goalError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[12px] font-medium leading-5 text-slate-700">
+              Enter value to update the monthly revenue goal.
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="h-9 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={revenueGoalSaving}
+                onClick={closeRevenueGoalModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="h-9 rounded-md border border-blue-600 bg-blue-600 px-3 text-[12px] font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={revenueGoalSaving}
+              >
+                {revenueGoalSaving ? "Saving..." : "Save goal"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }

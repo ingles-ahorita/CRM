@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Calendar } from "lucide-react";
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
+  CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -18,8 +19,14 @@ import {
   fetchUTMAnalytics,
   UTM_ANALYTICS_CHART_COLORS,
 } from "../../../../lib/utmAnalyticsData";
-import { getConversionBgClass, getConversionClass } from "../../../../utils/performanceBenchmarks";
+import {
+  BENCHMARKS,
+  getConversionBgClass,
+  getConversionClass,
+  PERFORMANCE_SOFT_BG_CLASSES,
+} from "../../../../utils/performanceBenchmarks";
 import SegmentedTabs from "../segmented-tabs";
+import { PanelCursorTooltip, usePanelCursorTooltip } from "../panel-cursor-tooltip";
 
 const RANGE_ITEMS = [
   { id: "mtd", label: "MTD", title: "Month to date" },
@@ -35,6 +42,74 @@ const CONVERSION_VIEW_ITEMS = [
   { id: "campaign", label: "Campaign" },
 ];
 
+const BOOKING_TREND_VIEW_ITEMS = [
+  { id: "total", label: "Total" },
+  { id: "sources", label: "By source" },
+];
+
+/** Display-only merge for duplicate UTM spellings (fb/facebook, ig/instagram). */
+const BOOKING_SOURCE_ALIASES = {
+  fb: "facebook",
+  ig: "instagram",
+};
+
+function normalizeBookingSource(raw) {
+  const key = String(raw ?? "").trim();
+  if (!key || key === "Organic") return key || "Unknown";
+  const lower = key.toLowerCase();
+  return BOOKING_SOURCE_ALIASES[lower] ?? key;
+}
+
+function buildDailyBookingsModel(bookingsPerDay, sourceKeys) {
+  const rawKeys = (sourceKeys || []).filter((k) => k && k !== "Organic");
+  const totalsBySource = {};
+
+  (bookingsPerDay || []).forEach((row) => {
+    rawKeys.forEach((rawKey) => {
+      const nk = normalizeBookingSource(rawKey);
+      totalsBySource[nk] = (totalsBySource[nk] || 0) + Number(row[rawKey] || 0);
+    });
+  });
+
+  const ranked = Object.entries(totalsBySource).sort((a, b) => b[1] - a[1]);
+  const topKeys = ranked.slice(0, 5).map(([k]) => k);
+  const topSet = new Set(topKeys);
+  const hasOther = ranked.length > 5;
+
+  const series = (bookingsPerDay || []).map((row) => {
+    const point = {
+      date: row.date,
+      label: row.date
+        ? new Date(`${row.date}T12:00:00.000Z`).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            timeZone: "UTC",
+          })
+        : "",
+      total: Number(row.total || 0),
+    };
+
+    const bucket = {};
+    rawKeys.forEach((rawKey) => {
+      const nk = normalizeBookingSource(rawKey);
+      const count = Number(row[rawKey] || 0);
+      if (topSet.has(nk)) bucket[nk] = (bucket[nk] || 0) + count;
+      else bucket.Other = (bucket.Other || 0) + count;
+    });
+
+    topKeys.forEach((k) => {
+      point[k] = bucket[k] || 0;
+    });
+    if (hasOther) point.Other = bucket.Other || 0;
+
+    return point;
+  });
+
+  const lineKeys = hasOther ? [...topKeys, "Other"] : topKeys;
+
+  return { series, lineKeys, totalsBySource };
+}
+
 const EMPTY_DATA = {
   pieData: [],
   organicDaily: [],
@@ -49,6 +124,8 @@ const EMPTY_DATA = {
   mediumKeys: [],
 };
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 function cx(...parts) {
   return parts.filter(Boolean).join(" ");
 }
@@ -62,37 +139,193 @@ function formatPct(n, digits = 1) {
   return `${v.toFixed(digits)}%`;
 }
 
-/** Human-readable UTM dimension labels (null / empty in DB). */
+const UTM_DISPLAY_NAMES = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  youtube: "YouTube",
+  email: "Email",
+};
+
+/** utm_source row accents — distinct from medium segment colors below. */
+const SOURCE_BRAND_COLORS = {
+  instagram: "#db2777",
+  facebook: "#2563eb",
+  youtube: "#dc2626",
+  tiktok: "#0f766e",
+  email: "#7c3aed",
+  unknown: "#64748b",
+  "not set": "#94a3b8",
+  other: "#cbd5e1",
+};
+
+/** utm_medium segments inside each platform row. */
+const MEDIUM_SEGMENT_COLORS = {
+  bio: "#6366f1",
+  dm: "#0284c7",
+  video: "#d97706",
+  masterclass: "#9333ea",
+  unknown: "#94a3b8",
+};
+
+function getSourceBrandColor(sourceKey) {
+  const k = normalizeBookingSource(sourceKey).toLowerCase();
+  if (SOURCE_BRAND_COLORS[k]) return SOURCE_BRAND_COLORS[k];
+  const idx = Math.abs(k.split("").reduce((h, c) => h + c.charCodeAt(0), 0)) % UTM_ANALYTICS_CHART_COLORS.length;
+  return UTM_ANALYTICS_CHART_COLORS[idx];
+}
+
+function getMediumSegmentColor(mediumKey) {
+  const k = String(mediumKey ?? "").toLowerCase();
+  return MEDIUM_SEGMENT_COLORS[k] || "#64748b";
+}
+
+function getTopMediumForRow(row, mediumKeys) {
+  let bestMed = null;
+  let bestVal = 0;
+  for (const med of mediumKeys) {
+    const v = Number(row[med] || 0);
+    if (v > bestVal) {
+      bestVal = v;
+      bestMed = med;
+    }
+  }
+  if (!bestMed || row.total <= 0) return null;
+  return { med: bestMed, value: bestVal, pct: (bestVal / row.total) * 100 };
+}
+
 function formatUtmLabel(raw) {
   const s = String(raw ?? "").trim();
   if (!s || s.toLowerCase() === "null") return "Not set";
   if (s.toLowerCase() === "unknown") return "Unknown";
-  return s;
+  const norm = normalizeBookingSource(s).toLowerCase();
+  if (UTM_DISPLAY_NAMES[norm]) return UTM_DISPLAY_NAMES[norm];
+  if (s.length <= 3) return s.toUpperCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function formatMediumLabel(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s || s.toLowerCase() === "unknown") return "Unknown";
+  if (s.toLowerCase() === "dm") return "DM";
+  if (s.length <= 3) return s.toUpperCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Merge dm/DM and align keys for stacked medium bars. */
+function buildMediumChartModel(platforms, keys) {
+  const canonOrder = [];
+  const rawToCanon = new Map();
+  (keys || []).forEach((k) => {
+    const canon = formatMediumLabel(k);
+    rawToCanon.set(k, canon);
+    if (!canonOrder.includes(canon)) canonOrder.push(canon);
+  });
+
+  const rows = (platforms || [])
+    .map((row) => {
+      const merged = { source: row.source, total: 0 };
+      canonOrder.forEach((ck) => {
+        merged[ck] = 0;
+      });
+      (keys || []).forEach((k) => {
+        const canon = rawToCanon.get(k);
+        merged[canon] = (merged[canon] || 0) + Number(row[k] || 0);
+      });
+      merged.total = canonOrder.reduce((s, ck) => s + Number(merged[ck] || 0), 0);
+      return merged;
+    })
+    .filter((r) => r.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  return { rows, mediumKeys: canonOrder };
+}
+
+const CONVERSION_GOAL_PCT = BENCHMARKS.CONVERSION;
+
+function conversionSoftBadgeClass(rate) {
+  if (rate < CONVERSION_GOAL_PCT * 0.75) return PERFORMANCE_SOFT_BG_CLASSES.BAD;
+  if (rate < CONVERSION_GOAL_PCT) return PERFORMANCE_SOFT_BG_CLASSES.OK;
+  if (rate >= CONVERSION_GOAL_PCT * 1.1) return PERFORMANCE_SOFT_BG_CLASSES.GREAT;
+  return PERFORMANCE_SOFT_BG_CLASSES.GOOD;
+}
+
+/** Soft badge + bar colors aligned to {CONVERSION_GOAL_PCT}% goal. */
 function conversionPill(conv, bookings) {
   const b = Number(bookings || 0);
   const c = Number(conv || 0);
   if (b <= 0) {
-    return { label: "—", className: "bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200/80" };
+    return {
+      label: "—",
+      className: "bg-slate-100 text-slate-500 ring-1 ring-inset ring-slate-200/80",
+      barClass: "bg-slate-200",
+      lowSample: false,
+    };
   }
   if (b < 5) {
     return {
       label: formatPct(c),
-      className: cx(
-        "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200/80",
-        getConversionClass(c),
-      ),
+      className: "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200/80",
+      barClass: getConversionBgClass(c),
+      lowSample: true,
     };
   }
   return {
     label: formatPct(c),
-    className: cx(
-      "ring-1 ring-inset ring-black/5",
-      getConversionBgClass(c),
-      getConversionClass(c),
-    ),
+    className: cx(conversionSoftBadgeClass(c), "ring-1 ring-inset"),
+    barClass: getConversionBgClass(c),
+    lowSample: false,
   };
+}
+
+/** Close-rate bar width: full track = goal %. */
+function conversionRateBarWidth(rate) {
+  if (CONVERSION_GOAL_PCT <= 0) return 0;
+  const w = (Number(rate) / CONVERSION_GOAL_PCT) * 100;
+  return Math.min(100, Math.max(0, w));
+}
+
+function conversionGoalFooter(rate, purchases, bookings, lowSample) {
+  if (bookings <= 0) return "";
+  if (rate >= CONVERSION_GOAL_PCT) {
+    return lowSample
+      ? `At or above ${CONVERSION_GOAL_PCT}% target · Low sample (under 5 calls)`
+      : `At or above ${CONVERSION_GOAL_PCT}% target`;
+  }
+  if (purchases === 0) {
+    return lowSample
+      ? `No sales yet · ${CONVERSION_GOAL_PCT}% target · Low sample (under 5 calls)`
+      : `No sales yet · ${CONVERSION_GOAL_PCT}% target`;
+  }
+  const ptsBelow = Math.round((CONVERSION_GOAL_PCT - rate) * 10) / 10;
+  const base = `${ptsBelow} pts below ${CONVERSION_GOAL_PCT}% target`;
+  return lowSample ? `${base} · Low sample (under 5 calls)` : base;
+}
+
+/** Merge fb→facebook, ig→instagram, etc. for source view only. */
+function mergeConversionRows(rows, view) {
+  if (view !== "source") return rows || [];
+  const map = new Map();
+  for (const row of rows || []) {
+    const raw = row.fullName ?? row.name ?? "Unknown";
+    const normKey = normalizeBookingSource(raw).toLowerCase();
+    const existing = map.get(normKey);
+    if (!existing) {
+      map.set(normKey, {
+        fullName: normKey,
+        name: normKey,
+        bookings: 0,
+        purchases: 0,
+      });
+    }
+    const entry = map.get(normKey);
+    entry.bookings += Number(row.bookings || 0);
+    entry.purchases += Number(row.purchases || 0);
+  }
+  return Array.from(map.values()).map((r) => ({
+    ...r,
+    conversionRate: r.bookings > 0 ? (r.purchases / r.bookings) * 100 : 0,
+  }));
 }
 
 function formatShortDate(isoDay) {
@@ -119,23 +352,16 @@ function formatRangeBoundsLabel(start, end) {
 }
 
 function startOfUtcDay(date) {
-  return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0),
-  );
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
 }
 
 function endOfUtcDay(date) {
-  return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999),
-  );
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
 }
 
 function getOrganicRangeBounds(range, customStart = null, customEnd = null) {
   const now = new Date();
-
-  if (range === "custom") {
-    return normalizeCustomBounds(customStart, customEnd);
-  }
+  if (range === "custom") return normalizeCustomBounds(customStart, customEnd);
   if (range === "last30") {
     const end = endOfUtcDay(now);
     const start = new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000);
@@ -152,17 +378,13 @@ function getOrganicRangeBounds(range, customStart = null, customEnd = null) {
   }
   if (range === "lastMonth") {
     const previousMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
-    const monthRange = DateHelpers.getMonthRangeInTimezone(
-      previousMonth,
-      DateHelpers.DEFAULT_TIMEZONE,
-    );
+    const monthRange = DateHelpers.getMonthRangeInTimezone(previousMonth, DateHelpers.DEFAULT_TIMEZONE);
     return { start: monthRange.startDate, end: monthRange.endDate };
   }
   if (range === "mtd") {
     const monthRange = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
     return { start: monthRange.startDate, end: now };
   }
-
   const monthRange = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
   return { start: monthRange.startDate, end: monthRange.endDate };
 }
@@ -177,11 +399,13 @@ function normalizeCustomBounds(startDateText, endDateText) {
   return { start, end };
 }
 
+// ─── Micro components ────────────────────────────────────────────────────────
+
 function MetricInfo({ title, body }) {
   return (
     <span className="group relative inline-flex h-3.5 w-3.5 shrink-0 cursor-default items-center justify-center rounded-full border border-slate-300 text-[9px] font-semibold leading-none text-slate-500">
       i
-      <span className="pointer-events-none invisible absolute right-0 top-full z-20 mt-1 w-[168px] rounded-md border border-slate-200 bg-white px-2 py-1 text-[9px] font-medium leading-snug text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.14)] group-hover:visible">
+      <span className="pointer-events-none invisible absolute right-0 top-full z-20 mt-1 w-[172px] rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[9px] font-medium leading-snug text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.14)] group-hover:visible">
         <span className="block font-semibold text-slate-900">{title}</span>
         <span className="block">{body}</span>
       </span>
@@ -205,18 +429,46 @@ function SectionBadge({ children }) {
   );
 }
 
+/** Section title row — matches Sales tab (title left, badge top-right). */
+function OrganicSectionHeader({ title, badge, infoTitle, infoBody, subtitle, actions }) {
+  return (
+    <div className="mb-2">
+      <div className="relative">
+        <div className={badge ? "min-w-0 pr-[8.5rem]" : "min-w-0"}>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-bold uppercase tracking-wide text-slate-900">{title}</h2>
+            {infoTitle ? <MetricInfo title={infoTitle} body={infoBody} /> : null}
+          </div>
+          {subtitle ? <p className="mt-1 text-[11px] font-semibold text-slate-500">{subtitle}</p> : null}
+        </div>
+        {badge ? (
+          <div className="absolute right-0 top-0">
+            <SectionBadge>{badge}</SectionBadge>
+          </div>
+        ) : null}
+      </div>
+      {actions ? <div className="mt-2 flex flex-wrap items-center justify-end gap-2">{actions}</div> : null}
+    </div>
+  );
+}
+
+function OrganicDataScopeNote() {
+  return (
+    <p className="rounded-lg border border-slate-100 bg-slate-50/90 px-3 py-2 text-[11px] font-semibold leading-snug text-slate-600">
+      Organic traffic only — paid ads excluded. Calls, bookings, and sales may fall on different days in the
+      period.
+    </p>
+  );
+}
+
+// ─── Filters bar ─────────────────────────────────────────────────────────────
+
 function OrganicFiltersBar({
-  range,
-  onRangeChange,
-  customStart,
-  onCustomStartChange,
-  customEnd,
-  onCustomEndChange,
-  sourceFilter,
-  onSourceFilterChange,
-  sourceOptions,
-  rangeBounds,
-  loading,
+  range, onRangeChange,
+  customStart, onCustomStartChange,
+  customEnd, onCustomEndChange,
+  sourceFilter, onSourceFilterChange,
+  sourceOptions, rangeBounds, loading,
 }) {
   const periodLabel = rangeBounds ? formatRangeBoundsLabel(rangeBounds.start, rangeBounds.end) : "—";
 
@@ -248,15 +500,13 @@ function OrganicFiltersBar({
         <span className="hidden h-5 w-px bg-slate-200 sm:inline-block" aria-hidden="true" />
 
         <div className="flex min-w-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1">
-          <label htmlFor="organic-source-filter" className="sr-only">
-            UTM source filter
-          </label>
+          <label htmlFor="organic-source-filter" className="sr-only">UTM source filter</label>
           <select
             id="organic-source-filter"
             value={sourceFilter || ""}
             onChange={(e) => onSourceFilterChange?.(e.target.value)}
             disabled={loading}
-            className="h-6 max-w-[min(100%,220px)] cursor-pointer rounded border border-slate-200 bg-white px-1.5 text-[11px] font-semibold text-slate-700 !outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-6 max-w-[min(100%,200px)] cursor-pointer rounded border border-slate-200 bg-white px-1.5 text-[11px] font-semibold text-slate-700 !outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">All sources</option>
             {(sourceOptions || []).map((name) => (
@@ -274,185 +524,880 @@ function OrganicFiltersBar({
           </span>
         </div>
       </div>
-      <p className="mt-1.5 text-[10px] font-medium leading-snug text-slate-500">
-        Organic only — paid ads excluded. Calls by{" "}
-        <span className="font-semibold text-slate-600">call_date</span>; sales by{" "}
-        <span className="font-semibold text-slate-600">purchase_date</span>.
-      </p>
     </div>
   );
 }
 
-function KpiRevenueCard({ label, value, note, badge, badgeClass, loading, infoTitle, infoBody }) {
+
+// ─── Left column (pipeline + snapshot cards) ─────────────────────────────────
+
+function formatPeakDayLabel(dateStr) {
+  if (!dateStr) return "—";
+  return new Date(`${dateStr}T12:00:00.000Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function computeBookingStats(bookingsPerDay) {
+  const series = bookingsPerDay || [];
+  if (!series.length) {
+    return { total: 0, avg: 0, peak: null, dayCount: 0, spark: [] };
+  }
+  const total = series.reduce((s, r) => s + Number(r.total || 0), 0);
+  const dayCount = series.length;
+  const avg = dayCount > 0 ? total / dayCount : 0;
+  const peak = series.reduce(
+    (best, row) => (Number(row.total || 0) > Number(best?.total || 0) ? row : best),
+    series[0],
+  );
+  const spark = series.map((r) => ({ v: Number(r.total || 0) }));
+  return { total, avg, peak, dayCount, spark };
+}
+
+const ORGANIC_PIE_SIZE = 58;
+const ORGANIC_PIE_INNER = 16;
+const ORGANIC_PIE_OUTER = 25;
+
+function buildGoalPieSlices(main, cap, accentFill, labels = {}) {
+  const m = Math.max(0, Number(main) || 0);
+  const c = Math.max(0, Number(cap) || 0);
+  const slate = "#e2e8f0";
+  const progressLabel = labels.progress ?? "Achieved";
+  const remainingLabel = labels.remaining ?? "Remaining";
+  if (c <= 0) return [{ name: "—", value: 1, fill: slate }];
+  const filled = Math.min(m, c);
+  const rest = Math.max(0, c - m);
+  if (filled <= 0) return [{ name: remainingLabel, value: c, fill: slate }];
+  if (rest <= 0) return [{ name: progressLabel, value: Math.max(filled, 1), fill: accentFill }];
+  return [
+    { name: progressLabel, value: filled, fill: accentFill },
+    { name: remainingLabel, value: rest, fill: slate },
+  ];
+}
+
+function OrganicPieBreakdownTooltip({ slices, formatValue = formatInt, activeName }) {
+  const total = slices.reduce((s, row) => s + (Number(row.value) || 0), 0);
   return (
-    <article className="min-h-[96px] rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-        {infoBody ? <MetricInfo title={infoTitle || label} body={infoBody} /> : null}
+    <div
+      className="min-w-[128px] rounded-lg border border-slate-200 bg-white px-2.5 py-2 shadow-[0_8px_20px_rgba(15,23,42,0.14)]"
+      role="tooltip"
+    >
+      <div className="flex flex-col gap-1">
+        {slices.map((row) => {
+          const val = Number(row.value) || 0;
+          const share = total > 0 ? (val / total) * 100 : 0;
+          const isActive = activeName === row.name;
+          return (
+            <div
+              key={row.name}
+              className={cx(
+                "flex items-center justify-between gap-2 text-[10px]",
+                isActive ? "font-semibold text-slate-900" : "font-medium text-slate-600",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.fill }} />
+                <span className="truncate">{row.name}</span>
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {formatValue(val)} · {share.toFixed(1)}%
+              </span>
+            </div>
+          );
+        })}
       </div>
-      {loading ? (
-        <ShimmerBlock className="mt-3 h-7 w-24" />
-      ) : (
-        <p className="mt-2 text-[24px] font-extrabold leading-none tracking-normal text-slate-950 tabular-nums">
-          {value}
-        </p>
-      )}
-      <p className="mt-2 text-[11px] font-semibold text-slate-500">{note}</p>
-      {badge ? (
-        <div className="mt-2">
-          <span className={cx("inline-flex rounded-md px-2 py-1 text-[10px] font-extrabold leading-none", badgeClass)}>
-            {loading ? <ShimmerText className="h-2.5 w-16" /> : badge}
-          </span>
+    </div>
+  );
+}
+
+function OrganicMiniPie({ slices, loading, centerLabel, formatValue = formatInt }) {
+  const [hovered, setHovered] = useState(false);
+  const [activeName, setActiveName] = useState(null);
+
+  const filtered = useMemo(() => (slices || []).filter((s) => s.value > 0), [slices]);
+
+  const clearHover = useCallback(() => {
+    setHovered(false);
+    setActiveName(null);
+  }, []);
+
+  if (loading) {
+    return <ShimmerBlock className="h-[58px] w-[58px] shrink-0 self-center rounded-full" />;
+  }
+  if (!filtered.length) {
+    return (
+      <div
+        className="flex h-[58px] w-[58px] shrink-0 items-center justify-center self-center rounded-full border border-slate-100 bg-slate-50 text-[9px] font-semibold text-slate-400"
+        aria-hidden
+      >
+        —
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative flex h-[58px] w-[58px] shrink-0 cursor-default items-center justify-center self-center"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={clearHover}
+      onFocus={() => setHovered(true)}
+      onBlur={clearHover}
+      tabIndex={0}
+      aria-label="Chart breakdown. Hover for details."
+    >
+      <PieChart width={ORGANIC_PIE_SIZE} height={ORGANIC_PIE_SIZE}>
+        <Pie
+          data={filtered}
+          dataKey="value"
+          nameKey="name"
+          cx="50%"
+          cy="50%"
+          innerRadius={ORGANIC_PIE_INNER}
+          outerRadius={ORGANIC_PIE_OUTER}
+          paddingAngle={filtered.length > 1 ? 1 : 0}
+          stroke="#fff"
+          strokeWidth={1}
+          isAnimationActive={false}
+          onMouseEnter={(_, index) => {
+            setHovered(true);
+            setActiveName(filtered[index]?.name ?? null);
+          }}
+          onMouseLeave={() => setActiveName(null)}
+        >
+          {filtered.map((entry) => (
+            <Cell
+              key={entry.name}
+              fill={entry.fill}
+              opacity={activeName && activeName !== entry.name ? 0.45 : 1}
+            />
+          ))}
+        </Pie>
+      </PieChart>
+      {centerLabel ? (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-extrabold tabular-nums text-slate-700">
+          {centerLabel}
+        </span>
+      ) : null}
+      {hovered ? (
+        <div className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2">
+          <OrganicPieBreakdownTooltip
+            slices={filtered}
+            formatValue={formatValue}
+            activeName={activeName}
+          />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+
+function OrganicLeftMetricCard({
+  label,
+  infoTitle,
+  infoBody,
+  value,
+  valueClass = "text-slate-950",
+  note,
+  subNote,
+  footer,
+  pie,
+  loading,
+}) {
+  return (
+    <article className="relative min-h-[82px] overflow-visible rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+      <div className="flex items-center gap-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+            {infoTitle ? <MetricInfo title={infoTitle} body={infoBody} /> : null}
+          </div>
+          {loading ? (
+            <ShimmerBlock className="mt-2 h-7 w-20" />
+          ) : (
+            <p className={cx("mt-2 text-[22px] font-extrabold leading-none tabular-nums tracking-normal", valueClass)}>
+              {value}
+            </p>
+          )}
+          {note ? <p className="mt-2 text-[11px] font-semibold text-slate-500">{note}</p> : null}
+          {subNote ? <p className="mt-0.5 text-[10px] font-medium text-slate-400">{subNote}</p> : null}
+          {footer && !loading ? <div className="mt-1.5">{footer}</div> : null}
+        </div>
+        {pie}
+      </div>
     </article>
   );
 }
 
-function BookingsSparklineCard({ series, loading }) {
-  const chartData = useMemo(
+function buildBookedPieSlices(bookingStats) {
+  const total = bookingStats?.total || 0;
+  const peakVal = Number(bookingStats?.peak?.total || 0);
+  const other = Math.max(0, total - peakVal);
+  if (total <= 0) return [];
+  const peakLabel = bookingStats.peak?.date ? formatPeakDayLabel(bookingStats.peak.date) : "day";
+  return [
+    { name: `Peak (${peakLabel})`, value: peakVal, fill: "#0ea5e9" },
+    { name: "Other days", value: other, fill: "#e2e8f0" },
+  ].filter((s) => s.value > 0);
+}
+
+function buildSourceMiniPieSlices(pieData, maxSlices = 4) {
+  const { rows } = buildSourceMixModel(pieData);
+  const top = rows.filter((r) => r.key !== "other").slice(0, maxSlices);
+  const restVal = rows
+    .filter((r) => !top.some((t) => t.key === r.key) && r.key !== "other")
+    .reduce((s, r) => s + r.value, 0);
+  const otherRow = rows.find((r) => r.key === "other");
+  const otherVal = (otherRow?.value || 0) + restVal;
+  const slices = top.map((r) => ({ name: r.name, value: r.value, fill: r.color }));
+  if (otherVal > 0) slices.push({ name: "Other", value: otherVal, fill: SOURCE_BRAND_COLORS.other });
+  return slices;
+}
+
+function OrganicPipelineSection({ totalOrganicCalls, totalPurchases, overallConversion, loading }) {
+  const noSale = Math.max(0, totalOrganicCalls - totalPurchases);
+  const callPie = useMemo(
+    () => [
+      { name: "Sales", value: totalPurchases, fill: "#22c55e" },
+      { name: "No sale", value: noSale, fill: "#e2e8f0" },
+    ],
+    [totalPurchases, noSale],
+  );
+  const purchaseGoal = Math.max(totalPurchases, Math.ceil(totalOrganicCalls * (BENCHMARKS.CONVERSION / 100)));
+  const purchasePie = useMemo(
     () =>
-      (series || []).map((row) => ({
-        d: formatShortDate(row.date),
-        isoDay: row.date,
-        v: Number(row.total || 0),
-      })),
-    [series],
+      buildGoalPieSlices(totalPurchases, purchaseGoal, overallConversion >= BENCHMARKS.CONVERSION ? "#22c55e" : "#f43f5e", {
+        progress: "Purchases",
+        remaining: `To ${BENCHMARKS.CONVERSION}% goal`,
+      }),
+    [totalPurchases, purchaseGoal, overallConversion],
   );
 
   return (
-    <article className="flex min-h-[128px] flex-col rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Booking pace</p>
-        <MetricInfo
-          title="Booking pace"
-          body="Total organic bookings by book_date per day. Reschedules deduped; optional UTM source filter applies."
+    <section className="flex flex-col overflow-visible rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <OrganicSectionHeader
+        title="Pipeline"
+        badge="Calls & sales"
+        infoTitle="Pipeline"
+        infoBody="Calls are counted when they happened; purchases when the sale closed. Hover charts for a full breakdown."
+        subtitle="Calls held vs sales closed in the period"
+      />
+      <div className="flex flex-col gap-2">
+        <OrganicLeftMetricCard
+          label="Calls"
+          infoTitle="Calls"
+          infoBody="Organic calls in range. Reschedules deduped. Paid ads excluded."
+          value={formatInt(totalOrganicCalls)}
+          loading={loading}
+          pie={<OrganicMiniPie slices={callPie} loading={loading} />}
+          footer={
+            totalOrganicCalls > 0 ? (
+              <p className="text-[11px] font-semibold text-slate-500">
+                <span className="text-emerald-700">{formatPct((totalPurchases / totalOrganicCalls) * 100, 1)}</span>{" "}
+                closed · {formatInt(noSale)} no sale
+              </p>
+            ) : null
+          }
+        />
+        <OrganicLeftMetricCard
+          label="Purchases"
+          infoTitle="Purchases"
+          infoBody="Confirmed sales from organic calls in range (including partial refunds)."
+          value={formatInt(totalPurchases)}
+          loading={loading}
+          pie={<OrganicMiniPie slices={purchasePie} loading={loading} />}
+          footer={
+            totalOrganicCalls > 0 ? (
+              <p className="text-[11px] font-semibold text-slate-500">
+                Goal {formatInt(purchaseGoal)} at {BENCHMARKS.CONVERSION}% close rate
+              </p>
+            ) : null
+          }
         />
       </div>
-      {loading ? (
-        <ShimmerBlock className="mt-3 min-h-[72px] flex-1 w-full" />
-      ) : (
-        <>
-          <p className="mt-1 text-[22px] font-bold tabular-nums leading-none text-slate-900">
-            {formatInt(chartData.reduce((s, r) => s + r.v, 0))}
-          </p>
-          <div className="mt-2 min-h-[56px] flex-1 w-full">
-            {chartData.length === 0 ? (
-              <p className="py-4 text-center text-[11px] font-medium text-slate-400">No bookings in range</p>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%" minHeight={56}>
-                <BarChart data={chartData} margin={{ top: 4, right: 2, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="d" hide />
-                  <YAxis hide domain={[0, "dataMax + 1"]} />
-                  <Tooltip
-                    cursor={false}
-                    contentStyle={{
-                      borderRadius: 8,
-                      border: "1px solid #e2e8f0",
-                      fontSize: 11,
-                    }}
-                    labelFormatter={(_, payload) => {
-                      const raw = payload?.[0]?.payload?.isoDay;
-                      return raw ? formatShortDate(raw) : "";
-                    }}
-                    formatter={(value) => [formatInt(value), "Bookings"]}
-                  />
-                  <Bar dataKey="v" fill="#22c55e" radius={[3, 3, 0, 0]} minPointSize={2} isAnimationActive={false} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-          <p className="mt-1 text-[10px] font-medium text-slate-400">Sum of daily book_date counts</p>
-        </>
-      )}
-    </article>
+    </section>
   );
 }
 
-function SourceMixDonut({ pieData, loading }) {
-  const slices = useMemo(() => {
-    const sorted = [...(pieData || [])].sort((a, b) => b.value - a.value);
-    const top = sorted.slice(0, 5);
-    const rest = sorted.slice(5).reduce((s, r) => s + r.value, 0);
-    const rows = top.map((r, i) => ({
-      name: r.name,
-      value: r.value,
-      fill: UTM_ANALYTICS_CHART_COLORS[i % UTM_ANALYTICS_CHART_COLORS.length],
-    }));
-    if (rest > 0) {
-      rows.push({ name: "Other", value: rest, fill: "#cbd5e1" });
-    }
-    return rows;
-  }, [pieData]);
-
-  const total = slices.reduce((s, r) => s + r.value, 0);
+function OrganicSnapshotSection({
+  overallConversion,
+  bookingsPerDay,
+  pieData,
+  sourceFilter,
+  loading,
+}) {
+  const bookingStats = useMemo(() => computeBookingStats(bookingsPerDay), [bookingsPerDay]);
+  const bookedPie = useMemo(() => buildBookedPieSlices(bookingStats), [bookingStats]);
+  const sourceSlices = useMemo(() => buildSourceMiniPieSlices(pieData), [pieData]);
+  const closeRatePie = useMemo(
+    () =>
+      buildGoalPieSlices(overallConversion, BENCHMARKS.CONVERSION, overallConversion >= BENCHMARKS.CONVERSION ? "#22c55e" : "#f43f5e", {
+        progress: "Close rate",
+        remaining: `To ${BENCHMARKS.CONVERSION}% goal`,
+      }),
+    [overallConversion],
+  );
+  const distinctSources = (pieData || []).length;
+  const filterLabel = sourceFilter ? formatUtmLabel(sourceFilter) : "All sources";
+  const formatPctSlice = (v) => formatPct(v, 1);
+  const bookedNote =
+    bookingStats.dayCount > 0 ? `Avg ${bookingStats.avg.toFixed(1)} bookings per day` : null;
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Source mix</p>
-        <MetricInfo title="Source mix" body="Share of organic calls by utm_source (top 5 + other)." />
+    <section className="flex flex-col overflow-visible rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <OrganicSectionHeader
+        title="Snapshot"
+        badge="Overview"
+        infoTitle="Snapshot"
+        infoBody="Bookings when scheduled, close rate from calls and sales, and traffic source mix. Hover charts for a full breakdown."
+        subtitle="Bookings, conversion, and traffic mix"
+      />
+      <div className="flex flex-col gap-2">
+        <OrganicLeftMetricCard
+          label="Booked"
+          infoTitle="Booked"
+          infoBody="Total bookings in range (matches the Daily bookings chart)."
+          value={formatInt(bookingStats.total)}
+          note={bookedNote}
+          loading={loading}
+          pie={<OrganicMiniPie slices={bookedPie} loading={loading} />}
+          footer={
+            bookingStats.peak && Number(bookingStats.peak.total) > 0 ? (
+              <p className="text-[11px] font-semibold text-slate-500">
+                Peak {formatInt(bookingStats.peak.total)} on {formatPeakDayLabel(bookingStats.peak.date)}
+              </p>
+            ) : null
+          }
+        />
+        <OrganicLeftMetricCard
+          label="Close rate"
+          infoTitle="Close rate"
+          infoBody="Purchases divided by organic calls in range."
+          value={formatPct(overallConversion)}
+          valueClass={getConversionClass(overallConversion)}
+          note="Sales divided by calls"
+          loading={loading}
+          pie={
+            <OrganicMiniPie
+              slices={closeRatePie}
+              loading={loading}
+              centerLabel={formatPct(overallConversion, 0)}
+              formatValue={formatPctSlice}
+            />
+          }
+        />
+        <OrganicLeftMetricCard
+          label="Traffic sources"
+          infoTitle="Traffic sources"
+          infoBody="How many distinct traffic sources had activity in range."
+          value={formatInt(distinctSources)}
+          note={filterLabel}
+          loading={loading}
+          pie={<OrganicMiniPie slices={sourceSlices} loading={loading} />}
+        />
       </div>
+    </section>
+  );
+}
+
+function OrganicLeftColumn({
+  totalOrganicCalls,
+  totalPurchases,
+  overallConversion,
+  bookingsPerDay,
+  pieData,
+  sourceFilter,
+  loading,
+}) {
+  return (
+    <div className="flex flex-col gap-2 overflow-visible">
+      <OrganicPipelineSection
+        totalOrganicCalls={totalOrganicCalls}
+        totalPurchases={totalPurchases}
+        overallConversion={overallConversion}
+        loading={loading}
+      />
+      <OrganicSnapshotSection
+        overallConversion={overallConversion}
+        bookingsPerDay={bookingsPerDay}
+        pieData={pieData}
+        sourceFilter={sourceFilter}
+        loading={loading}
+      />
+    </div>
+  );
+}
+
+// ─── Source mix (utm_source share) ─────────────────────────────────────────────
+
+const SOURCE_MIX_TOP_N = 6;
+
+function buildSourceMixModel(pieData) {
+  const map = new Map();
+  for (const row of pieData || []) {
+    const normKey = normalizeBookingSource(row.name).toLowerCase();
+    const val = Number(row.value || 0);
+    map.set(normKey, (map.get(normKey) || 0) + val);
+  }
+
+  const merged = [...map.entries()]
+    .map(([key, value]) => ({ key, value }))
+    .sort((a, b) => b.value - a.value);
+
+  const total = merged.reduce((s, r) => s + r.value, 0);
+  const top = merged.slice(0, SOURCE_MIX_TOP_N);
+  const restVal = merged.slice(SOURCE_MIX_TOP_N).reduce((s, r) => s + r.value, 0);
+
+  const rows = top.map((r) => ({
+    key: r.key,
+    name: formatUtmLabel(r.key),
+    value: r.value,
+    pct: total > 0 ? (r.value / total) * 100 : 0,
+    color: getSourceBrandColor(r.key),
+  }));
+
+  if (restVal > 0) {
+    rows.push({
+      key: "other",
+      name: "Other",
+      value: restVal,
+      pct: total > 0 ? (restVal / total) * 100 : 0,
+      color: SOURCE_BRAND_COLORS.other,
+    });
+  }
+
+  return { rows, total };
+}
+
+function SourceMixPanel({ pieData, loading }) {
+  const { rows, total } = useMemo(() => buildSourceMixModel(pieData), [pieData]);
+  const { tip, panelBindings, targetHandlers } = usePanelCursorTooltip();
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <OrganicSectionHeader
+        title="Traffic sources"
+        badge="By source"
+        infoTitle="Traffic sources"
+        infoBody="Share of organic calls from each traffic source. Facebook and Instagram spellings are merged. Use Close rate → Campaign for campaign detail."
+        subtitle="Share of all organic calls"
+      />
+
       {loading ? (
-        <div className="mt-3 flex items-center gap-3">
-          <ShimmerBlock className="h-[88px] w-[88px] rounded-full" />
-          <div className="flex-1 space-y-2">
-            <ShimmerBlock className="h-3 w-full" />
-            <ShimmerBlock className="h-3 w-4/5" />
-            <ShimmerBlock className="h-3 w-3/5" />
-          </div>
+        <div className="space-y-1.5">
+          <ShimmerBlock className="h-6 w-full rounded-md" />
+          <ShimmerBlock className="h-6 w-full rounded-md" />
+          <ShimmerBlock className="h-6 w-full rounded-md" />
         </div>
       ) : total === 0 ? (
-        <p className="mt-4 py-6 text-center text-[11px] font-medium text-slate-400">No source data</p>
+        <p className="py-4 text-center text-[11px] font-medium text-slate-400">No source data in range</p>
       ) : (
-        <div className="mt-2 flex items-center gap-3">
-          <div className="h-[88px] w-[88px] shrink-0">
-            <PieChart width={88} height={88}>
-              <Pie
-                data={slices}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                innerRadius={26}
-                outerRadius={40}
-                stroke="none"
-                isAnimationActive={false}
-              >
-                {slices.map((entry) => (
-                  <Cell key={entry.name} fill={entry.fill} />
-                ))}
-              </Pie>
-            </PieChart>
+        <div
+          {...panelBindings()}
+          className="relative rounded-xl border border-slate-200/80 bg-slate-50/30 p-1.5"
+        >
+          <PanelCursorTooltip tip={tip} estimateHeight={64}>
+            {(payload) => (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] shadow-lg">
+                <p className="font-semibold text-slate-900">{payload.name}</p>
+                <p className="mt-1 text-slate-700">
+                  {formatInt(payload.value)} calls · {formatPct(payload.pct, 1)} of {formatInt(total)}
+                </p>
+              </div>
+            )}
+          </PanelCursorTooltip>
+
+          <p className="mb-1 px-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
+            {formatInt(total)} calls total
+          </p>
+
+          <div className="grid grid-cols-[minmax(0,1fr)_40px_36px] gap-x-2 px-1 pb-0.5 text-[8px] font-semibold uppercase tracking-wide text-slate-400">
+            <span>Source</span>
+            <span className="text-right">Calls</span>
+            <span className="text-right">Share</span>
           </div>
-          <ul className="min-w-0 flex-1 space-y-1">
-            {slices.map((row) => (
-              <li key={row.name} className="flex items-center justify-between gap-2 text-[10px]">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.fill }} />
-                  <span className="truncate font-semibold text-slate-700">{formatUtmLabel(row.name)}</span>
-                </span>
-                <span className="shrink-0 tabular-nums font-semibold text-slate-900">
-                  {formatPct(total > 0 ? (row.value / total) * 100 : 0, 0)}
-                </span>
-              </li>
-            ))}
+
+          <ul className="divide-y divide-slate-100/90">
+            {rows.map((row) => {
+              const payload = { ...row, id: row.key };
+              return (
+                <li key={row.key}>
+                  <div
+                    className="grid grid-cols-[minmax(0,1fr)_40px_36px] items-center gap-x-2 py-1 pl-0 pr-0.5"
+                    style={{ borderLeft: `3px solid ${row.color}` }}
+                    {...targetHandlers(payload)}
+                  >
+                    <span className="truncate pl-1.5 text-[11px] font-semibold text-slate-800">{row.name}</span>
+                    <span className="text-right text-[11px] font-semibold tabular-nums text-slate-700">
+                      {formatInt(row.value)}
+                    </span>
+                    <span className="text-right text-[10px] font-bold tabular-nums text-slate-500">
+                      {formatPct(row.pct, 0)}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
+    </section>
+  );
+}
+
+// ─── Daily bookings trend (management-style area / multi-line) ───────────────
+
+function DailyBookingsTrendPanel({ bookingsPerDay, sourceKeys, loading }) {
+  const [trendView, setTrendView] = useState("total");
+  const [hiddenSources, setHiddenSources] = useState(() => new Set());
+
+  const { series, lineKeys } = useMemo(
+    () => buildDailyBookingsModel(bookingsPerDay, sourceKeys),
+    [bookingsPerDay, sourceKeys],
+  );
+
+  const totalBookings = useMemo(
+    () => series.reduce((s, r) => s + Number(r.total || 0), 0),
+    [series],
+  );
+
+  const avgPerDay = useMemo(() => {
+    if (!series.length) return 0;
+    return totalBookings / series.length;
+  }, [series, totalBookings]);
+
+  const peakDay = useMemo(() => {
+    if (!series.length) return null;
+    return series.reduce((best, row) =>
+      Number(row.total || 0) > Number(best.total || 0) ? row : best,
+    );
+  }, [series]);
+
+  const tickStep = Math.max(1, Math.ceil(series.length / 5));
+  const visibleLineKeys = lineKeys.filter((k) => !hiddenSources.has(k));
+
+  const toggleSource = (key) => {
+    setHiddenSources((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const bookingsSubtitle =
+    !loading && series.length > 0
+      ? `${formatInt(totalBookings)} in range · ${avgPerDay.toFixed(1)}/day avg${
+          peakDay ? ` · peak ${formatInt(peakDay.total)} on ${peakDay.label}` : ""
+        }`
+      : null;
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <OrganicSectionHeader
+        title="Daily bookings"
+        badge="Booking date"
+        infoTitle="Daily bookings"
+        infoBody="Bookings counted when they were scheduled. Total shows daily volume; By source splits top traffic sources (Facebook and Instagram merged)."
+        subtitle={bookingsSubtitle}
+        actions={
+          <SegmentedTabs
+            size="xs"
+            fit
+            className="!w-fit shrink-0"
+            items={BOOKING_TREND_VIEW_ITEMS}
+            activeId={trendView}
+            onChange={setTrendView}
+          />
+        }
+      />
+
+      {loading ? (
+        <ShimmerBlock className="h-[168px] w-full rounded-xl" />
+      ) : series.length === 0 ? (
+        <p className="flex h-[168px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-[11px] font-medium text-slate-400">
+          No bookings in range
+        </p>
+      ) : (
+        <>
+          <div className="h-[168px] w-full overflow-hidden rounded-xl border border-slate-200/80 bg-white">
+            <ResponsiveContainer width="100%" height="100%">
+              {trendView === "total" ? (
+                <AreaChart data={series} margin={{ top: 10, right: 12, left: 0, bottom: 4 }}>
+                  <defs>
+                    <linearGradient id="organicBookingFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.28} />
+                      <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={{ stroke: "#E2E8F0" }}
+                    tickLine={false}
+                    tickFormatter={(val, i) => {
+                      if (i !== 0 && i !== series.length - 1 && i % tickStep !== 0) return "";
+                      return new Date(`${val}T00:00:00.000Z`).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        timeZone: "UTC",
+                      });
+                    }}
+                    tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }}
+                    height={22}
+                  />
+                  <YAxis hide domain={[0, "dataMax + 1"]} />
+                  <Tooltip
+                    cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "4 4" }}
+                    contentStyle={{
+                      borderRadius: 8,
+                      border: "1px solid #e2e8f0",
+                      fontSize: 12,
+                      padding: "8px 10px",
+                    }}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.label ?? ""}
+                    formatter={(value) => [formatInt(value), "Bookings"]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#3b82f6"
+                    strokeWidth={2.5}
+                    fill="url(#organicBookingFill)"
+                    dot={false}
+                    activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff", fill: "#3b82f6" }}
+                    isAnimationActive={false}
+                  />
+                </AreaChart>
+              ) : (
+                <LineChart data={series} margin={{ top: 10, right: 12, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={{ stroke: "#E2E8F0" }}
+                    tickLine={false}
+                    tickFormatter={(val, i) => {
+                      if (i !== 0 && i !== series.length - 1 && i % tickStep !== 0) return "";
+                      return new Date(`${val}T00:00:00.000Z`).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        timeZone: "UTC",
+                      });
+                    }}
+                    tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }}
+                    height={22}
+                  />
+                  <YAxis hide domain={[0, "dataMax + 1"]} allowDecimals={false} />
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const raw = payload[0]?.payload;
+                      const items = (payload || []).filter((p) => Number(p.value) > 0);
+                      return (
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] shadow-lg">
+                          <div className="mb-1.5 font-semibold text-slate-900">{raw?.label}</div>
+                          <div className="flex flex-col gap-0.5">
+                            {items.map((p) => (
+                              <div key={p.dataKey} className="flex items-center justify-between gap-3 text-slate-700">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
+                                  {formatUtmLabel(p.dataKey)}
+                                </span>
+                                <span className="font-semibold tabular-nums">{formatInt(p.value)}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-1.5 border-t border-slate-100 pt-1 font-semibold text-slate-800">
+                            Total: {formatInt(raw?.total)}
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  {visibleLineKeys.map((key) => {
+                    const colorIdx = lineKeys.indexOf(key);
+                    const color = UTM_ANALYTICS_CHART_COLORS[colorIdx % UTM_ANALYTICS_CHART_COLORS.length];
+                    return (
+                      <Line
+                        key={key}
+                        type="monotone"
+                        dataKey={key}
+                        name={key}
+                        stroke={color}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4, strokeWidth: 2, stroke: "#fff", fill: color }}
+                        isAnimationActive={false}
+                      />
+                    );
+                  })}
+                </LineChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+          {trendView === "sources" && lineKeys.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {lineKeys.map((key, idx) => {
+                const active = !hiddenSources.has(key);
+                const color = UTM_ANALYTICS_CHART_COLORS[idx % UTM_ANALYTICS_CHART_COLORS.length];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => toggleSource(key)}
+                    className={cx(
+                      "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] font-semibold ring-1 ring-inset transition !outline-none",
+                      active
+                        ? "bg-sky-50 text-sky-800 ring-sky-200"
+                        : "bg-white text-slate-400 ring-slate-200 line-through opacity-60",
+                    )}
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: active ? color : "#cbd5e1" }}
+                    />
+                    {formatUtmLabel(key)}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ─── Conversion drill-down (2-col cards + hover tips) ──────────────────────────
+
+const CONVERSION_TABLE_CAP = 10;
+
+function buildConversionTipPayload(row) {
+  const label = formatUtmLabel(row.fullName || row.name);
+  const bookings = Number(row.bookings || 0);
+  const purchases = Number(row.purchases || 0);
+  const rate = Number(row.conversionRate || 0);
+  const pill = conversionPill(rate, bookings);
+  return { id: row.fullName || row.name, label, bookings, purchases, rate, pill };
+}
+
+function ConversionCursorTipCard({ label, bookings, purchases, rate, pill }) {
+  if (bookings <= 0) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] shadow-lg">
+        <p className="font-semibold text-slate-900">{label}</p>
+        <p className="mt-1 text-slate-500">No calls in range</p>
+      </div>
+    );
+  }
+  const footer = conversionGoalFooter(rate, purchases, bookings, pill.lowSample);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[11px] shadow-lg">
+      <p className="font-semibold text-slate-900">{label}</p>
+      <p className="mt-1.5 text-slate-700">
+        {formatInt(bookings)} calls · {formatInt(purchases)} sales
+      </p>
+      <p className={cx("mt-0.5 font-semibold tabular-nums", getConversionClass(rate))}>
+        {pill.label} close rate
+      </p>
+      {footer ? (
+        <p className="mt-1.5 border-t border-slate-100 pt-1.5 text-[10px] font-medium leading-snug text-slate-600">
+          {footer}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ConversionSourceRow({ row, loading, maxBookings, cursorTipHandlers }) {
+  const label = formatUtmLabel(row.fullName || row.name);
+  const bookings = Number(row.bookings || 0);
+  const purchases = Number(row.purchases || 0);
+  const rate = Number(row.conversionRate || 0);
+  const pill = conversionPill(rate, bookings);
+  const volumeWidth = Math.max(bookings > 0 ? 4 : 0, (bookings / maxBookings) * 100);
+  const rateWidth = rate > 0 ? Math.max(4, conversionRateBarWidth(rate)) : 0;
+  const goalLeft = 100;
+
+  return (
+    <article
+      className="flex h-full flex-col rounded-lg border border-slate-100 bg-white px-2 py-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:border-slate-200 hover:bg-slate-50/50"
+      {...(loading || !cursorTipHandlers ? {} : cursorTipHandlers)}
+    >
+      <div className="mb-1 flex items-start justify-between gap-1.5">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11px] font-bold text-slate-900">
+            {loading ? <ShimmerText className="h-3 w-20" /> : label}
+          </p>
+          <p className="mt-0.5 truncate text-[9px] font-medium text-slate-500">
+            {loading ? (
+              <ShimmerText className="h-2 w-16" />
+            ) : (
+              <>
+                {formatInt(bookings)} calls · {formatInt(purchases)} sales
+                {pill.lowSample ? <span className="text-slate-400"> · low n</span> : null}
+              </>
+            )}
+          </p>
+        </div>
+        <div className="shrink-0">
+          {loading ? (
+            <ShimmerText className="h-4 w-10" />
+          ) : (
+            <span
+              className={cx(
+                "inline-flex min-w-[44px] justify-center rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+                pill.className,
+              )}
+            >
+              {pill.label}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <ShimmerBlock className="mt-auto h-[18px] w-full rounded-full" />
+      ) : (
+        <div className="mt-auto space-y-1">
+          <div className="relative h-2 w-full overflow-hidden rounded-full bg-slate-100 ring-1 ring-inset ring-slate-200/60">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full bg-sky-600/90"
+              style={{ width: `${volumeWidth}%` }}
+            />
+          </div>
+          <div className="relative h-2 w-full overflow-hidden rounded-full bg-slate-100 ring-1 ring-inset ring-slate-200/60">
+            <div
+              className={cx("absolute inset-y-0 left-0 rounded-full opacity-90", pill.barClass)}
+              style={{ width: `${rateWidth}%` }}
+            />
+            <div
+              className="absolute inset-y-0 z-10 w-0.5 -translate-x-1/2 rounded-full bg-slate-700 shadow-[0_0_0_1px_rgba(255,255,255,0.9)]"
+              style={{ left: `${goalLeft}%` }}
+              title={`${CONVERSION_GOAL_PCT}% goal`}
+            />
+          </div>
+        </div>
+      )}
     </article>
   );
 }
 
-const CONVERSION_TABLE_CAP = 9;
-
 function ConversionDrilldownTable({ rows, loading, view, onViewChange }) {
-  const sorted = useMemo(
-    () => [...(rows || [])].sort((a, b) => Number(b.bookings || 0) - Number(a.bookings || 0)),
-    [rows],
-  );
+  const { tip, panelBindings, targetHandlers } = usePanelCursorTooltip();
+
+  const sorted = useMemo(() => {
+    const merged = mergeConversionRows(rows, view);
+    return [...merged].sort((a, b) => Number(b.bookings || 0) - Number(a.bookings || 0));
+  }, [rows, view]);
+
   const visible = sorted.slice(0, CONVERSION_TABLE_CAP);
   const hiddenCount = Math.max(0, sorted.length - visible.length);
+  const maxBookings = Math.max(...visible.map((r) => Number(r.bookings || 0)), 1);
+
   const displayRows = loading
     ? Array.from({ length: 6 }).map((_, i) => ({
         name: `—${i}`,
@@ -463,307 +1408,240 @@ function ConversionDrilldownTable({ rows, loading, view, onViewChange }) {
       }))
     : visible;
 
+  const conversionTitle = `Close rate by ${view === "campaign" ? "campaign" : "source"}`;
+
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-[14px] font-semibold tracking-normal text-slate-950">UTM performance</h2>
-            <MetricInfo
-              title="UTM performance"
-              body="Calls booked vs purchases in range, by utm_source or utm_campaign. Close rate = purchases ÷ calls booked."
+    <section className="overflow-visible rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <OrganicSectionHeader
+        title={conversionTitle}
+        badge="Close rate"
+        infoTitle="Close rate breakdown"
+        infoBody="Sales divided by organic calls in range. Source view merges similar Facebook and Instagram names. Hover a row for details."
+        subtitle={`Top ${CONVERSION_TABLE_CAP} by volume${view === "source" ? " · similar names merged" : ""} · ${BENCHMARKS.CONVERSION}% goal`}
+      />
+      <div className="mb-2 space-y-2">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+            <span className="flex items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 ring-1 ring-slate-100">
+              <span className="inline-block h-2 w-4 rounded-full bg-sky-600" />
+              Volume
+            </span>
+            <span className="flex items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 ring-1 ring-slate-100">
+              <span className="inline-flex items-center gap-0.5">
+                <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              Close rate
+            </span>
+            <span className="flex items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 ring-1 ring-slate-100">
+              <span className="inline-block h-2 w-0.5 rounded-full bg-slate-700" />
+              {CONVERSION_GOAL_PCT}% goal
+            </span>
+          </div>
+
+          <div className="w-full min-w-0 sm:w-auto sm:shrink-0">
+            <SegmentedTabs
+              size="xs"
+              fit
+              className="!w-full sm:!w-fit"
+              items={CONVERSION_VIEW_ITEMS}
+              activeId={view}
+              onChange={onViewChange}
             />
           </div>
-          <p className="mt-0.5 text-[10px] font-medium text-slate-500">
-            Top {CONVERSION_TABLE_CAP} by call volume · muted close rate when under 5 calls
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SectionBadge>UTM · CRM</SectionBadge>
-          <SegmentedTabs
-            size="xs"
-            className="!w-fit shrink-0"
-            items={CONVERSION_VIEW_ITEMS}
-            activeId={view}
-            onChange={onViewChange}
-          />
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-1.5">
-        <div className="grid grid-cols-[minmax(0,1.35fr)_64px_64px_88px] items-end gap-x-2 px-1.5 pb-1.5 pt-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-          <div>{view === "campaign" ? "Campaign" : "Source"}</div>
-          <div className="text-right">Calls</div>
-          <div className="text-right">Sales</div>
-          <div className="text-right">Close rate</div>
+      {!loading && sorted.length === 0 ? (
+        <p className="py-6 text-center text-[11px] font-medium text-slate-400">No data in this range</p>
+      ) : (
+        <div
+          {...panelBindings()}
+          className="relative grid grid-cols-1 gap-1.5 sm:grid-cols-2"
+        >
+          <PanelCursorTooltip tip={tip}>
+            {(payload) => <ConversionCursorTipCard {...payload} />}
+          </PanelCursorTooltip>
+          {displayRows.map((row) => (
+            <ConversionSourceRow
+              key={`${view}-${row.fullName || row.name}`}
+              row={row}
+              loading={loading}
+              maxBookings={maxBookings}
+              cursorTipHandlers={loading ? null : targetHandlers(buildConversionTipPayload(row))}
+            />
+          ))}
         </div>
+      )}
 
-        <div className="divide-y divide-slate-100/90">
-          {!loading && sorted.length === 0 ? (
-            <p className="py-5 text-center text-[11px] font-medium text-slate-400">No UTM rows in this range</p>
-          ) : (
-            displayRows.map((row) => {
-              const label = formatUtmLabel(row.fullName || row.name);
-              const bookings = Number(row.bookings || 0);
-              const purchases = Number(row.purchases || 0);
-              const pill = conversionPill(row.conversionRate, bookings);
-              return (
-                <div
-                  key={row.fullName || row.name}
-                  className="grid grid-cols-[minmax(0,1.35fr)_64px_64px_88px] items-center gap-x-2 px-1.5 py-1.5"
-                  title={label}
-                >
-                  <div className="min-w-0 truncate text-[11px] font-semibold text-slate-900">
-                    {loading ? <ShimmerText className="h-3 w-24" /> : label}
-                  </div>
-                  <div className="text-right text-[11px] font-medium tabular-nums text-slate-600">
-                    {loading ? <ShimmerText className="ml-auto h-3 w-7" /> : formatInt(bookings)}
-                  </div>
-                  <div className="text-right text-[11px] font-medium tabular-nums text-slate-600">
-                    {loading ? <ShimmerText className="ml-auto h-3 w-7" /> : formatInt(purchases)}
-                  </div>
-                  <div className="text-right">
-                    {loading ? (
-                      <ShimmerText className="ml-auto h-3 w-12" />
-                    ) : (
-                      <span
-                        className={cx(
-                          "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums",
-                          pill.className,
-                        )}
-                        title={
-                          bookings > 0 ? `${purchases} sales from ${bookings} calls` : undefined
-                        }
-                      >
-                        {pill.label}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-        {hiddenCount > 0 && !loading ? (
-          <p className="border-t border-slate-100 px-2 py-1.5 text-center text-[10px] font-medium text-slate-400">
-            +{hiddenCount} more {view === "campaign" ? "campaigns" : "sources"} — narrow the range or filter by source
-          </p>
-        ) : null}
-      </div>
+      {hiddenCount > 0 && !loading ? (
+        <p className="mt-2 text-center text-[10px] font-medium text-slate-400">
+          +{hiddenCount} more {view === "campaign" ? "campaigns" : "sources"} · narrow range or filter
+        </p>
+      ) : null}
     </section>
   );
 }
 
-function OrganicLeadsTrendChart({ organicDaily, loading }) {
-  const chartData = useMemo(
-    () =>
-      (organicDaily || []).map((row) => ({
-        date: row.date,
-        label: formatShortDate(row.date),
-        leads: Number(row.leads || 0),
-      })),
-    [organicDaily],
+function buildMediumTipPayload(row, mediumKeys, colorByKey) {
+  const segments = mediumKeys
+    .map((med) => ({
+      med,
+      value: Number(row[med] || 0),
+      color: colorByKey[med],
+    }))
+    .filter((s) => s.value > 0);
+  return {
+    source: row.source,
+    total: row.total,
+    segments,
+  };
+}
+
+function MediumCursorTipCard({ source, total, segments }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] shadow-lg">
+      <p className="font-semibold text-slate-900">{formatUtmLabel(source)}</p>
+      <p className="mt-0.5 text-[10px] font-medium text-slate-500">How people found you on this platform</p>
+      <div className="mt-1.5 flex flex-col gap-0.5">
+        {segments.map((s) => (
+          <div key={s.med} className="flex items-center justify-between gap-3 text-slate-700">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: s.color }} />
+              {s.med}
+            </span>
+            <span className="font-semibold tabular-nums">
+              {formatInt(s.value)}
+              <span className="font-medium text-slate-500">
+                {" "}
+                ({total > 0 ? formatPct((s.value / total) * 100, 0) : "0%"})
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-1.5 border-t border-slate-100 pt-1 font-semibold text-slate-800">
+        {formatInt(total)} calls on {formatUtmLabel(source)}
+      </p>
+    </div>
+  );
+}
+
+function MediumBySourceChart({ mediumBySource, mediumKeys, loading }) {
+  const { rows, mediumKeys: canonKeys } = useMemo(
+    () => buildMediumChartModel(mediumBySource, mediumKeys),
+    [mediumBySource, mediumKeys],
   );
 
+  const colorByKey = useMemo(() => {
+    const map = {};
+    canonKeys.forEach((med) => {
+      map[med] = getMediumSegmentColor(med);
+    });
+    return map;
+  }, [canonKeys]);
+
+  const payloadBySource = useMemo(() => {
+    const map = {};
+    rows.forEach((row) => {
+      const id = row.source;
+      map[id] = { ...buildMediumTipPayload(row, canonKeys, colorByKey), id };
+    });
+    return map;
+  }, [rows, canonKeys, colorByKey]);
+
+  const { tip, panelRowBindings, rowTipAttr } = usePanelCursorTooltip();
+
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-[13px] font-semibold text-slate-950">Daily book trend</h3>
-            <MetricInfo
-              title="Daily book trend"
-              body="Organic calls with a book_date per day — one line, not split by source."
-            />
-          </div>
-          <p className="mt-0.5 text-[10px] font-medium text-slate-500">By book_date</p>
-        </div>
-        <SectionBadge>Trend</SectionBadge>
-      </div>
+    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+      <OrganicSectionHeader
+        title="Medium mix"
+        badge="By medium"
+        infoTitle="Medium mix"
+        infoBody="How people found you on each platform (bio, DM, video, etc.). Instagram, Facebook, TikTok, and YouTube only."
+        subtitle="Breakdown within each platform"
+      />
+
       {loading ? (
-        <ShimmerBlock className="h-[132px] w-full rounded-lg" />
-      ) : chartData.length === 0 ? (
-        <p className="flex h-[132px] items-center justify-center text-[11px] font-medium text-slate-400">
-          No book_date activity in range
-        </p>
-      ) : (
-        <div className="h-[132px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="organicLeadsFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 9, fill: "#64748b" }}
-                axisLine={false}
-                tickLine={false}
-                interval="preserveStartEnd"
-              />
-              <YAxis hide domain={[0, "dataMax + 1"]} />
-              <Tooltip
-                contentStyle={{
-                  borderRadius: 8,
-                  border: "1px solid #e2e8f0",
-                  fontSize: 11,
-                }}
-                labelFormatter={(_, payload) => {
-                  const raw = payload?.[0]?.payload?.date;
-                  return raw ? formatShortDate(raw) : "";
-                }}
-                formatter={(value) => [formatInt(value), "Leads booked"]}
-              />
-              <Area
-                type="monotone"
-                dataKey="leads"
-                stroke="#3b82f6"
-                strokeWidth={2}
-                fill="url(#organicLeadsFill)"
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="space-y-2">
+          <ShimmerBlock className="h-10 w-full rounded-lg" />
+          <ShimmerBlock className="h-10 w-full rounded-lg" />
         </div>
+      ) : rows.length === 0 || canonKeys.length === 0 ? (
+        <p className="py-4 text-center text-[11px] font-medium text-slate-400">No social UTMs in range</p>
+      ) : (
+        <>
+          <div
+            {...panelRowBindings((el) => payloadBySource[el.getAttribute("data-panel-tip-row")])}
+            className="relative divide-y divide-slate-100 rounded-xl border border-dashed border-slate-200 bg-white px-2 py-1"
+          >
+            <PanelCursorTooltip tip={tip} estimateHeight={130}>
+              {(payload) => <MediumCursorTipCard {...payload} />}
+            </PanelCursorTooltip>
+
+            {rows.map((row) => {
+              const rowId = row.source;
+              const top = getTopMediumForRow(row, canonKeys);
+
+              return (
+                <div key={rowId} {...rowTipAttr(rowId)} className="py-2">
+                  <div className="mb-1 flex items-baseline justify-between gap-2">
+                    <p className="truncate text-[11px] font-semibold text-slate-900">
+                      {formatUtmLabel(row.source)}
+                    </p>
+                    <p className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-600">
+                      {formatInt(row.total)} calls
+                    </p>
+                  </div>
+                  <div className="flex h-4 w-full overflow-hidden rounded-md bg-slate-100">
+                    {canonKeys.map((med) => {
+                      const val = Number(row[med] || 0);
+                      if (val <= 0) return null;
+                      const segW = (val / row.total) * 100;
+                      return (
+                        <div
+                          key={med}
+                          className="h-full shrink-0"
+                          style={{
+                            width: `${segW}%`,
+                            backgroundColor: colorByKey[med],
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                  {top ? (
+                    <p className="mt-1 text-[9px] font-medium text-slate-500">
+                      Top medium:{" "}
+                      <span className="font-semibold text-slate-700">
+                        {top.med} · {formatPct(top.pct, 0)}
+                      </span>
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1 border-t border-slate-100 pt-2">
+            {canonKeys.map((med) => (
+              <span key={med} className="flex items-center gap-1 text-[9px] font-semibold text-slate-600">
+                <span
+                  className="h-2 w-2 shrink-0 rounded-sm"
+                  style={{ backgroundColor: colorByKey[med] }}
+                />
+                {med}
+              </span>
+            ))}
+          </div>
+        </>
       )}
     </section>
   );
 }
 
-function TopLineCard({ card, loading }) {
-  return (
-    <article className="flex min-h-[76px] flex-col rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.07em] text-slate-500 leading-tight">
-          {card.label}
-        </p>
-        {card.infoBody ? (
-          <MetricInfo title={card.infoTitle || card.label} body={card.infoBody} />
-        ) : (
-          <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        )}
-      </div>
-      <div className="mt-auto flex flex-1 flex-col justify-end pt-2">
-        <p
-          className={cx(
-            "text-[16px] font-semibold leading-none tracking-normal tabular-nums",
-            card.valueClass || "text-slate-900",
-          )}
-        >
-          {loading ? <ShimmerText className="h-5 w-16" /> : card.value}
-        </p>
-        <div className="mt-1.5 min-h-[18px]">
-          <span
-            className={cx(
-              "inline-flex max-w-full truncate rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none",
-              card.badgeClass || "bg-slate-100 text-slate-600",
-            )}
-            title={typeof card.badge === "string" ? card.badge : undefined}
-          >
-            {loading ? <ShimmerText className="h-2.5 w-14" /> : card.badge}
-          </span>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function TopCampaignsList({ campaigns, loading }) {
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="mb-2 flex items-center justify-between gap-2 px-1">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Top campaigns by volume</h3>
-        <MetricInfo title="Top campaigns" body="utm_campaign volume for organic calls in the selected range." />
-      </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-2">
-        <div className="divide-y divide-dashed divide-slate-100">
-          {(campaigns?.length ? campaigns : []).length === 0 && !loading ? (
-            <p className="py-4 text-center text-[11px] font-medium text-slate-400">No campaigns</p>
-          ) : (
-            (campaigns?.length ? campaigns.slice(0, 6) : Array.from({ length: 5 }).map((_, i) => ({ name: `—${i}`, value: 0, percentage: 0 }))).map(
-              (row) => (
-                <div
-                  key={row.fullName || row.name}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-2"
-                  title={row.fullName || row.name}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-[12px] font-semibold text-slate-950">
-                      {loading ? <ShimmerText className="h-3 w-28" /> : formatUtmLabel(row.name)}
-                    </div>
-                    <div className="mt-0.5 text-[10px] font-medium text-slate-500">
-                      {loading ? <ShimmerText className="h-2.5 w-20" /> : `${formatInt(row.value)} calls · ${formatPct(row.percentage, 0)}`}
-                    </div>
-                  </div>
-                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-indigo-500"
-                      style={{ width: `${Math.min(100, Number(row.percentage || 0))}%` }}
-                    />
-                  </div>
-                </div>
-              ),
-            )
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SocialMediumBreakdown({ mediumBySource, mediumKeys, loading }) {
-  const platforms = mediumBySource || [];
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <div className="mb-2 flex items-center justify-between gap-2 px-1">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-          IG · FB · TikTok · YT
-        </h3>
-        <MetricInfo
-          title="Social mediums"
-          body="utm_medium breakdown for Instagram, Facebook, TikTok, and YouTube organic calls."
-        />
-      </div>
-      <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white px-2">
-        {loading ? (
-          <>
-            <ShimmerBlock className="my-2 h-10 w-full" />
-            <ShimmerBlock className="my-2 h-10 w-full" />
-          </>
-        ) : platforms.length === 0 ? (
-          <p className="py-4 text-center text-[11px] font-medium text-slate-400">No social UTMs in range</p>
-        ) : (
-          platforms.map((row) => {
-            const keys = (mediumKeys || []).filter((k) => Number(row[k] || 0) > 0);
-            const topMedium = keys.sort((a, b) => Number(row[b] || 0) - Number(row[a] || 0))[0];
-            return (
-              <div key={row.source} className="grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-2 py-2">
-                <span className="text-[11px] font-bold uppercase text-slate-700">{row.source}</span>
-                <div className="min-w-0 truncate text-[10px] font-medium text-slate-500">
-                  {keys.length === 0
-                    ? "—"
-                    : keys
-                        .slice(0, 3)
-                        .map((k) => `${k}: ${formatInt(row[k])}`)
-                        .join(" · ")}
-                </div>
-                <span className="text-[12px] font-semibold tabular-nums text-slate-900">
-                  {formatInt(row.total)}
-                  {topMedium ? (
-                    <span className="ml-1 text-[9px] font-medium text-slate-400">({topMedium})</span>
-                  ) : null}
-                </span>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </section>
-  );
-}
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 export default function OrganicStatsTab() {
   const customFallback = useMemo(() => getOrganicRangeBounds("last7"), []);
@@ -814,55 +1692,14 @@ export default function OrganicStatsTab() {
     }
 
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [rangeBounds, sourceFilter]);
 
   const overallConversion =
     data.totalOrganicCalls > 0 ? (data.totalPurchases / data.totalOrganicCalls) * 100 : 0;
 
-  const avgDailyBookings = useMemo(() => {
-    const days = (data.organicDaily || []).length;
-    if (!days) return 0;
-    const sum = (data.organicDaily || []).reduce((s, r) => s + Number(r.leads || 0), 0);
-    return sum / days;
-  }, [data.organicDaily]);
-
   const conversionRows =
     conversionView === "campaign" ? data.conversionByCampaign : data.conversionByPlatform;
-
-  const topLineCards = useMemo(
-    () => [
-      {
-        label: "Close rate",
-        value: formatPct(overallConversion),
-        valueClass: getConversionClass(overallConversion),
-        badge: "Goal 32%",
-        badgeClass: getConversionBgClass(overallConversion),
-        infoTitle: "Close rate",
-        infoBody: "Purchases ÷ organic calls (call_date window). From CRM outcome_log.",
-      },
-      {
-        label: "Avg / day",
-        value: avgDailyBookings.toFixed(1),
-        valueClass: "text-slate-900",
-        badge: "book_date",
-        badgeClass: "bg-sky-100 text-sky-800",
-        infoTitle: "Daily bookings",
-        infoBody: "Average organic leads booked per day in the selected range.",
-      },
-      {
-        label: "UTM sources",
-        value: formatInt((data.pieData || []).length),
-        badge: sourceFilter ? formatUtmLabel(sourceFilter) : "All sources",
-        badgeClass: "bg-indigo-100 text-indigo-700",
-        infoTitle: "Source count",
-        infoBody: "Distinct utm_source values on organic calls in this window.",
-      },
-    ],
-    [overallConversion, avgDailyBookings, data.pieData, sourceFilter],
-  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -879,6 +1716,7 @@ export default function OrganicStatsTab() {
         rangeBounds={rangeBounds}
         loading={loading}
       />
+      {/* <OrganicDataScopeNote /> */}
 
       {error ? (
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-700">
@@ -887,62 +1725,37 @@ export default function OrganicStatsTab() {
       ) : null}
 
       <div className="grid grid-cols-8 gap-2">
-        <div className="col-span-2 flex flex-col gap-3">
-          <div className="grid gap-2">
-            <KpiRevenueCard
-              label="Organic calls"
-              value={formatInt(data.totalOrganicCalls)}
-              note="With call_date in range"
-              badge="Excludes paid ads"
-              badgeClass="bg-emerald-100 text-emerald-700"
-              loading={loading}
-              infoBody="Deduped organic calls with call_date in the selected window."
-            />
-            <KpiRevenueCard
-              label="Purchases"
-              value={formatInt(data.totalPurchases)}
-              note="purchase_date in range"
-              badge={`Close rate ${formatPct(overallConversion)}`}
-              badgeClass={getConversionBgClass(overallConversion)}
-              loading={loading}
-              infoBody="CRM purchases linked to organic calls (purchase_date in range)."
-            />
-          </div>
-          <BookingsSparklineCard series={data.bookingsPerDay} loading={loading} />
-          <SourceMixDonut pieData={data.pieData} loading={loading} />
+        {/* ── Left column ── */}
+        <div className="col-span-2 flex flex-col gap-2">
+          <OrganicLeftColumn
+            totalOrganicCalls={data.totalOrganicCalls}
+            totalPurchases={data.totalPurchases}
+            overallConversion={overallConversion}
+            bookingsPerDay={data.bookingsPerDay}
+            pieData={data.pieData}
+            sourceFilter={sourceFilter}
+            loading={loading}
+          />
         </div>
-
-        <div className="col-span-4 flex flex-col gap-3">
+        {/* ── Center column ── */}
+        <div className="col-span-4 flex flex-col gap-2">
+          <DailyBookingsTrendPanel
+            bookingsPerDay={data.bookingsPerDay}
+            sourceKeys={data.bookingsPerDaySourceKeys}
+            loading={loading}
+          />
           <ConversionDrilldownTable
             rows={conversionRows}
             loading={loading}
             view={conversionView}
             onViewChange={setConversionView}
           />
-          <OrganicLeadsTrendChart organicDaily={data.organicDaily} loading={loading} />
         </div>
 
-        <div className="col-span-2 flex flex-col gap-3">
-          <section className="rounded-2xl border border-slate-200 bg-white p-1.5">
-            <div className="mb-1 flex items-center justify-between gap-2 px-1">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Snapshot</h2>
-              <MetricInfo
-                title="Organic snapshot"
-                body="Headline rates for the filtered organic UTM window."
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-1.5">
-              {topLineCards.map((card) => (
-                <TopLineCard key={card.label} card={card} loading={loading} />
-              ))}
-            </div>
-          </section>
-          <TopCampaignsList campaigns={data.campaignData} loading={loading} />
-          <SocialMediumBreakdown
-            mediumBySource={data.mediumBySource}
-            mediumKeys={data.mediumKeys}
-            loading={loading}
-          />
+        {/* ── Right column ── */}
+        <div className="col-span-2 flex flex-col gap-2">
+          <SourceMixPanel pieData={data.pieData} loading={loading} />
+          <MediumBySourceChart mediumBySource={data.mediumBySource} mediumKeys={data.mediumKeys} loading={loading} />
         </div>
       </div>
     </div>

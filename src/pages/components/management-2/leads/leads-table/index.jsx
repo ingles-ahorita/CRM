@@ -141,7 +141,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
 
   const [ subTab, setSubTab ] = useState( searchParams.get( "subTab" ) || "today" );
   const [ sortOrder, setSortOrder ] = useState( searchParams.get( "sortOrder" ) || "desc" );
-  const [ sortBy, setSortBy ] = useState( searchParams.get( "sortBy" ) || "call_date" );
+  const [ sortBy, setSortBy ] = useState( searchParams.get( "sortBy" ) || "book_date" );
   const [ showFilterPanel, setShowFilterPanel ] = useState( false );
   const [ showSearch, setShowSearch ] = useState( !!searchParams.get( "search" ) );
   const [ searchInput, setSearchInput ] = useState( searchParams.get( "search" ) || "" );
@@ -239,7 +239,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     if ( subTab !== "today" ) params.set( "subTab", subTab );
     else params.delete( "subTab" );
 
-    if ( sortBy !== "call_date" ) params.set( "sortBy", sortBy );
+    if ( sortBy !== "book_date" ) params.set( "sortBy", sortBy );
     else params.delete( "sortBy" );
 
     if ( sortOrder !== "desc" ) params.set( "sortOrder", sortOrder );
@@ -622,7 +622,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
                           nextPurchased
                             ? "purchased_at"
                             : s === "purchased_at"
-                              ? "call_date"
+                              ? "book_date"
                               : s,
                         );
                         return { ...p, purchased: nextPurchased };
@@ -688,7 +688,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
                               nextPurchased
                                 ? "purchased_at"
                                 : s === "purchased_at"
-                                  ? "call_date"
+                                  ? "book_date"
                                   : s,
                             );
                             return { ...p, purchased: nextPurchased };

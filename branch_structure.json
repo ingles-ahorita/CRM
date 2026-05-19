@@ -1,21 +1,27 @@
 {
   "default_branch": "main",
   "branches": [
-    "2026-02-16-l8pj",
-    "2026-04-07-l2xd",
+    "changes/bug-fixes",
     "main",
-    "staging"
+    "preview",
+    "revamp-closer",
+    "revamp-dashboard",
+    "revamp-management"
   ],
   "parent": {
-    "2026-02-16-l8pj": "main",
-    "2026-04-07-l2xd": "main",
+    "changes/bug-fixes": "main",
     "main": null,
-    "staging": "main"
+    "preview": "main",
+    "revamp-closer": "main",
+    "revamp-dashboard": "main",
+    "revamp-management": "main"
   },
   "order": [
     "main",
-    "2026-02-16-l8pj",
-    "2026-04-07-l2xd",
-    "staging"
+    "changes/bug-fixes",
+    "preview",
+    "revamp-closer",
+    "revamp-dashboard",
+    "revamp-management"
   ]
 }

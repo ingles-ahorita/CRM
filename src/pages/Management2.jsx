@@ -12,9 +12,12 @@ import MetricsTab from "./components/management-2/metrics";
 import SalesTab from "./components/management-2/sales";
 import PerformanceTab from "./components/management-2/performance";
 import OrganicStatsTab from "./components/management-2/organic-stats";
+import NotificationsTab from "./components/management-2/notifications";
+import { usePlatformEventsBadge } from "../hooks/usePlatformEventsBadge";
 
 export default function Management2() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { refresh: refreshNotificationsBadge } = usePlatformEventsBadge();
 
   // Validate and parse the current tab from URL
   const validTabs = [
@@ -26,6 +29,7 @@ export default function Management2() {
     "sales",
     "performance",
     "organic",
+    "notifications",
   ];
   const currentTab = searchParams.get("tab");
   const activeTab = validTabs.includes(currentTab) ? currentTab : "overview";
@@ -63,6 +67,9 @@ export default function Management2() {
           {activeTab === "sales" && <SalesTab />}
           {activeTab === "performance" && <PerformanceTab />}
           {activeTab === "organic" && <OrganicStatsTab />}
+          {activeTab === "notifications" && (
+            <NotificationsTab onSeen={refreshNotificationsBadge} />
+          )}
         </div>
       </div>
     </div>
