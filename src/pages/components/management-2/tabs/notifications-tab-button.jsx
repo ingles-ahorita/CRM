@@ -9,7 +9,7 @@ function cx(...c) {
  * Icon-only notifications control (sits beside main SegmentedTabs).
  */
 export default function NotificationsTabButton({ active, onClick }) {
-  const { unreadCount } = usePlatformEventsBadge({ enabled: !active });
+  const { unreadCount } = usePlatformEventsBadge({ enabled: !active, pollMs: 45_000 });
 
   const tooltip =
     unreadCount > 0
