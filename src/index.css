@@ -116,3 +116,19 @@ button:focus-visible {
 .closer-dashboard-cards .closer-dashboard-stats-btn:hover svg {
   stroke: #4b5563 !important;
 }
+
+/* Activity feed rows are <button>s; reset global dark button styles */
+.activity-feed-row-btn {
+  background-color: transparent !important;
+  border: none !important;
+  color: inherit;
+  font: inherit;
+}
+.activity-feed-row-btn:hover {
+  border-color: transparent !important;
+}
+.activity-feed-action-btn {
+  background-color: #ffffff !important;
+  color: #334155 !important;
+  border: 1px solid #e2e8f0 !important;
+}

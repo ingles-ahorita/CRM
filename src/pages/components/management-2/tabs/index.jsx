@@ -29,20 +29,26 @@ export default function Tabs({ activeTab, onTabChange }) {
     () =>
       TABS.map((t) => {
         if (t.id !== "leads") return t;
+        const booked = todayBookedStats?.booked ?? 0;
+        const confirmed = todayBookedStats?.confirmed ?? 0;
+        const pendingConfirmations = Math.max(
+          booked - confirmed,
+          0,
+        );
         const trailing =
           todayBookedStats == null ? null : (
             <span
               className={cx(
                 "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums leading-none shadow-sm ring-1 ring-inset",
-                todayBookedStats.booked > todayBookedStats.confirmed
+                pendingConfirmations > 0
                   ? "bg-red-600 text-white ring-red-700/30"
                   : "bg-slate-200/90 text-slate-600 ring-slate-400/20",
               )}
-              title={`${todayBookedStats.booked} booked today (book date), ${todayBookedStats.confirmed} confirmed`}
-              aria-label={`${todayBookedStats.booked} booked today by book date, ${todayBookedStats.confirmed} confirmed`}
+              title={`${confirmed} confirmed of ${booked} booked today`}
+              aria-label={`${confirmed} confirmed of ${booked} booked today by book date`}
             >
               <Bell className="h-3 w-3 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
-              {todayBookedStats.booked}/{todayBookedStats.confirmed}
+              {confirmed}/{booked}
             </span>
           );
         return { ...t, trailing };

@@ -1,4 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
+import SegmentedTabs from "../../segmented-tabs";
+import SectionInfoHint from "../section-info-hint";
+import {
+  TIME_RANGE_ITEMS,
+  getRangeBounds,
+  getEffectiveRangeBounds,
+  toManagementSeriesDateParams,
+} from "../overview-range-helpers";
 import { BENCHMARKS, getShowUpColor, getSuccessColor, getConversionColor } from "../../../../../utils/performanceBenchmarks";
 import {
   LineChart,
@@ -16,6 +24,12 @@ function cx(...p) {
   return p.filter(Boolean).join(" ");
 }
 
+function clampPercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(100, Math.max(0, n));
+}
+
 function shimmer(className = "") {
   return (
     <div
@@ -24,15 +38,33 @@ function shimmer(className = "") {
   );
 }
 
+const METRIC_OPTIONS = [
+  { id: "showUpRate", label: "Show up rate (%)" },
+  { id: "purchaseRate", label: "Success rate (%)" },
+  { id: "conversionRate", label: "Conversion rate (%)" },
+  { id: "bookings", label: "Bookings" },
+  { id: "calls", label: "Show ups" },
+];
+
+const selectClass =
+  "h-8 max-w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 pr-7 text-[11px] font-semibold text-slate-700 shadow-sm !outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
+
 /**
  * Mirrors `/management` dashboard chart: same API, metrics, targets, split, tooltips, and styling.
  */
 export default function TrendsChartPanel() {
+  const customFallback = useMemo(() => getRangeBounds("custom"), []);
   const [chartSeries, setChartSeries] = useState([]);
   const [chartLoading, setChartLoading] = useState(true);
   const [chartMetric, setChartMetric] = useState("showUpRate");
   const [chartSplitBySource, setChartSplitBySource] = useState(false);
-  const [chartDays, setChartDays] = useState(7);
+  const [range, setRange] = useState("mtd");
+  const [customStart, setCustomStart] = useState(() =>
+    customFallback.start.toISOString().slice(0, 10),
+  );
+  const [customEnd, setCustomEnd] = useState(() =>
+    customFallback.end.toISOString().slice(0, 10),
+  );
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
@@ -40,11 +72,31 @@ export default function TrendsChartPanel() {
     async function load() {
       setChartLoading(true);
       setErrorMsg("");
+      if (range === "custom" && customStart > customEnd) {
+        if (!cancelled) {
+          setChartSeries([]);
+          setErrorMsg("Start date must be on or before end date.");
+          setChartLoading(false);
+        }
+        return;
+      }
+      const { start, end } = getEffectiveRangeBounds(
+        range,
+        customStart,
+        customEnd,
+      );
+      const { startDate, endDate } = toManagementSeriesDateParams(start, end);
+      const url = `/api/management-series?${new URLSearchParams({
+        startDate,
+        endDate,
+      }).toString()}`;
       try {
-        const res = await fetch(`/api/management-series?days=${chartDays}`);
-        if (!res.ok) throw new Error(`API failed (${res.status})`);
-        const data = await res.json();
+        const res = await fetch(url);
+        const data = await res.json().catch(() => ({}));
         if (cancelled) return;
+        if (!res.ok) {
+          throw new Error(data?.error || `API failed (${res.status})`);
+        }
         setChartSeries(Array.isArray(data.series) ? data.series : []);
       } catch (e) {
         if (!cancelled) {
@@ -59,7 +111,7 @@ export default function TrendsChartPanel() {
     return () => {
       cancelled = true;
     };
-  }, [chartDays]);
+  }, [range, customStart, customEnd]);
 
   const chartData = useMemo(
     () =>
@@ -67,12 +119,13 @@ export default function TrendsChartPanel() {
         const bookings = d.bookings ?? 0;
         const purchased = d.totalPurchased ?? 0;
         const showed = d.totalShowedUp ?? 0;
-        const purchaseRate = bookings > 0 ? (purchased / bookings) * 100 : 0;
+        const purchaseRate =
+          bookings > 0 ? clampPercent((purchased / bookings) * 100) : null;
         const conversionRateClosers =
-          showed > 0 ? (purchased / showed) * 100 : 0;
+          showed > 0 ? clampPercent((purchased / showed) * 100) : null;
         const value =
           chartMetric === "showUpRate"
-            ? (d.showUpRate ?? 0)
+            ? clampPercent(d.showUpRate)
             : chartMetric === "purchaseRate"
               ? purchaseRate
               : chartMetric === "conversionRate"
@@ -94,19 +147,21 @@ export default function TrendsChartPanel() {
             chartMetric === "purchaseRate" ||
             chartMetric === "conversionRate");
         const numValue = typeof value === "number" ? value : 0;
-        const color = 
-          chartMetric === "showUpRate" ? getShowUpColor(numValue) :
-          chartMetric === "purchaseRate" ? getSuccessColor(numValue) :
-          chartMetric === "conversionRate" ? getConversionColor(numValue) :
-          "#6366f1";
+        const color =
+          chartMetric === "showUpRate"
+            ? getShowUpColor(numValue)
+            : chartMetric === "purchaseRate"
+              ? getSuccessColor(numValue)
+              : chartMetric === "conversionRate"
+                ? getConversionColor(numValue)
+                : "#6366f1";
         return {
           ...d,
           label: d.date?.slice(5) ?? d.date,
           value,
           color,
-          valueOrganic:
-            typeof d.showUpRateOrganic === "number" ? d.showUpRateOrganic : 0,
-          valueAds: typeof d.showUpRateAds === "number" ? d.showUpRateAds : 0,
+          valueOrganic: clampPercent(d.showUpRateOrganic),
+          valueAds: clampPercent(d.showUpRateAds),
         };
       }),
     [chartSeries, chartMetric],
@@ -119,91 +174,91 @@ export default function TrendsChartPanel() {
     return [0, "auto"];
   }, [chartMetric]);
 
-  const PERIOD_OPTIONS = [
-    { id: 7, label: "Last 7 days" },
-    { id: 14, label: "Last 14 days" },
-    { id: 30, label: "Last 30 days" },
-    { id: 90, label: "Last 90 days" },
-  ];
-
-  const METRIC_OPTIONS = [
-    { id: "showUpRate", label: "Show up rate (%)" },
-    { id: "purchaseRate", label: "Success rate (%)" },
-    { id: "conversionRate", label: "Conversion rate (%)" },
-    { id: "bookings", label: "Bookings" },
-    { id: "calls", label: "Show ups" },
-  ];
-
   return (
     <div className="border border-slate-200 rounded-2xl p-2 bg-white">
-      <div className="mb-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-[18px] font-bold tracking-tight text-[#333333]">
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="min-w-0 text-[18px] font-bold tracking-tight text-[#333333]">
             Trends chart panel
           </h2>
+          <SectionInfoHint text="Day-by-day trend for one metric you choose—spot rises or dips over the selected period." />
         </div>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-100/50 p-1">
-            {PERIOD_OPTIONS.map((opt) => {
-              const active = Number(chartDays) === Number(opt.id);
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setChartDays(opt.id)}
-                  className={cx(
-                    "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none",
-                    active
-                      ? "bg-sky-100 text-blue-700 ring-sky-200"
-                      : "bg-white text-slate-500 ring-slate-200/90 hover:bg-slate-50",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {chartMetric === "showUpRate" && (
-              <button
-                type="button"
-                onClick={() => setChartSplitBySource((v) => !v)}
-                className={cx(
-                  "h-8 shrink-0 rounded-lg border px-3 text-[11px] font-semibold transition-all !outline-none",
-                  chartSplitBySource
-                    ? "border-indigo-200 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-                )}
-              >
-                Split by organic/ads
-              </button>
-            )}
-            <div className="flex max-w-full flex-wrap items-center gap-1.5 rounded-xl border border-slate-200/90 bg-slate-100/50 p-1">
-              {METRIC_OPTIONS.map((opt) => {
-                const active = chartMetric === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setChartMetric(opt.id)}
-                    className={cx(
-                      "rounded-lg px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-inset transition !outline-none",
-                      active
-                        ? "bg-sky-100 text-blue-700 ring-sky-200"
-                        : "bg-white text-slate-500 ring-slate-200/90 hover:bg-slate-50",
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+      <div className="mb-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+          <SegmentedTabs
+            items={TIME_RANGE_ITEMS}
+            activeId={range}
+            onChange={setRange}
+            size="xs"
+            className="w-max border-slate-200/90 bg-slate-100/80"
+            activeClassName="!bg-sky-100 !text-blue-700 !ring-sky-200/80"
+          />
         </div>
+
+        <label className="sr-only" htmlFor="trends-metric">
+          Metric
+        </label>
+        <select
+          id="trends-metric"
+          className={cx(selectClass, "min-w-[10.5rem] flex-1 sm:max-w-[14rem]")}
+          value={chartMetric}
+          onChange={(e) => setChartMetric(e.target.value)}
+        >
+          {METRIC_OPTIONS.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        {chartMetric === "showUpRate" ? (
+          <>
+            <label className="sr-only" htmlFor="trends-showup-split">
+              Show-up breakdown
+            </label>
+            <select
+              id="trends-showup-split"
+              className={cx(selectClass, "min-w-[11rem] flex-1 sm:max-w-[15rem]")}
+              value={chartSplitBySource ? "split" : "combined"}
+              onChange={(e) =>
+                setChartSplitBySource(e.target.value === "split")
+              }
+            >
+              <option value="combined">Combined show-up rate</option>
+              <option value="split">Split by organic / ads</option>
+            </select>
+          </>
+        ) : null}
+        </div>
+
+        {range === "custom" ? (
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:w-auto sm:flex-nowrap">
+            <label className="sr-only" htmlFor="trends-custom-start">
+              Custom range start
+            </label>
+            <input
+              id="trends-custom-start"
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="h-8 min-w-0 flex-1 rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none sm:flex-initial sm:min-w-[9.5rem]"
+            />
+            <span className="text-[10px] font-semibold text-slate-500">–</span>
+            <label className="sr-only" htmlFor="trends-custom-end">
+              Custom range end
+            </label>
+            <input
+              id="trends-custom-end"
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="h-8 min-w-0 flex-1 rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none sm:flex-initial sm:min-w-[9.5rem]"
+            />
+          </div>
+        ) : null}
       </div>
 
       {errorMsg ? (
@@ -214,7 +269,7 @@ export default function TrendsChartPanel() {
 
       <div
         className="relative w-full overflow-hidden rounded-xl border border-slate-200/80 bg-white"
-        style={{ height: 280, minHeight: 260 }}
+        style={{ height: 200, minHeight: 180 }}
       >
         {chartLoading ? (
           <div className="flex h-full flex-col gap-3 p-4">
@@ -448,7 +503,15 @@ export default function TrendsChartPanel() {
                   strokeWidth={2}
                   dot={(props) => {
                     const { cx, cy, payload } = props;
-                    return <circle cx={cx} cy={cy} r={4} fill={payload?.color || "#6366f1"} />;
+                    if (payload?.value == null) return null;
+                    return (
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={4}
+                        fill={payload?.color || "#6366f1"}
+                      />
+                    );
                   }}
                   activeDot={(props) => {
                     const { cx, cy, payload } = props;

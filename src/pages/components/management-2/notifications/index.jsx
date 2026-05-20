@@ -17,6 +17,7 @@ import { markNotificationsSeen } from "../../../../hooks/usePlatformEventsBadge"
 import { usePlatformEventsRealtime } from "../../../../hooks/usePlatformEventsRealtime";
 import { fetchPlatformEventsList } from "../../../../lib/platformEventsQuery";
 import { eventMatchesActivityFilters } from "../../../../lib/platformEventFilters";
+import { formatPlatformEventSummary } from "../../../../lib/platformEventDisplay";
 
 const RANGE_ITEMS = [
   { id: "today", label: "Today", title: "Today (UTC)" },
@@ -214,6 +215,7 @@ function ActivityRow({ item, expanded, onToggle, isNew }) {
   const dotClass = CATEGORY_DOT[item.category] || CATEGORY_DOT.system;
   const changes = item.metadata?.changes;
   const href = item.metadata?.href;
+  const displaySummary = formatPlatformEventSummary(item);
 
   return (
     <div
@@ -226,7 +228,7 @@ function ActivityRow({ item, expanded, onToggle, isNew }) {
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-slate-50/80"
+        className="activity-feed-row-btn flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-slate-50/80"
         aria-expanded={expanded}
       >
         <span className="mt-1.5 flex shrink-0 items-center gap-1.5">
@@ -240,7 +242,7 @@ function ActivityRow({ item, expanded, onToggle, isNew }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[13px] font-semibold leading-snug text-slate-800">
-            {item.summary}
+            {displaySummary}
           </span>
           <span className="mt-0.5 block text-[11px] font-medium text-slate-500">
             {[item.actor_display, formatSourceLabel(item.source)].filter(Boolean).join(" · ")}
@@ -429,7 +431,9 @@ export default function NotificationsTab({ onSeen }) {
       <div className="mb-4 flex flex-col items-start gap-1">
         <h2 className="text-[28px] font-bold tracking-tight text-[#0f172a]">Activity</h2>
         <p className="text-[13px] font-medium text-slate-500">
-          All team activity — calls, sales, Kajabi, transfers, and errors (live updates).
+          Bookings, sales outcomes, Kajabi purchases and refunds, setter transfers, shifts,
+          revenue-goal changes, offers, logins, and system errors — filter by date and topic;
+          new entries stream in real time.
         </p>
       </div>
 
@@ -498,7 +502,7 @@ export default function NotificationsTab({ onSeen }) {
             type="button"
             disabled={loading}
             onClick={() => load(null, false)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+            className="activity-feed-action-btn inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw
               className={cx("h-3.5 w-3.5", loading && "animate-spin")}
@@ -512,7 +516,7 @@ export default function NotificationsTab({ onSeen }) {
               type="button"
               disabled={loadingMore}
               onClick={() => load(nextCursor, true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+              className="activity-feed-action-btn inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
             >
               {loadingMore ? "Loading…" : "Load more"}
             </button>

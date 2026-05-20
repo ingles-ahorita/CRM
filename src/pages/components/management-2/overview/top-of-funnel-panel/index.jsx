@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import SectionInfoHint from "../section-info-hint";
 import { getShowUpColor } from "../../../../../utils/performanceBenchmarks";
 import {
   Chart as ChartJS,
@@ -67,6 +68,7 @@ function MiniBarChart({
   labels,
   tooltipLabel,
   shouldAnimate = false,
+  chartHeight = 68,
 }) {
   const max = Math.max(...values, 1);
 
@@ -141,7 +143,7 @@ function MiniBarChart({
   );
 
   return (
-    <div className="relative h-[68px] w-full">
+    <div className="relative w-full" style={{ height: chartHeight }}>
       <Bar
         key={shouldAnimate ? "bars-animated" : "bars-static"}
         data={data}
@@ -169,9 +171,11 @@ const ATTENDANCE_DONUT_BASE_OPTS = {
   },
 };
 
-function AttendanceRing({ percent }) {
+function AttendanceRing({ percent, compact = false }) {
   const pct = Math.min(100, Math.max(0, Number(percent) || 0));
   const color = getShowUpColor(pct);
+  const dim = compact ? "h-[56px] w-[56px]" : "h-[84px] w-[84px]";
+  const pctText = compact ? "text-[12px]" : "text-[17px]";
 
   const data = useMemo(() => {
     if (pct <= 0) {
@@ -212,10 +216,12 @@ function AttendanceRing({ percent }) {
   }, [pct, color]);
 
   return (
-    <div className="relative h-[84px] w-[84px] shrink-0">
+    <div className={`relative ${dim} shrink-0`}>
       <Doughnut data={data} options={ATTENDANCE_DONUT_BASE_OPTS} />
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="text-[17px] font-extrabold tabular-nums tracking-tight text-slate-900">
+        <span
+          className={`${pctText} font-extrabold tabular-nums tracking-tight text-slate-900`}
+        >
           {pct}%
         </span>
       </div>
@@ -594,11 +600,12 @@ export default function TopOfFunnelPanel() {
       ref={panelRef}
       className="border border-slate-200 rounded-2xl p-2 bg-white"
     >
-      <div className="mb-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-[18px] font-bold tracking-tight text-[#374151]">
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="min-w-0 text-[18px] font-bold tracking-tight text-[#374151]">
             Top of funnel
           </h2>
+          <SectionInfoHint text="Ads and booking activity, yesterday's show rate, and how full upcoming call slots look." />
           {/* <span className="inline-flex rounded-full bg-[#ede9fe] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#8b5cf6] ring-1 ring-violet-200/80">
             CURRENT
           </span> */}
@@ -609,20 +616,20 @@ export default function TopOfFunnelPanel() {
         </p> */}
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-2 gap-2">
         {/* Card 1 */}
-        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+        <div className="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm">
+          <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
             OPT-IN CONVERSION
           </div>
           {gaState.loading ? (
             <>
-              {shimmer("mt-3 h-5 w-full")}
-              {shimmer("mt-3 h-[68px] w-full")}
+              {shimmer("mt-2 h-4 w-full")}
+              {shimmer("mt-2 h-[52px] w-full")}
             </>
           ) : (
             <>
-              <div className="mt-3 flex items-baseline justify-between gap-2 text-[13px] font-bold">
+              <div className="mt-2 flex flex-col gap-0.5 text-[10px] font-bold leading-tight">
                 <span className="text-[#3b82f6]">
                   Ads {formatPct(gaState.optInAds)}
                 </span>
@@ -636,27 +643,28 @@ export default function TopOfFunnelPanel() {
                 labels={dayLabels}
                 tooltipLabel="Opt-in rate"
                 shouldAnimate={shouldAnimateBars}
+                chartHeight={52}
               />
             </>
           )}
-          <p className="mt-1 text-[11px] font-medium text-[#9ca3af]">
+          <p className="mt-0.5 text-[9px] font-medium leading-snug text-[#9ca3af]">
             VSL sessions → opt-ins
           </p>
         </div>
 
         {/* Card 2 */}
-        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+        <div className="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm">
+          <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
             BOOKING RATE
           </div>
           {gaState.loading ? (
             <>
-              {shimmer("mt-3 h-5 w-full")}
-              {shimmer("mt-3 h-[68px] w-full")}
+              {shimmer("mt-2 h-4 w-full")}
+              {shimmer("mt-2 h-[52px] w-full")}
             </>
           ) : (
             <>
-              <div className="mt-3 flex items-baseline justify-between gap-2 text-[13px] font-bold">
+              <div className="mt-2 flex flex-col gap-0.5 text-[10px] font-bold leading-tight">
                 <span className="text-[#3b82f6]">
                   Ads {formatPct(gaState.bookingAds)}
                 </span>
@@ -670,35 +678,36 @@ export default function TopOfFunnelPanel() {
                 labels={dayLabels}
                 tooltipLabel="Booking rate"
                 shouldAnimate={shouldAnimateBars}
+                chartHeight={52}
               />
             </>
           )}
-          <p className="mt-1 text-[11px] font-medium text-[#9ca3af]">
+          <p className="mt-0.5 text-[9px] font-medium leading-snug text-[#9ca3af]">
             Opt-ins → bookings
           </p>
         </div>
 
         {/* Card 3 */}
-        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+        <div className="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm">
+          <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
             YESTERDAY&apos;S ATTENDANCE
           </div>
           {attendanceState.loading ? (
-            <div className="mt-3 flex flex-1 items-center gap-5">
-              {shimmer("h-[84px] w-[84px] rounded-full")}
+            <div className="mt-2 flex flex-1 items-center gap-2">
+              {shimmer("h-[56px] w-[56px] rounded-full")}
               <div className="min-w-0 flex-1">
-                {shimmer("h-8 w-24")}
-                {shimmer("mt-2 h-4 w-28")}
+                {shimmer("h-6 w-16")}
+                {shimmer("mt-1.5 h-3 w-full")}
               </div>
             </div>
           ) : (
-            <div className="mt-3 flex flex-1 items-center gap-5">
-              <AttendanceRing percent={attendancePct} />
+            <div className="mt-2 flex flex-1 items-center gap-2">
+              <AttendanceRing percent={attendancePct} compact />
               <div className="min-w-0 flex-1">
-                <div className="text-[28px] font-bold tabular-nums leading-none tracking-tight text-[#111827]">
+                <div className="text-[15px] font-bold tabular-nums leading-none tracking-tight text-[#111827]">
                   {attendanceMainLabel}
                 </div>
-                <p className="mt-2 text-[12px] font-medium text-[#9ca3af]">
+                <p className="mt-1 text-[9px] font-medium leading-snug text-[#9ca3af]">
                   {attendanceState.error
                     ? "Academic app unavailable"
                     : "From academic app"}
@@ -709,26 +718,26 @@ export default function TopOfFunnelPanel() {
         </div>
 
         {/* Card 4 */}
-        <div className="flex flex-col rounded-xl border border-slate-200/90 bg-white p-4 shadow-sm">
-          <div className="text-[14px] font-bold uppercase tracking-wide text-black">
+        <div className="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm">
+          <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
             OCCUPANCY (NEXT 3 DAYS)
           </div>
-          <div className="mt-8 flex flex-1 flex-col justify-center">
+          <div className="mt-2 flex min-h-[52px] flex-1 flex-col justify-center">
             {occupancyState.loading ? (
               <>
-                {shimmer("h-5 w-full rounded-full")}
-                {shimmer("mt-2.5 h-4 w-24")}
+                {shimmer("h-4 w-full rounded-full")}
+                {shimmer("mt-2 h-3 w-20")}
               </>
             ) : (
               <>
-                <div className="h-5 w-full overflow-hidden rounded-full bg-[#e8ecf1]">
+                <div className="h-4 w-full overflow-hidden rounded-full bg-[#e8ecf1]">
                   <div
                     className="h-full rounded-full bg-[#3b82f6] transition-all duration-[900ms] ease-out"
                     style={{ width: `${animatedOccupancyPct}%` }}
                     title={formatPct(occupancyState.occupancyPct)}
                   />
                 </div>
-                <p className="mt-2.5 text-[14px] font-medium text-[#9ca3af]">
+                <p className="mt-1.5 text-[11px] font-medium text-[#9ca3af]">
                   {occupancyState.occupancyPct != null
                     ? `${occupancyState.occupancyPct}% occupied`
                     : "—"}
@@ -736,7 +745,7 @@ export default function TopOfFunnelPanel() {
               </>
             )}
           </div>
-          <p className="mt-auto pt-4 text-[11px] font-medium leading-relaxed text-[#9ca3af]">
+          <p className="mt-auto pt-1.5 text-[9px] font-medium leading-snug text-[#9ca3af]">
             {occupancyState.loading
               ? "Loading availability..."
               : occupancyState.availableSlots != null
