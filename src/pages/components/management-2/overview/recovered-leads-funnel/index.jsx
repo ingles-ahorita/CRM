@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import SegmentedTabs from "../../segmented-tabs";
+import SectionInfoHint from "../section-info-hint";
 import { supabase } from "../../../../../lib/supabaseClient";
-import * as DateHelpers from "../../../../../utils/dateHelpers";
+import {
+  TIME_RANGE_ITEMS,
+  getRangeBounds,
+  normalizeCustomBounds,
+} from "../overview-range-helpers";
 
 const TRACK = "#f3f4f6";
 
@@ -83,31 +88,6 @@ function CloserBarsShimmer() {
       ))}
     </div>
   );
-}
-
-function getRangeBounds(rangeKey) {
-  const now = new Date();
-  if (rangeKey === "currentWeek") {
-    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsUTC(now);
-    return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
-  }
-  if (rangeKey === "lastWeek") {
-    const { weekStart, weekEnd } = DateHelpers.getWeekBoundsForOffset(1);
-    return { start: weekStart.toISOString(), end: weekEnd.toISOString() };
-  }
-  if (rangeKey === "lastMonth") {
-    const midLastMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15));
-    const monthRange = DateHelpers.getMonthRangeInTimezone(midLastMonth, "UTC");
-    return {
-      start: monthRange.startDate.toISOString(),
-      end: monthRange.endDate.toISOString(),
-    };
-  }
-  const monthRange = DateHelpers.getMonthRangeInTimezone(now, "UTC");
-  return {
-    start: monthRange.startDate.toISOString(),
-    end: monthRange.endDate.toISOString(),
-  };
 }
 
 async function fetchAovData(start, end) {
@@ -253,9 +233,15 @@ function CloserRow({ index, name, aov, sales, maxAov, animate, tooltip }) {
   );
 }
 
-export default function RecoveredLeadsFunnel({ stackPanels = false }) {
-  const [range, setRange] = useState("lastWeek");
-  const [aovRange, setAovRange] = useState("currentMonth");
+export default function RecoveredLeadsFunnel() {
+  const customFallback = useMemo(() => getRangeBounds("custom"), []);
+  const [range, setRange] = useState("mtd");
+  const [customStart, setCustomStart] = useState(() =>
+    customFallback.start.toISOString().slice(0, 10),
+  );
+  const [customEnd, setCustomEnd] = useState(() =>
+    customFallback.end.toISOString().slice(0, 10),
+  );
   const [loading, setLoading] = useState(true);
   const [aovLoading, setAovLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -272,6 +258,15 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
   });
   const [aovData, setAovData] = useState({ overall: null, byCloser: [] });
 
+  const resolvedBounds = useMemo(() => {
+    return range === "custom"
+      ? normalizeCustomBounds(customStart, customEnd)
+      : getRangeBounds(range);
+  }, [range, customStart, customEnd]);
+
+  const startIso = resolvedBounds.start.toISOString();
+  const endIso = resolvedBounds.end.toISOString();
+
   useEffect(() => {
     let cancelled = false;
 
@@ -279,8 +274,6 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
       setLoading(true);
       setError(null);
       try {
-        const { start, end } = getRangeBounds(range);
-
         const [
           noShowsRes,
           contactedRes,
@@ -292,35 +285,35 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
             .from("calls")
             .select("id", { count: "exact", head: true })
             .eq("showed_up", false)
-            .gte("call_date", start)
-            .lte("call_date", end),
+            .gte("call_date", startIso)
+            .lte("call_date", endIso),
           supabase
             .from("calls")
             .select("id", { count: "exact", head: true })
             .eq("no_show_state", "contacted")
-            .gte("call_date", start)
-            .lte("call_date", end),
+            .gte("call_date", startIso)
+            .lte("call_date", endIso),
           supabase
             .from("calls")
             .select("id", { count: "exact", head: true })
             .eq("recovered", true)
-            .gte("book_date", start)
-            .lte("book_date", end),
+            .gte("book_date", startIso)
+            .lte("book_date", endIso),
           supabase
             .from("calls")
             .select("id", { count: "exact", head: true })
             .eq("recovered", true)
             .eq("showed_up", true)
-            .gte("call_date", start)
-            .lte("call_date", end),
+            .gte("call_date", startIso)
+            .lte("call_date", endIso),
           supabase
             .from("outcome_log")
             .select("id, calls!inner!call_id(id)", { count: "exact", head: true })
             .eq("outcome", "yes")
             .eq("calls.recovered", true)
             .not("purchase_date", "is", null)
-            .gte("purchase_date", start)
-            .lte("purchase_date", end),
+            .gte("purchase_date", startIso)
+            .lte("purchase_date", endIso),
         ]);
 
         if (cancelled) return;
@@ -352,7 +345,7 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
 
     loadFunnel();
     return () => { cancelled = true; };
-  }, [range]);
+  }, [startIso, endIso]);
 
   useEffect(() => {
     let cancelled = false;
@@ -360,8 +353,7 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
     async function loadAov() {
       setAovLoading(true);
       try {
-        const { start, end } = getRangeBounds(aovRange);
-        const aovRes = await fetchAovData(start, end);
+        const aovRes = await fetchAovData(startIso, endIso);
         if (cancelled) return;
         setAovData(aovRes);
         setAovTick((t) => t + 1);
@@ -376,7 +368,7 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
 
     loadAov();
     return () => { cancelled = true; };
-  }, [aovRange]);
+  }, [startIso, endIso]);
 
   useEffect(() => {
     if (loading && aovLoading) return;
@@ -400,12 +392,42 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
 
   return (
     <div className="w-full min-w-0 border border-slate-200 rounded-2xl bg-white p-3">
-      <div className="mb-4">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-          <h2 className="text-[18px] font-bold tracking-tight text-[#374151]">
+      <div className="mb-4 flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="min-w-0 text-[18px] font-bold tracking-tight text-[#374151]">
             Recovered leads funnel
           </h2>
+          <SectionInfoHint text="No-shows moving through recovery, plus average sale size by closer for the same dates." />
         </div>
+        <div className="min-w-0 overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+          <SegmentedTabs
+            items={TIME_RANGE_ITEMS}
+            activeId={range}
+            onChange={setRange}
+            size="xs"
+            className="w-max border-slate-200/90 bg-slate-100/80"
+            activeClassName="!bg-sky-100 !text-blue-700 !ring-sky-200/80"
+          />
+        </div>
+        {range === "custom" ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="h-7 min-w-0 flex-1 rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none sm:min-w-[9.5rem]"
+              aria-label="Custom range start"
+            />
+            <span className="text-[10px] font-semibold text-slate-500">–</span>
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="h-7 min-w-0 flex-1 rounded border border-slate-200 px-1.5 text-[11px] font-medium text-slate-700 !outline-none sm:min-w-[9.5rem]"
+              aria-label="Custom range end"
+            />
+          </div>
+        ) : null}
       </div>
 
       {error ? (
@@ -414,37 +436,12 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
         </div>
       ) : null}
 
-      <div
-        className={
-          stackPanels
-            ? "grid grid-cols-1 gap-2"
-            : "grid grid-cols-1 gap-2 lg:grid-cols-2"
-        }
-      >
+      <div className="grid grid-cols-1 gap-2">
         <section className="min-w-0 rounded-xl border bg-white p-3">
-          <div className="mb-5 flex items-center justify-between gap-3">
+          <div className="mb-5">
             <h3 className="text-[14px] font-bold uppercase tracking-[0.14em] text-[#374151]">
               Recovery funnel
             </h3>
-            <div className="relative shrink-0">
-              <select
-                value={range}
-                onChange={(e) => setRange(e.target.value)}
-                aria-label="Funnel period"
-                aria-busy={loading}
-                className="h-7 cursor-pointer appearance-none rounded-full border border-slate-200/90 bg-[#f3f4f6] py-1 pl-3 pr-7 text-[10px] font-bold uppercase tracking-wide text-[#4b5563] !outline-none transition-colors hover:bg-[#eceff2]"
-              >
-                <option value="lastWeek">Last week</option>
-                <option value="currentWeek">This week</option>
-                <option value="lastMonth">Last month</option>
-                <option value="currentMonth">This month</option>
-              </select>
-              <ChevronDown
-                size={12}
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
-                aria-hidden
-              />
-            </div>
           </div>
           {loading ? (
             <FunnelBarsShimmer />
@@ -472,35 +469,20 @@ export default function RecoveredLeadsFunnel({ stackPanels = false }) {
         </section>
 
         <section className="min-w-0 rounded-xl border bg-white p-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-[14px] font-bold uppercase tracking-[0.12em] text-black">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h3 className="min-w-0 text-[14px] font-bold uppercase tracking-[0.12em] text-black">
               AOV by closer
             </h3>
-            <div className="relative shrink-0">
-              <select
-                value={aovRange}
-                onChange={(e) => setAovRange(e.target.value)}
-                aria-label="AOV period"
-                aria-busy={aovLoading}
-                className="h-7 cursor-pointer appearance-none rounded-full border border-slate-200/90 bg-[#f3f4f6] py-1 pl-3 pr-7 text-[10px] font-bold uppercase tracking-wide text-[#4b5563] !outline-none transition-colors hover:bg-[#eceff2]"
-              >
-                <option value="lastWeek">Last week</option>
-                <option value="currentWeek">This week</option>
-                <option value="lastMonth">Last month</option>
-                <option value="currentMonth">This month</option>
-              </select>
-              <ChevronDown
-                size={12}
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
-                aria-hidden
-              />
-            </div>
+            {!aovLoading && aovData.overall != null ? (
+              <div className="shrink-0 text-right text-[12px] font-semibold text-slate-500">
+                Overall:{" "}
+                <span className="text-[15px] font-bold text-slate-900">
+                  $
+                  {Math.round(aovData.overall).toLocaleString("en-US")}
+                </span>
+              </div>
+            ) : null}
           </div>
-          {!aovLoading && aovData.overall != null && (
-            <div className="mb-4 text-[12px] font-semibold text-slate-500">
-              Overall: <span className="text-[15px] font-bold text-slate-900">${Math.round(aovData.overall).toLocaleString('en-US')}</span>
-            </div>
-          )}
           {aovLoading ? (
             <CloserBarsShimmer />
           ) : (

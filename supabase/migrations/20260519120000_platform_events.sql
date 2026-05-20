@@ -75,7 +75,7 @@ CREATE OR REPLACE FUNCTION public.insert_platform_event(
   p_event_type text,
   p_category text,
   p_severity text,
-  p_priority smallint,
+  p_priority integer,
   p_summary text,
   p_actor_type text DEFAULT 'system',
   p_actor_display text DEFAULT NULL,
@@ -107,7 +107,7 @@ BEGIN
     actor_type, actor_display, entity_type, entity_id,
     lead_id, call_id, lead_name, lead_email, source, dedupe_key, metadata
   ) VALUES (
-    p_event_type, p_category, p_severity, p_priority, p_summary,
+    p_event_type, p_category, p_severity, p_priority::smallint, p_summary,
     p_actor_type, p_actor_display, p_entity_type, p_entity_id,
     p_lead_id, p_call_id, p_lead_name, p_lead_email, p_source, p_dedupe_key, p_metadata
   );
@@ -347,18 +347,33 @@ BEGIN
   IF TG_OP = 'UPDATE' AND OLD.value IS DISTINCT FROM NEW.value THEN
     PERFORM insert_platform_event(
       'settings.updated', 'system', 'info', 1,
-      'Setting updated — ' || COALESCE(NEW.key, 'key'),
+      CASE NEW.key
+        WHEN 'monthly_revenue_goal_usd' THEN
+          'Admin updated the monthly revenue goal from $'
+            || trim(to_char(OLD.value, 'FM999,999,999'))
+            || ' to $'
+            || trim(to_char(NEW.value, 'FM999,999,999'))
+        ELSE
+          'Admin updated setting ' || COALESCE(NEW.key, 'key')
+            || ' from ' || OLD.value::text || ' to ' || NEW.value::text
+      END,
       'system', 'Admin', 'setting', NEW.key,
       NULL, NULL, NULL, NULL, 'crm', 'setting:' || NEW.key || ':' || floor(extract(epoch from now()))::text,
-      jsonb_build_object('key', NEW.key)
+      jsonb_build_object('key', NEW.key, 'old_value', OLD.value, 'new_value', NEW.value)
     );
   ELSIF TG_OP = 'INSERT' THEN
     PERFORM insert_platform_event(
       'settings.updated', 'system', 'info', 1,
-      'Setting created — ' || COALESCE(NEW.key, 'key'),
+      CASE NEW.key
+        WHEN 'monthly_revenue_goal_usd' THEN
+          'Admin set the monthly revenue goal to $'
+            || trim(to_char(NEW.value, 'FM999,999,999'))
+        ELSE
+          'Admin set setting ' || COALESCE(NEW.key, 'key') || ' to ' || NEW.value::text
+      END,
       'system', 'Admin', 'setting', NEW.key,
       NULL, NULL, NULL, NULL, 'crm', 'setting:insert:' || NEW.key,
-      jsonb_build_object('key', NEW.key)
+      jsonb_build_object('key', NEW.key, 'new_value', NEW.value)
     );
   END IF;
   RETURN NEW;

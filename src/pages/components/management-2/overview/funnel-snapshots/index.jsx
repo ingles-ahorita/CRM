@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import SectionInfoHint from "../section-info-hint";
 import { Chart as ChartJS, ArcElement } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
 import { getWeekBoundsUTC } from "../../../../../utils/dateHelpers";
@@ -70,22 +71,36 @@ function shimmer(className = "") {
   );
 }
 
-function SnapshotCardShimmer() {
+function SnapshotCardShimmer({ compact = false }) {
+  const donut = compact ? "h-[56px] w-[56px]" : "h-[84px] w-[84px]";
+  const wrap = compact
+    ? "gap-y-2 gap-x-2 justify-between sm:gap-x-2.5"
+    : "gap-y-8 sm:flex-nowrap sm:justify-between";
+  const metricCol = compact
+    ? "min-w-0 max-w-[64px] flex-1 basis-0 px-0.5"
+    : "min-w-[72px] max-w-[92px] px-2";
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        {shimmer("h-4 w-24")}
-        {shimmer("h-6 w-16")}
+    <div
+      className={`rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] ${compact ? "p-2.5" : "p-5"}`}
+    >
+      <div
+        className={`flex items-center justify-between gap-2 ${compact ? "mb-3" : "mb-6 gap-3"}`}
+      >
+        {shimmer(compact ? "h-3 w-20" : "h-4 w-24")}
+        {shimmer(compact ? "h-5 w-14" : "h-6 w-16")}
       </div>
-      <div className="flex flex-wrap items-start justify-around gap-y-8 sm:flex-nowrap sm:justify-between">
+      <div
+        className={`flex flex-wrap items-start justify-around sm:flex-nowrap ${wrap}`}
+      >
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
-            className="flex min-w-[72px] max-w-[92px] flex-1 flex-col items-center px-2"
+            className={`flex flex-1 flex-col items-center ${metricCol}`}
           >
-            {shimmer("h-[84px] w-[84px] rounded-full")}
-            {shimmer("mt-2.5 h-3 w-16")}
-            {shimmer("mt-2 h-3 w-20")}
+            {shimmer(`${donut} rounded-full`)}
+            {shimmer(compact ? "mt-2 h-3 w-14" : "mt-2.5 h-3 w-16")}
+            {shimmer(compact ? "mt-1.5 h-3 w-[5rem]" : "mt-2 h-3 w-20")}
           </div>
         ))}
       </div>
@@ -93,7 +108,7 @@ function SnapshotCardShimmer() {
   );
 }
 
-function DonutGauge({ value, color, label, subtext }) {
+function DonutGauge({ value, color, label, subtext, compact = false }) {
   const noData = subtext === "—";
   const targetPct = noData
     ? 0
@@ -112,7 +127,7 @@ function DonutGauge({ value, color, label, subtext }) {
       maintainAspectRatio: true,
       rotation: -90,
       circumference: 360,
-      cutout: "78%",
+      cutout: compact ? "72%" : "78%",
       animation: {
         animateRotate: true,
         animateScale: false,
@@ -124,7 +139,7 @@ function DonutGauge({ value, color, label, subtext }) {
         tooltip: { enabled: false },
       },
     }),
-    [],
+    [compact],
   );
 
   const data = useMemo(() => {
@@ -165,24 +180,40 @@ function DonutGauge({ value, color, label, subtext }) {
     };
   }, [animatedPct, color, noData]);
 
+  const donutBox = compact
+    ? "relative aspect-square w-[min(100%,56px)] max-w-[56px]"
+    : "relative aspect-square w-[min(100%,84px)] max-w-[84px]";
+  const pctCls = compact
+    ? `text-[10px] font-extrabold tabular-nums tracking-tight ${
+        noData ? "text-slate-400" : "text-slate-900"
+      }`
+    : `text-[13px] font-extrabold tabular-nums tracking-tight md:text-[14px] ${
+        noData ? "text-slate-400" : "text-slate-900"
+      }`;
+  const labelCls = compact
+    ? "mt-1 whitespace-nowrap text-center text-[7.5px] font-semibold uppercase leading-tight tracking-wide text-[#94a3b8]"
+    : "mt-2.5 whitespace-nowrap text-center text-[9px] font-semibold uppercase tracking-wide text-[#94a3b8] md:text-[11px]";
+  const subCls = compact
+    ? "mt-0.5 min-h-[1.75rem] w-full px-0.5 text-center text-[8px] font-medium leading-snug text-slate-500 [overflow-wrap:anywhere]"
+    : "mt-1 whitespace-nowrap text-center text-[10px] font-medium text-slate-500";
+  const colCls = compact
+    ? "flex min-w-0 max-w-[64px] flex-1 basis-0 flex-col items-center px-0.5"
+    : "flex min-w-[72px] max-w-[92px] flex-1 flex-col items-center px-1.5";
+
   return (
-    <div className="flex min-w-[72px] max-w-[92px] flex-1 flex-col items-center px-1.5">
-      <div className="relative aspect-square w-[min(100%,84px)] max-w-[84px] rounded-full shadow-[0_1px_3px_rgba(15,23,42,0.05)] ring-1 ring-slate-900/[0.04]">
+    <div className={colCls}>
+      <div
+        className={`${donutBox} rounded-full shadow-[0_1px_3px_rgba(15,23,42,0.05)] ring-1 ring-slate-900/[0.04]`}
+      >
         <Doughnut data={data} options={options} />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span
-            className={`text-[13px] font-extrabold tabular-nums tracking-tight md:text-[14px] ${
-              noData ? "text-slate-400" : "text-slate-900"
-            }`}
-          >
+          <span className={pctCls}>
             {noData ? "—" : formatPct(targetPct)}
           </span>
         </div>
       </div>
-      <div className="mt-2.5 whitespace-nowrap text-center text-[9px] font-semibold uppercase tracking-wide text-[#94a3b8] md:text-[11px]">
-        {label}
-      </div>
-      <div className="mt-1 whitespace-nowrap text-center text-[10px] font-medium text-slate-500">
+      <div className={labelCls}>{label}</div>
+      <div className={subCls} title={subtext && subtext !== "—" ? subtext : undefined}>
         {subtext || "—"}
       </div>
     </div>
@@ -196,18 +227,33 @@ const METRIC_ROWS = [
   { key: "success", label: "SUCCESS" },
 ];
 
-function SnapshotCard({ panel }) {
+function SnapshotCard({ panel, compact = false }) {
+  const bodyGap = compact
+    ? "gap-y-2 gap-x-2 justify-between sm:gap-x-2.5"
+    : "gap-y-8 sm:flex-nowrap sm:justify-between";
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <h3 className="text-[13px] font-bold uppercase tracking-wide text-[#333333]">
+    <div
+      className={`rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] ${compact ? "p-2.5" : "p-3"}`}
+    >
+      <div
+        className={`flex items-center justify-between gap-2 ${compact ? "mb-3" : "mb-6 gap-3"}`}
+      >
+        <h3
+          className={`font-bold uppercase tracking-wide text-[#333333] ${compact ? "text-[12px] leading-snug" : "text-[13px]"}`}
+        >
           {panel.title}
         </h3>
-        <span className="shrink-0 rounded-md bg-[#ebecef] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-[#474e60] ring-1 ring-black/[0.04]">
+        <span
+          className={`shrink-0 rounded-md bg-[#ebecef] font-bold uppercase tracking-wide text-[#474e60] ring-1 ring-black/[0.04] ${compact ? "max-w-[55%] px-2 py-0.5 text-[9px] leading-snug text-right [overflow-wrap:anywhere]" : "px-2.5 py-1 text-[10px]"}`}
+          title={panel.dateBadge}
+        >
           {panel.dateBadge}
         </span>
       </div>
-      <div className="flex flex-wrap items-start justify-around gap-y-8 sm:flex-nowrap sm:justify-between">
+      <div
+        className={`flex flex-wrap items-start justify-around sm:flex-nowrap ${bodyGap}`}
+      >
         {METRIC_ROWS.map((row) => (
           <DonutGauge
             key={`${panel.id}-${row.key}`}
@@ -219,6 +265,7 @@ function SnapshotCard({ panel }) {
             )}
             label={row.label}
             subtext={panel.subtexts[row.key]}
+            compact={compact}
           />
         ))}
       </div>
@@ -226,7 +273,7 @@ function SnapshotCard({ panel }) {
   );
 }
 
-export default function FunnelSnapshots() {
+export default function FunnelSnapshots({ compact = false }) {
   const [loading, setLoading] = useState(true);
   const [panels, setPanels] = useState([]);
 
@@ -368,12 +415,17 @@ export default function FunnelSnapshots() {
   }, []);
 
   return (
-    <div className="border border-slate-200 rounded-2xl p-2 bg-white">
-      <div className="mb-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-[18px] font-bold tracking-tight text-[#333333]">
+    <div
+      className={`min-w-0 rounded-2xl border border-slate-200 bg-white ${compact ? "p-2" : "p-2"}`}
+    >
+      <div className={compact ? "mb-3" : "mb-5"}>
+        <div className="flex items-start justify-between gap-2">
+          <h2
+            className={`min-w-0 font-bold tracking-tight text-[#333333] ${compact ? "text-[16px] leading-tight" : "text-[18px]"}`}
+          >
             Funnel snapshots
           </h2>
+          <SectionInfoHint text="Yesterday and this week: how leads move from booked calls to show-ups and closed sales." />
           {/* <span className="inline-flex rounded-full bg-violet-600 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white ring-1 ring-violet-700/30">
             CURRENT
           </span> */}
@@ -384,14 +436,16 @@ export default function FunnelSnapshots() {
         </p> */}
       </div>
 
-      <div className="grid grid-cols-1 gap-4">
+      <div className={`grid grid-cols-1 ${compact ? "gap-3" : "gap-4"}`}>
         {loading ? (
           <>
-            <SnapshotCardShimmer />
-            <SnapshotCardShimmer />
+            <SnapshotCardShimmer compact={compact} />
+            <SnapshotCardShimmer compact={compact} />
           </>
         ) : (
-          panels.map((panel) => <SnapshotCard key={panel.id} panel={panel} />)
+          panels.map((panel) => (
+            <SnapshotCard key={panel.id} panel={panel} compact={compact} />
+          ))
         )}
       </div>
     </div>
