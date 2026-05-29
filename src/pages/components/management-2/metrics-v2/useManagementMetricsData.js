@@ -361,6 +361,8 @@ async function fetchStatsData(startDate, endDate) {
     if (mediumKey) blocks.push(mediumStats[mediumKey]);
     blocks.forEach((block) => {
       block.totalPurchased += 1;
+      if (isCountedPurchase(c) && c.offer_installments != null && Number(c.offer_installments) === 0) block.totalPif += 1;
+      if (isCountedPurchase(c) && c.offer_weekly_classes != null) block.totalDownsell += 1;
     });
 
     if (c.closers && isCountedPurchase(c)) {
@@ -395,6 +397,9 @@ async function fetchStatsData(startDate, endDate) {
       if (String(row.outcome || "").trim().toLowerCase() !== "dont_qualify") return;
       const call = callsById.get(String(row.call_id));
       if (!call || !isTrue(call.showed_up) || !call.closers) return;
+      const country = getCountryFromPhone(call.phone);
+      const countryBlock = ensureBlock(countryStats, country);
+      countryBlock.closerDontQualify = Number(countryBlock.closerDontQualify || 0) + 1;
       const cid = call.closers.id;
       if (!closerStats[cid]) closerStats[cid] = { id: cid, name: call.closers.name, showedUp: 0, confirmed: 0, purchased: 0, pif: 0, payoffs: 0, dontQualify: 0, noShows: 0, recovered: 0 };
       closerStats[cid].dontQualify += 1;
@@ -404,6 +409,9 @@ async function fetchStatsData(startDate, endDate) {
   Object.values(sourceStats).forEach(finalizeRates);
   Object.values(mediumStats).forEach(finalizeRates);
   Object.values(countryStats).forEach(finalizeRates);
+  Object.values(countryStats).forEach((country) => {
+    country.closerDqRate = pct(country.closerDontQualify, country.totalShowedUp);
+  });
   Object.values(countrySourceStats).forEach((pair) => {
     finalizeRates(pair.ads);
     finalizeRates(pair.organic);
@@ -469,6 +477,10 @@ function comparisonRow(label, data) {
   const h = data?.headline || {};
   const organic = data?.sourceStats?.organic || {};
   const ads = data?.sourceStats?.ads || {};
+  const withPurchaseMix = (block) => ({
+    pifPercent: round1(block?.pifPercent || 0),
+    downsellPercent: round1(block?.downsellPercent || 0),
+  });
   return {
     period: label,
     bookingsMade: h.bookingsMadeInPeriod || 0,
@@ -482,8 +494,10 @@ function comparisonRow(label, data) {
     successRate: round1(h.successRate || 0),
     dqRate: round1(h.dqRate || 0),
     recoveryRate: round1(h.recoveryRate || 0),
+    ...withPurchaseMix(h),
     organic: {
       bookingsMade: organic.bookingsMadeInPeriod || 0,
+      booked: organic.totalBooked || 0,
       showedUp: organic.totalShowedUp || 0,
       purchased: organic.totalPurchased || 0,
       pickUpRate: round1(organic.pickUpRate || 0),
@@ -493,9 +507,11 @@ function comparisonRow(label, data) {
       successRate: round1(organic.successRate || 0),
       dqRate: round1(organic.dqRate || 0),
       recoveryRate: round1(organic.recoveryRate || 0),
+      ...withPurchaseMix(organic),
     },
     ads: {
       bookingsMade: ads.bookingsMadeInPeriod || 0,
+      booked: ads.totalBooked || 0,
       showedUp: ads.totalShowedUp || 0,
       purchased: ads.totalPurchased || 0,
       pickUpRate: round1(ads.pickUpRate || 0),
@@ -505,6 +521,7 @@ function comparisonRow(label, data) {
       successRate: round1(ads.successRate || 0),
       dqRate: round1(ads.dqRate || 0),
       recoveryRate: round1(ads.recoveryRate || 0),
+      ...withPurchaseMix(ads),
     },
   };
 }
@@ -746,7 +763,10 @@ export function getQuickRangeDates(preset) {
     return { start: DateHelpers.formatDateUTCStart(dayStart), end: DateHelpers.formatDateUTCEnd(now) };
   }
   if (preset === "previousMonth") return getRangePresetDates("lastMonth");
-  if (preset === "currentMonth") return getRangePresetDates("mtd");
+  if (preset === "currentMonth") {
+    const range = DateHelpers.getMonthRangeInTimezone(now, DateHelpers.DEFAULT_TIMEZONE);
+    return { start: DateHelpers.formatDateUTCStart(range.startDate), end: DateHelpers.formatDateUTCEnd(range.endDate) };
+  }
   if (preset === "thisWeek" || preset === "lastWeek") return getRangePresetDates(preset);
   return null;
 }
@@ -754,7 +774,7 @@ export function getQuickRangeDates(preset) {
 export function useManagementMetricsData() {
   const initialRange = useMemo(() => getRangePresetDates("mtd"), []);
   const [rangePreset, setRangePreset] = useState("mtd");
-  const [quickPreset, setQuickPreset] = useState("currentMonth");
+  const [quickPreset, setQuickPreset] = useState("");
   const [startDate, setStartDate] = useState(initialRange.start);
   const [endDate, setEndDate] = useState(initialRange.end);
   const [stats, setStats] = useState(null);
@@ -843,7 +863,7 @@ export function useManagementMetricsData() {
     if (range) {
       setStartDate(range.start);
       setEndDate(range.end);
-      setQuickPreset(preset === "mtd" ? "currentMonth" : "");
+      setQuickPreset("");
     }
   }, []);
 

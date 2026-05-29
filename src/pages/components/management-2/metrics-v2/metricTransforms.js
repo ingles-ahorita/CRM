@@ -35,19 +35,22 @@ export const LINKED_ITEMS = [
 ];
 
 export const COMPARISON_METRICS = [
+  { id: "bookingsMade", label: "Bookings made", kind: "count" },
+  { id: "booked", label: "Booked calls", kind: "count" },
   { id: "pickUpRate", label: "Pick-up rate", kind: "percent" },
+  { id: "dqRate", label: "DQ rate", kind: "percent" },
   { id: "confirmationRate", label: "Confirmation rate", kind: "percent" },
+  { id: "showedUp", label: "Showed up", kind: "count" },
   { id: "showUpRate", label: "Show-up rate", kind: "percent" },
   { id: "conversionRate", label: "Conversion rate", kind: "percent" },
   { id: "successRate", label: "Success rate", kind: "percent" },
-  { id: "dqRate", label: "DQ rate", kind: "percent" },
   { id: "recoveryRate", label: "Recovery rate", kind: "percent" },
-  { id: "bookingsMade", label: "Bookings made", kind: "count" },
-  { id: "showedUp", label: "Showed up", kind: "count" },
   { id: "purchased", label: "Purchased", kind: "count" },
+  { id: "pifPercent", label: "PIF rate", kind: "percent" },
+  { id: "downsellPercent", label: "Downsell rate", kind: "percent" },
 ];
 
-export const DEFAULT_COMPARISON_METRICS = ["conversionRate", "showUpRate", "recoveryRate"];
+export const DEFAULT_COMPARISON_METRICS = COMPARISON_METRICS.map((metric) => metric.id);
 
 export function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -102,6 +105,8 @@ export function emptyStatsBlock() {
     totalRescheduled: 0,
     totalNoShows: 0,
     totalRecovered: 0,
+    totalPif: 0,
+    totalDownsell: 0,
   };
 }
 
@@ -115,6 +120,8 @@ export function finalizeRates(block) {
   s.successRate = pct(s.totalPurchased, s.totalBooked);
   s.dqRate = pct(s.totalDQ, s.totalPickedUpByBookDate);
   s.recoveryRate = pct(s.totalRecovered, s.totalNoShows);
+  s.pifPercent = pct(s.totalPif, s.totalPurchased);
+  s.downsellPercent = pct(s.totalDownsell, s.totalPurchased);
   return s;
 }
 
@@ -160,6 +167,40 @@ export function selectedStats(stats, sourceFilter, countryFilter) {
   if (!countryPair) return stats.headline;
   if (sourceFilter === "all") return mergeBlocks(countryPair.ads, countryPair.organic);
   return countryPair[sourceFilter] || stats.headline;
+}
+
+/** Segments for metric tile footers (ads/organic or medium splits). */
+export function getBreakdownSegments(stats, sourceFilter, countryFilter) {
+  if (!stats) return [];
+  if (sourceFilter === "ads" && countryFilter === "all") {
+    return [
+      { label: "TikTok", tone: "purple", block: stats.mediumStats?.tiktok },
+      { label: "Instagram", tone: "pink", block: stats.mediumStats?.instagram },
+      { label: "Other", tone: "slate", block: stats.mediumStats?.other },
+    ];
+  }
+  if (countryFilter !== "all") {
+    const pair = stats.countrySourceStats?.[countryFilter];
+    if (!pair) return [];
+    return [
+      { label: "Ads", tone: "blue", block: pair.ads },
+      { label: "Organic", tone: "emerald", block: pair.organic },
+    ];
+  }
+  if (sourceFilter === "all") {
+    return [
+      { label: "Ads", tone: "blue", block: stats.sourceStats?.ads },
+      { label: "Organic", tone: "emerald", block: stats.sourceStats?.organic },
+    ];
+  }
+  return [];
+}
+
+export function aggregateCloserDq(closers) {
+  const list = closers || [];
+  const dontQualify = list.reduce((sum, row) => sum + Number(row.dontQualify || 0), 0);
+  const showedUp = list.reduce((sum, row) => sum + Number(row.showedUp || 0), 0);
+  return { dontQualify, showedUp, rate: pct(dontQualify, showedUp) };
 }
 
 export function splitPurchases(rows, specialOfferIds) {
