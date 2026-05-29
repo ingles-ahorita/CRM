@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler;
+let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -50,6 +50,7 @@ async function loadHandler(handlerPath, handlerName) {
 async function loadHandlers() {
   manychatHandler = await loadHandler('./lib/api-handlers/manychat.js', 'manychat');
   cancelCalendlyHandler = await loadHandler('./lib/api-handlers/cancel-calendly.js', 'cancel-calendly');
+  cancelIclosedHandler = await loadHandler('./lib/api-handlers/cancel-iclosed.js', 'cancel-iclosed');
   currentSetterHandler = await loadHandler('./lib/api-handlers/current-setter.js', 'current-setter');
   calendlyWebhookHandler = await loadHandler('./lib/api-handlers/calendly-webhook.js', 'calendly-webhook');
   kajabiWebhookHandler = await loadHandler('./lib/api-handlers/kajabi-webhook.js', 'kajabi-webhook');
@@ -123,6 +124,11 @@ app.post('/api/manychat', async (req, res) => {
 app.post('/api/cancel-calendly', async (req, res) => {
   if (!cancelCalendlyHandler) await loadHandlers();
   return adaptVercelHandler(cancelCalendlyHandler)(req, res);
+});
+
+app.post('/api/cancel-iclosed', async (req, res) => {
+  if (!cancelIclosedHandler) await loadHandlers();
+  return adaptVercelHandler(cancelIclosedHandler)(req, res);
 });
 
 app.get('/api/current-setter', async (req, res) => {
