@@ -20,6 +20,115 @@ const formatStatusValue = (value) => {
   return value;
 };
 
+/** Platform from calls.reschedule_link (app.iclosed.io vs calendly.com). */
+function getBookingPlatform(rescheduleLink) {
+  const link = String(rescheduleLink || '').toLowerCase();
+  if (link.includes('iclosed')) return 'iclosed';
+  if (link.includes('calendly')) return 'calendly';
+  return null;
+}
+
+function getCalendlyEventUri(calendlyId) {
+  const raw = String(calendlyId || '').trim();
+  return raw.includes('api.calendly.com/scheduled_events') ? raw : null;
+}
+
+/** iClosed cancel id: numeric value in calls.calendly_id (from Zapier). */
+function getIclosedEventCallId(calendlyId) {
+  const raw = String(calendlyId || '').trim();
+  return /^\d+$/.test(raw) ? raw : null;
+}
+
+async function cancelExternalBooking(lead) {
+  const platform = getBookingPlatform(lead.reschedule_link);
+
+  if (platform === 'calendly') {
+    const eventUri = getCalendlyEventUri(lead.calendly_id);
+    if (!eventUri) return { skipped: true };
+    return cancelWithPlatform({
+      url: '/api/cancel-calendly',
+      body: { eventUri },
+      platformLabel: 'Calendly',
+      functionName: 'cancelCalendlyEvent',
+      errorSource: 'LeadItem.jsx/cancel-calendly',
+      callId: lead.id,
+    });
+  }
+
+  if (platform === 'iclosed') {
+    const eventCallId = getIclosedEventCallId(lead.calendly_id);
+    if (!eventCallId) return { skipped: true };
+    return cancelWithPlatform({
+      url: '/api/cancel-iclosed',
+      body: { eventCallId },
+      platformLabel: 'iClosed',
+      functionName: 'cancelIclosedEvent',
+      errorSource: 'LeadItem.jsx/cancel-iclosed',
+      callId: lead.id,
+    });
+  }
+
+  return { skipped: true };
+}
+
+async function cancelWithPlatform({ url, body, platformLabel, functionName, errorSource, callId }) {
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    const errorMessage = err.message || String(err);
+    try {
+      await supabase.from('function_errors').insert({
+        function_name: functionName,
+        error_message: errorMessage,
+        error_details: JSON.stringify(err.stack || err),
+        source: errorSource,
+      });
+    } catch {
+      // ignore logging failures
+    }
+    return { ok: false, platformLabel, errorMessage };
+  }
+
+  if (response.ok) {
+    await supabase.from('calls').update({ cancelled: true }).eq('id', callId);
+    const data = await response.json();
+    return {
+      ok: true,
+      platformLabel,
+      alreadyCanceled: data?.data?.message === 'Event is already canceled',
+    };
+  }
+
+  let errorMessage = 'Unknown error';
+  try {
+    const error = await response.json();
+    errorMessage =
+      typeof error === 'string'
+        ? error
+        : error?.error || error?.message || JSON.stringify(error);
+  } catch {
+    errorMessage = await response.text();
+  }
+
+  try {
+    await supabase.from('function_errors').insert({
+      function_name: functionName,
+      error_message: errorMessage,
+      error_details: JSON.stringify({ status: response.status, statusText: response.statusText }),
+      source: errorSource,
+    });
+  } catch {
+    // ignore logging failures
+  }
+
+  return { ok: false, platformLabel, errorMessage };
+}
+
  function callTimeColor(time, isRescheduled, called){
   // Loading state - when time is undefined
   if (time === undefined) return '#e5e7eb';
@@ -147,7 +256,6 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   }));
 
   const updateStatus = async (id, field, value, setterF, mcID, leadData, extraUpdates = {}) => {
-    console.log('[LeadItem] updateStatus:', field, '→', value, 'call id:', id);
     setterF(value);
 
     try {
@@ -165,7 +273,6 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
       }
 
       const updatePayload = { [field]: formattedValue, ...extraUpdates };
-      console.log('[LeadItem] updatePayload:', updatePayload);
       const { data: updateData, error } = await supabase.from('calls').update(updatePayload).eq('id', id).select('id');
       if (error) {
         console.error('[LeadItem] Supabase update error:', error);
@@ -196,14 +303,12 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             [{ name: 'showed_up', value: false }],
             leadData.closers.mc_api_key
           );
-          console.log('[LeadItem] ManyChat showed_up set to false in closer bot');
         } catch (mcErr) {
           console.error('[LeadItem] ManyChat showed_up update (closer bot) error:', mcErr);
         }
       }
 
       if (field === 'confirmed' && formattedValue === true) {
-        console.log('[LeadItem] Confirmed=yes: sending to closer, leadData:', leadData?.name ?? leadData?.id ?? 'no leadData');
         try {
           const mcResult = await sendToCloserMC({
             id: id,
@@ -238,7 +343,6 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             const { error: mcIdErr } = await supabase.from('calls').update({ closer_mc_id: String(mcResult.subscriberId) }).eq('id', id);
             if (mcIdErr) console.error('[LeadItem] Failed to store closer_mc_id:', mcIdErr);
           }
-          console.log('✅ ManyChat user creation triggered for confirmed lead');
           showToast('Lead confirmed and sent to closer', 'success');
         } catch (error) {
           console.error('❌ Error creating ManyChat user:', error);
@@ -759,81 +863,26 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             <button
               onClick={async () => {
                 try {
-                  // Cancel Calendly event if calendly_id exists
-                  if (lead.calendly_id) {
-                    try {
-                      const response = await fetch('/api/cancel-calendly', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ eventUri: lead.calendly_id })
-                      });
-
-                      if (response.ok) {
-                        // Update Supabase "calls" table: set cancelled = true for this call
-                        await supabase.from('calls').update({ cancelled: true }).eq('id', lead.id);
-                        console.log('Calendly event cancelled successfully');
-                        showToast('Call and Calendly event cancelled', 'success');
-                        const data = await response.json();
-                        if (data.data.message === 'Event is already canceled') {
-                          showToast('Calendly event is already canceled', 'info');
-                        }
-                      } else {
-                        alert('Could not cancel the Calendly event automatically. Please inform support (Ruben) to cancel this event manually. Error: ' + response.text());
-                        // Handle HTTP error response
-                        let errorMessage = 'Unknown error';
-                        try {
-                          const error = await response.json();
-                          errorMessage = error.error || error.message || JSON.stringify(error);
-                          console.error('Error canceling Calendly event:', error);
-                        } catch (parseError) {
-                          console.error('Error parsing error response:', parseError);
-                          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-                        }
-                        
-                        // Log error to the database
-                        try {
-                          await supabase.from('function_errors').insert({
-                            function_name: 'cancelCalendlyEvent',
-                            error_message: errorMessage,
-                            error_details: JSON.stringify({ status: response.status, statusText: response.statusText }),
-                            source: 'LeadItem.jsx/cancel-calendly'
-                          });
-                        } catch (logError) {
-                          console.error('❌ Failed to log error to function_errors:', logError);
-                        }
-                        
-                        showToast('Call cancelled but Calendly cancellation failed', 'error');
+                  const cancelResult = await cancelExternalBooking(lead);
+                  if (!cancelResult.skipped) {
+                    if (cancelResult.ok) {
+                      showToast(`Call and ${cancelResult.platformLabel} event cancelled`, 'success');
+                      if (cancelResult.alreadyCanceled) {
+                        showToast(`${cancelResult.platformLabel} event is already canceled`, 'info');
                       }
-                    } catch (calendlyError) {
-                      // Handle network errors or other exceptions
-                      console.error('Error calling Calendly cancellation API:', calendlyError);
-                      
-                      // Log error to the database
-                      try {
-                        await supabase.from('function_errors').insert({
-                          function_name: 'cancelCalendlyEvent',
-                          error_message: calendlyError.message || String(calendlyError),
-                          error_details: JSON.stringify(calendlyError.stack || calendlyError),
-                          source: 'LeadItem.jsx/cancel-calendly'
-                        });
-                      } catch (logError) {
-                        console.error('❌ Failed to log error to function_errors:', logError);
-                      }
-                      
-                      showToast('Call cancelled but Calendly cancellation failed (please inform support)', 'error');
+                    } else {
+                      alert(
+                        `Could not cancel the ${cancelResult.platformLabel} event automatically. Please inform support (Ruben) to cancel this event manually. Error: ${cancelResult.errorMessage}`
+                      );
+                      showToast(`Call updated but ${cancelResult.platformLabel} cancellation failed`, 'error');
                     }
                   }
-
-                  console.log('pendingConfirmedValue', pendingConfirmedValue);
 
                   // Update confirmed status
                   if (pendingConfirmedValue !== null) {
                     updateStatus(lead.id, 'confirmed', pendingConfirmedValue, setConfirmed, lead.manychat_user_id);
                   }
-                } catch (error) {
-                  console.error('Error in cancellation process:', error);
+                } catch {
                   showToast('Error cancelling call', 'error');
                 }
                 
