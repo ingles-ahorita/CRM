@@ -7,6 +7,7 @@ import Tabs from "./components/management-2/tabs";
 import OverviewTab from "./components/management-2/overview";
 import CloserTab from "./components/management-2/closer";
 import LeadsTab from "./components/management-2/leads";
+import PotentialLeadsTab from "./components/management-2/potential-leads";
 import SetterTab from "./components/management-2/setter";
 import MetricsTab from "./components/management-2/metrics";
 import SalesTab from "./components/management-2/sales";
@@ -23,6 +24,7 @@ export default function Management2() {
   const validTabs = [
     "overview",
     "leads",
+    "potential-leads",
     "closer",
     "setter",
     "metrics",
@@ -62,6 +64,7 @@ export default function Management2() {
           {activeTab === "overview" && <OverviewTab />}
           {activeTab === "closer" && <CloserTab />}
           {activeTab === "leads" && <LeadsTab />}
+          {activeTab === "potential-leads" && <PotentialLeadsTab />}
           {activeTab === "setter" && <SetterTab />}
           {activeTab === "metrics" && <MetricsTab />}
           {activeTab === "sales" && <SalesTab />}
