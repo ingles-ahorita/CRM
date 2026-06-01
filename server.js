@@ -29,7 +29,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler;
+let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler, iclosedWebhookHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -67,6 +67,7 @@ async function loadHandlers() {
   closerAvailabilityHandler = await loadHandler('./lib/api-handlers/closer-availability.js', 'closer-availability');
   createCalendarEventHandler = await loadHandler('./lib/api-handlers/create-calendar-event.js', 'create-calendar-event');
   crmAiQueryHandler = await loadHandler('./lib/api-handlers/crm-ai-query.js', 'crm-ai-query');
+  iclosedWebhookHandler = await loadHandler('./lib/api-handlers/iclosed-webhook.js', 'iclosed-webhook');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -144,6 +145,11 @@ app.post('/api/calendly-webhook', async (req, res) => {
 app.post('/api/kajabi-webhook', async (req, res) => {
   if (!kajabiWebhookHandler) await loadHandlers();
   return adaptVercelHandler(kajabiWebhookHandler)(req, res);
+});
+
+app.post('/api/iclosed-webhook', async (req, res) => {
+  if (!iclosedWebhookHandler) await loadHandlers();
+  return adaptVercelHandler(iclosedWebhookHandler)(req, res);
 });
 
 app.get('/api/kajabi-token', async (req, res) => {
@@ -323,6 +329,7 @@ loadHandlers().then(() => {
     console.log(`   - GET  http://localhost:${PORT}/api/current-setter`);
     console.log(`   - POST http://localhost:${PORT}/api/calendly-webhook`);
     console.log(`   - POST http://localhost:${PORT}/api/kajabi-webhook`);
+    console.log(`   - POST http://localhost:${PORT}/api/iclosed-webhook`);
     console.log(`   - GET  http://localhost:${PORT}/api/kajabi-token`);
     console.log(`   - POST http://localhost:${PORT}/api/store-fbclid`);
     console.log(`   - POST http://localhost:${PORT}/api/meta-conversion`);

@@ -7,6 +7,7 @@ import { useTodayNewLeadsCount } from "../../../../hooks/useTodayNewLeadsCount";
 const TABS = [
   { id: "overview", label: "Overview" },
   { id: "leads", label: "Leads" },
+  { id: "potential-leads", label: "Potential Leads" },
   { id: "closer", label: "Closers" },
   { id: "setter", label: "Setters" },
   { id: "metrics", label: "Metrics" },
