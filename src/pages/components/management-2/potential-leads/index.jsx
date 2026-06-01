@@ -2,14 +2,16 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '../../../../lib/supabaseClient';
 import {
   ICLOSED_STATUS,
-  ICLOSED_STATUS_UI,
-  ICLOSED_STATUS_LOOKUP,
-  ICLOSED_OPEN_STATUSES,
+  ICLOSED_POTENTIAL_LEADS_TAB_UI,
+  ICLOSED_POTENTIAL_LEADS_TAB_LOOKUP,
+  ICLOSED_POTENTIAL_LEADS_TAB_STATUSES,
   rowIclosedStatus,
 } from '../../../../../lib/iclosedLeadStatus.js';
 
+const TAB_STATUS_LIST = [...ICLOSED_POTENTIAL_LEADS_TAB_STATUSES];
+
 function StatusBadge({ value }) {
-  const opt = ICLOSED_STATUS_LOOKUP[value];
+  const opt = ICLOSED_POTENTIAL_LEADS_TAB_LOOKUP[value];
   if (!opt) {
     return (
       <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-300">
@@ -40,7 +42,7 @@ export default function PotentialLeads() {
   const [setters, setSetters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('open');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
 
   const fetchAll = useCallback(async () => {
@@ -51,6 +53,7 @@ export default function PotentialLeads() {
       supabase
         .from('potential_leads')
         .select('*, assigned_setter:assigned_setter_id(id, name)')
+        .in('status', TAB_STATUS_LIST)
         .order('created_at', { ascending: false })
         .limit(500),
       supabase.from('setters').select('id, name').eq('active', true).order('name'),
@@ -91,8 +94,8 @@ export default function PotentialLeads() {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       const st = rowIclosedStatus(r);
-      if (statusFilter === 'open' && st && !ICLOSED_OPEN_STATUSES.has(st)) return false;
-      if (statusFilter !== 'open' && statusFilter !== 'all' && st !== statusFilter) return false;
+      if (!st || !ICLOSED_POTENTIAL_LEADS_TAB_STATUSES.has(st)) return false;
+      if (statusFilter !== 'all' && st !== statusFilter) return false;
       if (!q) return true;
       return [r.name, r.email, r.phone, r.assigned_setter?.name]
         .filter(Boolean)
@@ -104,9 +107,6 @@ export default function PotentialLeads() {
     const by = {
       [ICLOSED_STATUS.POTENTIAL]: 0,
       [ICLOSED_STATUS.QUALIFIED]: 0,
-      [ICLOSED_STATUS.DISQUALIFIED]: 0,
-      [ICLOSED_STATUS.STRATEGY_CALL]: 0,
-      [ICLOSED_STATUS.DISCOVERY_CALL]: 0,
       unassigned: 0,
     };
     rows.forEach((r) => {
@@ -131,12 +131,12 @@ export default function PotentialLeads() {
           </button>
         </div>
         <p className="text-[13px] text-slate-500">
-          iClosed contacts (Potential / Qualified) — status syncs from iClosed; auto-assigned to the setter on shift.
+          Potential and Qualified iClosed contacts; removed automatically when a call is booked (handled in Zapier).
         </p>
 
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Total: {rows.length}</span>
-          {ICLOSED_STATUS_UI.map((s) => (
+          {ICLOSED_POTENTIAL_LEADS_TAB_UI.map((s) => (
             <span
               key={s.value}
               className={`rounded-full px-2.5 py-1 ring-1 ring-inset ${s.cls}`}
@@ -157,9 +157,8 @@ export default function PotentialLeads() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700"
           >
-            <option value="open">Open (Potential + Qualified)</option>
-            <option value="all">All iClosed statuses</option>
-            {ICLOSED_STATUS_UI.map((s) => (
+            <option value="all">All (Potential + Qualified)</option>
+            {ICLOSED_POTENTIAL_LEADS_TAB_UI.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
