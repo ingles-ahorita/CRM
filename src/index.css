@@ -127,6 +127,16 @@ button:focus-visible {
 .activity-feed-row-btn:hover {
   border-color: transparent !important;
 }
+
+/* Potential Leads tab — reset global Vite dark button defaults */
+.potential-leads-tab .potential-leads-btn {
+  background-color: #ffffff !important;
+  color: #334155 !important;
+}
+.potential-leads-tab .potential-leads-btn:hover {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
 .activity-feed-action-btn {
   background-color: #ffffff !important;
   color: #334155 !important;

@@ -1,16 +1,17 @@
--- Potential Leads — qualified iClosed contacts who haven't booked yet
--- See lib/api-handlers/iclosed-webhook.js and src/pages/components/management-2/potential-leads/
+-- Potential Leads — iClosed contacts (Potential / Qualified) not yet booked.
+-- Status enum: superseded by 20260601140000_potential_leads_iclosed_status_enum.sql
+-- See lib/iclosedLeadStatus.js, lib/api-handlers/iclosed-webhook.js
 
--- ── Status enum ───────────────────────────────────────────────────────────────
+-- ── Status enum (legacy; replaced by iclosed_lead_status in follow-up migration) ──
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'potential_lead_status') THEN
     CREATE TYPE public.potential_lead_status AS ENUM (
       'new',
-      'attempted',   -- setter tried to contact, no answer
-      'reached',     -- setter spoke with them
-      'booked',      -- they finally scheduled a call
-      'lost'         -- not interested / disqualified
+      'attempted',
+      'reached',
+      'booked',
+      'lost'
     );
   END IF;
 END
