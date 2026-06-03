@@ -137,6 +137,41 @@ button:focus-visible {
   background-color: #f8fafc !important;
   border-color: #cbd5e1 !important;
 }
+
+/* iClosed booking calendar — reset global Vite dark button defaults */
+.iclosed-booking-calendar button {
+  border: none;
+  font: inherit;
+}
+/* day buttons without a specific state: transparent */
+.iclosed-booking-calendar .iclosed-cal-day {
+  background-color: transparent !important;
+}
+/* selected day: indigo fill — must beat the reset above */
+.iclosed-booking-calendar .iclosed-cal-day.is-selected {
+  background-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
+/* available unselected: hover indigo tint */
+.iclosed-booking-calendar .iclosed-cal-day.is-available:not(.is-selected):hover {
+  background-color: #eef2ff !important;
+}
+/* nav buttons */
+.iclosed-booking-calendar .iclosed-cal-nav-btn {
+  background-color: transparent !important;
+  border: none !important;
+}
+/* time slot buttons */
+.iclosed-booking-calendar .iclosed-cal-slot {
+  border: 1px solid #c7d2fe !important;
+  background-color: #eef2ff !important;
+  color: #4338ca !important;
+}
+.iclosed-booking-calendar .iclosed-cal-slot.is-active {
+  background-color: #4f46e5 !important;
+  border-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
 .activity-feed-action-btn {
   background-color: #ffffff !important;
   color: #334155 !important;

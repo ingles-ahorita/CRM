@@ -743,6 +743,7 @@ export default function Header({
   setState,
   mode = "full",
   hideTabs = false,
+  leftContent = null,
 }) {
   const navigate = useNavigate();
   const searchInputRef = useRef(null);
@@ -1287,89 +1288,96 @@ export default function Header({
               style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "flex-end",
+                justifyContent: leftContent ? "space-between" : "flex-end",
                 gap: "8px",
                 width: "100%",
                 marginTop: "12px",
               }}
             >
-              <button
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  backgroundColor: "#e5e7eb",
-                  color: "#111827",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  padding: "8px 14px",
-                  cursor: "pointer",
-                  fontWeight: "500",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#d1d5db")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#e5e7eb")
-                }
-                onClick={() =>
-                  navigate(
-                    mode === "full"
-                      ? "/metrics"
-                      : mode === "setter"
-                        ? `/stats/${state.currentSetter}`
-                        : `/closer-stats/${state.currentCloser}`,
-                  )
-                }
-              >
-                <ChartSpline size={18} />
-              </button>
-              {(mode === "setter" || mode === "closer") && (
+              {leftContent ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {leftContent}
+                </div>
+              ) : null}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {(mode === "setter" || mode === "closer") && (
+                  <button
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      backgroundColor: state.isShiftActive
+                        ? "#fef3c7"
+                        : "#dcfce7",
+                      color: state.isShiftActive ? "#92400e" : "#166534",
+                      border: state.isShiftActive
+                        ? "1px solid #f59e0b"
+                        : "1px solid #22c55e",
+                      borderRadius: "6px",
+                      padding: "8px 14px",
+                      cursor: "pointer",
+                      fontWeight: "500",
+                      transition: "all 0.2s",
+                      fontSize: "13px",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = state.isShiftActive
+                        ? "#fde68a"
+                        : "#bbf7d0";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = state.isShiftActive
+                        ? "#fef3c7"
+                        : "#dcfce7";
+                    }}
+                    onClick={() => {
+                      if (state.isShiftActive && state.onEndShift)
+                        state.onEndShift();
+                      else if (!state.isShiftActive && state.onStartShift)
+                        state.onStartShift();
+                    }}
+                  >
+                    {state.isShiftActive ? (
+                      <Clock size={18} />
+                    ) : (
+                      <Play size={18} />
+                    )}
+                    {state.isShiftActive ? "End Shift" : "Start Shift"}
+                  </button>
+                )}
                 <button
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: "6px",
-                    backgroundColor: state.isShiftActive
-                      ? "#fef3c7"
-                      : "#dcfce7",
-                    color: state.isShiftActive ? "#92400e" : "#166534",
-                    border: state.isShiftActive
-                      ? "1px solid #f59e0b"
-                      : "1px solid #22c55e",
+                    backgroundColor: "#e5e7eb",
+                    color: "#111827",
+                    border: "1px solid #d1d5db",
                     borderRadius: "6px",
                     padding: "8px 14px",
                     cursor: "pointer",
                     fontWeight: "500",
                     transition: "all 0.2s",
-                    fontSize: "13px",
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = state.isShiftActive
-                      ? "#fde68a"
-                      : "#bbf7d0";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = state.isShiftActive
-                      ? "#fef3c7"
-                      : "#dcfce7";
-                  }}
-                  onClick={() => {
-                    if (state.isShiftActive && state.onEndShift)
-                      state.onEndShift();
-                    else if (!state.isShiftActive && state.onStartShift)
-                      state.onStartShift();
-                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "#d1d5db")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "#e5e7eb")
+                  }
+                  onClick={() =>
+                    navigate(
+                      mode === "full"
+                        ? "/metrics"
+                        : mode === "setter"
+                          ? `/stats/${state.currentSetter}`
+                          : `/closer-stats/${state.currentCloser}`,
+                    )
+                  }
                 >
-                  {state.isShiftActive ? (
-                    <Clock size={18} />
-                  ) : (
-                    <Play size={18} />
-                  )}
-                  {state.isShiftActive ? "End Shift" : "Start Shift"}
+                  <ChartSpline size={18} />
                 </button>
-              )}
+              </div>
             </div>
           )}
         </>

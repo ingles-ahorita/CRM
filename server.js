@@ -1,3 +1,4 @@
+/* global process */
 import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
@@ -29,7 +30,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler, iclosedWebhookHandler;
+let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler, iclosedHandler, iclosedWebhookHandler, iclosedPotentialLeadSlaCronHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -67,7 +68,9 @@ async function loadHandlers() {
   closerAvailabilityHandler = await loadHandler('./lib/api-handlers/closer-availability.js', 'closer-availability');
   createCalendarEventHandler = await loadHandler('./lib/api-handlers/create-calendar-event.js', 'create-calendar-event');
   crmAiQueryHandler = await loadHandler('./lib/api-handlers/crm-ai-query.js', 'crm-ai-query');
+  iclosedHandler = await loadHandler('./lib/api-handlers/iclosed.js', 'iclosed');
   iclosedWebhookHandler = await loadHandler('./lib/api-handlers/iclosed-webhook.js', 'iclosed-webhook');
+  iclosedPotentialLeadSlaCronHandler = await loadHandler('./lib/api-handlers/iclosed-potential-lead-sla-cron.js', 'iclosed-potential-lead-sla-cron');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -132,6 +135,16 @@ app.post('/api/cancel-iclosed', async (req, res) => {
   return adaptVercelHandler(cancelIclosedHandler)(req, res);
 });
 
+app.get('/api/iclosed', async (req, res) => {
+  if (!iclosedHandler) await loadHandlers();
+  return adaptVercelHandler(iclosedHandler)(req, res);
+});
+
+app.post('/api/iclosed', async (req, res) => {
+  if (!iclosedHandler) await loadHandlers();
+  return adaptVercelHandler(iclosedHandler)(req, res);
+});
+
 app.get('/api/current-setter', async (req, res) => {
   if (!currentSetterHandler) await loadHandlers();
   return adaptVercelHandler(currentSetterHandler)(req, res);
@@ -150,6 +163,16 @@ app.post('/api/kajabi-webhook', async (req, res) => {
 app.post('/api/iclosed-webhook', async (req, res) => {
   if (!iclosedWebhookHandler) await loadHandlers();
   return adaptVercelHandler(iclosedWebhookHandler)(req, res);
+});
+
+app.get('/api/iclosed-potential-lead-sla-cron', async (req, res) => {
+  if (!iclosedPotentialLeadSlaCronHandler) await loadHandlers();
+  return adaptVercelHandler(iclosedPotentialLeadSlaCronHandler)(req, res);
+});
+
+app.post('/api/iclosed-potential-lead-sla-cron', async (req, res) => {
+  if (!iclosedPotentialLeadSlaCronHandler) await loadHandlers();
+  return adaptVercelHandler(iclosedPotentialLeadSlaCronHandler)(req, res);
 });
 
 app.get('/api/kajabi-token', async (req, res) => {
@@ -330,6 +353,7 @@ loadHandlers().then(() => {
     console.log(`   - POST http://localhost:${PORT}/api/calendly-webhook`);
     console.log(`   - POST http://localhost:${PORT}/api/kajabi-webhook`);
     console.log(`   - POST http://localhost:${PORT}/api/iclosed-webhook`);
+    console.log(`   - GET  http://localhost:${PORT}/api/iclosed-potential-lead-sla-cron`);
     console.log(`   - GET  http://localhost:${PORT}/api/kajabi-token`);
     console.log(`   - POST http://localhost:${PORT}/api/store-fbclid`);
     console.log(`   - POST http://localhost:${PORT}/api/meta-conversion`);

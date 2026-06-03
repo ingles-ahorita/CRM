@@ -3,13 +3,26 @@ import { supabase } from '../lib/supabaseClient';
 import { getDayBoundsLocal } from '../utils/dateHelpers';
 import { subDays, addDays } from 'date-fns';
 
-export function useRealtimeLeads(dataState, setDataState, activeTab = 'all', setterId = null, closerId = null, dateFilterField = 'book_date') {
+export function useRealtimeLeads(
+  dataState,
+  setDataState,
+  activeTab = 'all',
+  setterId = null,
+  closerId = null,
+  dateFilterField = 'book_date',
+  enabled = true,
+) {
   const subscriptionRef = useRef(null);
 
   useEffect(() => {
     // Clean up existing subscription
     if (subscriptionRef.current) {
       subscriptionRef.current.unsubscribe();
+    }
+
+    if (!enabled) {
+      subscriptionRef.current = null;
+      return;
     }
 
     // Create new subscription
@@ -45,7 +58,7 @@ export function useRealtimeLeads(dataState, setDataState, activeTab = 'all', set
         subscriptionRef.current.unsubscribe();
       }
     };
-  }, [activeTab, setterId, closerId, dateFilterField]);
+  }, [activeTab, setterId, closerId, dateFilterField, enabled]);
 
   const handleInsert = async (newLead) => {
     // Check if the new lead should be included based on current filters
