@@ -3,34 +3,21 @@ import { supabase } from '../../../../lib/supabaseClient';
 import { getDayBoundsLocal } from '../../../../utils/dateHelpers';
 import { subDays } from 'date-fns';
 import { Pencil, X } from 'lucide-react';
+import { ICLOSED_POTENTIAL_LEADS_TAB_STATUSES } from '../../../../../lib/iclosedLeadStatus.js';
 import {
-  ICLOSED_POTENTIAL_LEADS_TAB_UI,
-  ICLOSED_POTENTIAL_LEADS_TAB_LOOKUP,
-  ICLOSED_POTENTIAL_LEADS_TAB_STATUSES,
-  ICLOSED_STATUS,
-  rowIclosedStatus,
-} from '../../../../../lib/iclosedLeadStatus.js';
+  LT_STATUS_UI,
+  computePotentialLeadLtStatus,
+  fetchCrmConfirmedEmails,
+} from '../../../../../lib/potentialLeadLtStatus.js';
+import LtStatusBadge from '../../potential-leads/LtStatusBadge.jsx';
+import {
+  buildPotentialLeadStats,
+  paginateItems,
+  PotentialLeadsPagination,
+} from '../../potential-leads/potentialLeadsListHelpers.jsx';
 import IclosedBookingCalendar from './IclosedBookingCalendar.jsx';
 
 const TAB_STATUS_LIST = [...ICLOSED_POTENTIAL_LEADS_TAB_STATUSES];
-
-function StatusBadge({ value }) {
-  const opt = ICLOSED_POTENTIAL_LEADS_TAB_LOOKUP[value];
-  if (!opt) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-300">
-        {value || '—'}
-      </span>
-    );
-  }
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${opt.cls}`}
-    >
-      {opt.label}
-    </span>
-  );
-}
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -297,13 +284,17 @@ function buildUiAnswersFromQaa({ fields, qaa, qaByFieldKey }) {
     ].filter(Boolean);
     const fromKey = candidateKeys.map((candidateKey) => byKey[candidateKey]).find((v) => v != null);
     if (fromKey != null) {
-      out[k] = fromKey;
+      const normalized = normalizeQaaValue(fromKey);
+      if (normalized != null) {
+        out[k] = normalized;
+      }
       return;
     }
     const qText = String(f?.name ?? '').trim();
     if (!qText) return;
     const fromQaa = getQuestionResponseFromQaa(baseQaa, qText);
-    if (fromQaa != null) out[k] = fromQaa;
+    const normalizedQaa = normalizeQaaValue(fromQaa);
+    if (normalizedQaa != null) out[k] = normalizedQaa;
   });
 
   return out;
@@ -329,7 +320,8 @@ function applyUiAnswerDiffToQaa({ fields, prevQaa, initialUi, nextUi }) {
     if (JSON.stringify(nextVal) === JSON.stringify(initVal)) continue;
 
     const qText = String(f?.name ?? '').trim();
-    if (qText) out[qText] = nextVal;
+    if (qText && nextVal != null) out[qText] = nextVal;
+    if (nextVal != null) out[k] = nextVal;
 
     // Also update numbered response keys if present in the existing shape.
     // Example: "7_question" = "¿Cuál es tu nivel...?" → update "7_response"
@@ -349,10 +341,12 @@ function applyUiAnswerDiffToQaa({ fields, prevQaa, initialUi, nextUi }) {
 export default function SetterPotentialLeads({ setterId, datePreset = 'today', startISO = null, endISO = null }) {
   const [rows, setRows] = useState([]);
   const [setters, setSetters] = useState([]);
+  const [crmConfirmedEmails, setCrmConfirmedEmails] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [editingRow, setEditingRow] = useState(null);
 
   const fetchAll = useCallback(async () => {
@@ -383,7 +377,7 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
           .from('potential_leads')
           .select('*, assigned_setter:assigned_setter_id(id, name)')
           .eq('assigned_setter_id', setterId)
-          .in('status', TAB_STATUS_LIST);
+          .in('iclosed_status', TAB_STATUS_LIST);
 
         // date filtering uses created_at
         if (range?.start) q = q.gte('created_at', range.start);
@@ -394,11 +388,24 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
       supabase.from('setters').select('id, name').eq('active', true).order('name'),
     ]);
 
-    if (leadsRes.error) setError(leadsRes.error.message);
-    setRows(leadsRes.data || []);
+    if (leadsRes.error) {
+      setError(leadsRes.error.message);
+      setRows([]);
+      setCrmConfirmedEmails(new Set());
+    } else {
+      const leadRows = leadsRes.data || [];
+      setRows(leadRows);
+      const crmEmails = await fetchCrmConfirmedEmails(supabase, leadRows);
+      setCrmConfirmedEmails(crmEmails);
+    }
     setSetters(settersRes.data || []);
     setLoading(false);
   }, [setterId, datePreset, startISO, endISO]);
+
+  const ltForRow = useCallback(
+    (r) => computePotentialLeadLtStatus(r, { crmConfirmedEmails }),
+    [crmConfirmedEmails],
+  );
 
   useEffect(() => {
     fetchAll();
@@ -430,29 +437,31 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (!String(r.phone ?? '').trim()) return false;
-      const st = rowIclosedStatus(r);
-      if (!st || !ICLOSED_POTENTIAL_LEADS_TAB_STATUSES.has(st)) return false;
-      if (statusFilter !== 'all' && st !== statusFilter) return false;
+      const lt = ltForRow(r);
+      if (statusFilter !== 'all' && lt !== statusFilter) return false;
       if (!q) return true;
       return [r.name, r.email, r.phone, r.assigned_setter?.name]
         .filter(Boolean)
         .some((s) => String(s).toLowerCase().includes(q));
     });
-  }, [rows, search, statusFilter]);
+  }, [rows, search, statusFilter, ltForRow]);
 
-  const stats = useMemo(() => {
-    const by = {
-      [ICLOSED_STATUS.POTENTIAL]: 0,
-      [ICLOSED_STATUS.QUALIFIED]: 0,
-      unassigned: 0,
-    };
-    rows.forEach((r) => {
-      const st = rowIclosedStatus(r);
-      if (st && by[st] != null) by[st] += 1;
-      if (!r.assigned_setter_id) by.unassigned += 1;
-    });
-    return by;
-  }, [rows]);
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, search, setterId, datePreset, startISO, endISO]);
+
+  const stats = useMemo(
+    () => buildPotentialLeadStats(filtered, ltForRow, { countUnassigned: false }),
+    [filtered, ltForRow],
+  );
+
+  const pagination = useMemo(() => paginateItems(filtered, page), [filtered, page]);
+
+  useEffect(() => {
+    if (page > pagination.totalPages) {
+      setPage(pagination.totalPages);
+    }
+  }, [page, pagination.totalPages]);
 
   return (
     <div className="potential-leads-tab w-full max-w-[1400px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -468,19 +477,28 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
           </button>
         </div>
         <p className="text-[13px] text-slate-500">
-          Potential and Qualified iClosed leads assigned to this setter.
+          Open iClosed leads assigned to this setter. Status shows CRM pipeline stage (LT1–LT5).
         </p>
 
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Total: {rows.length}</span>
-          {ICLOSED_POTENTIAL_LEADS_TAB_UI.map((s) => (
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Total: {stats.total}</span>
+          {LT_STATUS_UI.map((s) => (
             <span
               key={s.value}
               className={`rounded-full px-2.5 py-1 ring-1 ring-inset ${s.cls}`}
+              title={s.description}
             >
-              {s.label}: {stats[s.value] ?? 0}
+              {s.label}: {stats.by[s.value] ?? 0}
             </span>
           ))}
+          {stats.noStage > 0 && (
+            <span
+              className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 ring-1 ring-inset ring-slate-200"
+              title="Rows missing LT stage requirements"
+            >
+              Other: {stats.noStage}
+            </span>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -489,9 +507,9 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
             onChange={(e) => setStatusFilter(e.target.value)}
             className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700"
           >
-            <option value="all">All (Potential + Qualified)</option>
-            {ICLOSED_POTENTIAL_LEADS_TAB_UI.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
+            <option value="all">All stages</option>
+            {LT_STATUS_UI.map((s) => (
+              <option key={s.value} value={s.value}>{s.label} — {s.description}</option>
             ))}
           </select>
           <input
@@ -518,7 +536,7 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
               <th className="px-3 py-2 text-left">Email / Phone</th>
               <th className="px-3 py-2 text-left">Source</th>
               <th className="px-3 py-2 text-left">Assigned Setter</th>
-              <th className="px-3 py-2 text-left">iClosed status</th>
+              <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Notes</th>
               <th className="px-3 py-2 text-left">Last contact</th>
               <th className="px-3 py-2 text-left">Received</th>
@@ -530,11 +548,12 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
               <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">Loading…</td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={9} className="px-3 py-6 text-center text-slate-400">No potential leads.</td></tr>
-            ) : filtered.map((r) => (
+            ) : pagination.items.map((r) => (
               <PotentialLeadRow
                 key={r.id}
                 row={r}
                 setters={setters}
+                ltStatus={ltForRow(r)}
                 onUpdate={updateRow}
                 onEdit={() => setEditingRow(r)}
               />
@@ -543,10 +562,13 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
         </table>
       </div>
 
+      <PotentialLeadsPagination pagination={pagination} onPageChange={setPage} />
+
       <IclosedMetadataModal
         isOpen={!!editingRow}
         onClose={() => setEditingRow(null)}
         row={editingRow}
+        crmConfirmedEmails={crmConfirmedEmails}
         onDone={async () => {
           setEditingRow(null);
           await fetchAll();
@@ -556,10 +578,9 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
   );
 }
 
-function PotentialLeadRow({ row, setters, onUpdate, onEdit }) {
+function PotentialLeadRow({ row, setters, ltStatus, onUpdate, onEdit }) {
   const [noteDraft, setNoteDraft] = useState(row.notes || '');
   const [editingNote, setEditingNote] = useState(false);
-  const iclosedStatus = rowIclosedStatus(row);
 
   useEffect(() => {
     setNoteDraft(row.notes || '');
@@ -610,7 +631,7 @@ function PotentialLeadRow({ row, setters, onUpdate, onEdit }) {
         </select>
       </td>
       <td className="px-3 py-3">
-        <StatusBadge value={iclosedStatus} />
+        <LtStatusBadge value={ltStatus} />
       </td>
       <td className="px-3 py-3 min-w-[240px]">
         {editingNote ? (
@@ -734,7 +755,7 @@ function QuestionCard({ field, value, onChange }) {
   );
 }
 
-function IclosedMetadataModal({ isOpen, onClose, row, onDone }) {
+function IclosedMetadataModal({ isOpen, onClose, row, crmConfirmedEmails, onDone }) {
   const [firstNameDraft, setFirstNameDraft] = useState('');
   const [lastNameDraft, setLastNameDraft] = useState('');
   const [phoneDraft, setPhoneDraft] = useState('');
@@ -944,7 +965,9 @@ function IclosedMetadataModal({ isOpen, onClose, row, onDone }) {
     setBooking(false);
   };
 
-  const iclosedStatus = row ? rowIclosedStatus(row) : null;
+  const ltStatus = row
+    ? computePotentialLeadLtStatus(row, { crmConfirmedEmails })
+    : null;
   const dynamicFields = Array.isArray(iclosedFields) ? iclosedFields : [];
 
   if (!isOpen) return null;
@@ -965,7 +988,7 @@ function IclosedMetadataModal({ isOpen, onClose, row, onDone }) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[15px] font-bold text-slate-900">Edit Lead</span>
-                {iclosedStatus && <StatusBadge value={iclosedStatus} />}
+                {ltStatus && <LtStatusBadge value={ltStatus} />}
               </div>
             </div>
             <button
