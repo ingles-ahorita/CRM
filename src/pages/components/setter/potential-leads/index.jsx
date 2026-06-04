@@ -429,6 +429,7 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
+      if (!String(r.phone ?? '').trim()) return false;
       const st = rowIclosedStatus(r);
       if (!st || !ICLOSED_POTENTIAL_LEADS_TAB_STATUSES.has(st)) return false;
       if (statusFilter !== 'all' && st !== statusFilter) return false;
