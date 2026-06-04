@@ -1,32 +1,19 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '../../../../lib/supabaseClient';
+import { ICLOSED_POTENTIAL_LEADS_TAB_STATUSES } from '../../../../../lib/iclosedLeadStatus.js';
 import {
-  ICLOSED_STATUS,
-  ICLOSED_POTENTIAL_LEADS_TAB_UI,
-  ICLOSED_POTENTIAL_LEADS_TAB_LOOKUP,
-  ICLOSED_POTENTIAL_LEADS_TAB_STATUSES,
-  rowIclosedStatus,
-} from '../../../../../lib/iclosedLeadStatus.js';
+  LT_STATUS_UI,
+  computePotentialLeadLtStatus,
+  fetchCrmConfirmedEmails,
+} from '../../../../../lib/potentialLeadLtStatus.js';
+import LtStatusBadge from '../../potential-leads/LtStatusBadge.jsx';
+import {
+  buildPotentialLeadStats,
+  paginateItems,
+  PotentialLeadsPagination,
+} from '../../potential-leads/potentialLeadsListHelpers.jsx';
 
 const TAB_STATUS_LIST = [...ICLOSED_POTENTIAL_LEADS_TAB_STATUSES];
-
-function StatusBadge({ value }) {
-  const opt = ICLOSED_POTENTIAL_LEADS_TAB_LOOKUP[value];
-  if (!opt) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-inset ring-slate-300">
-        {value || '—'}
-      </span>
-    );
-  }
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${opt.cls}`}
-    >
-      {opt.label}
-    </span>
-  );
-}
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -40,10 +27,12 @@ function formatDate(iso) {
 export default function PotentialLeads() {
   const [rows, setRows] = useState([]);
   const [setters, setSetters] = useState([]);
+  const [crmConfirmedEmails, setCrmConfirmedEmails] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -53,14 +42,22 @@ export default function PotentialLeads() {
       supabase
         .from('potential_leads')
         .select('*, assigned_setter:assigned_setter_id(id, name)')
-        .in('status', TAB_STATUS_LIST)
+        .in('iclosed_status', TAB_STATUS_LIST)
         .order('created_at', { ascending: false })
         .limit(500),
       supabase.from('setters').select('id, name').eq('active', true).order('name'),
     ]);
 
-    if (leadsRes.error) setError(leadsRes.error.message);
-    setRows(leadsRes.data || []);
+    if (leadsRes.error) {
+      setError(leadsRes.error.message);
+      setRows([]);
+      setCrmConfirmedEmails(new Set());
+    } else {
+      const leadRows = leadsRes.data || [];
+      setRows(leadRows);
+      const crmEmails = await fetchCrmConfirmedEmails(supabase, leadRows);
+      setCrmConfirmedEmails(crmEmails);
+    }
     setSetters(settersRes.data || []);
     setLoading(false);
   }, []);
@@ -90,32 +87,39 @@ export default function PotentialLeads() {
     }
   }, [fetchAll]);
 
+  const ltForRow = useCallback(
+    (r) => computePotentialLeadLtStatus(r, { crmConfirmedEmails }),
+    [crmConfirmedEmails],
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      const st = rowIclosedStatus(r);
-      if (!st || !ICLOSED_POTENTIAL_LEADS_TAB_STATUSES.has(st)) return false;
-      if (statusFilter !== 'all' && st !== statusFilter) return false;
+      const lt = ltForRow(r);
+      if (statusFilter !== 'all' && lt !== statusFilter) return false;
       if (!q) return true;
       return [r.name, r.email, r.phone, r.assigned_setter?.name]
         .filter(Boolean)
         .some((s) => String(s).toLowerCase().includes(q));
     });
-  }, [rows, search, statusFilter]);
+  }, [rows, search, statusFilter, ltForRow]);
 
-  const stats = useMemo(() => {
-    const by = {
-      [ICLOSED_STATUS.POTENTIAL]: 0,
-      [ICLOSED_STATUS.QUALIFIED]: 0,
-      unassigned: 0,
-    };
-    rows.forEach((r) => {
-      const st = rowIclosedStatus(r);
-      if (st && by[st] != null) by[st] += 1;
-      if (!r.assigned_setter_id) by.unassigned += 1;
-    });
-    return by;
-  }, [rows]);
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, search]);
+
+  const stats = useMemo(
+    () => buildPotentialLeadStats(filtered, ltForRow, { countUnassigned: true }),
+    [filtered, ltForRow],
+  );
+
+  const pagination = useMemo(() => paginateItems(filtered, page), [filtered, page]);
+
+  useEffect(() => {
+    if (page > pagination.totalPages) {
+      setPage(pagination.totalPages);
+    }
+  }, [page, pagination.totalPages]);
 
   return (
     <div className="potential-leads-tab w-full max-w-[1400px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -131,19 +135,28 @@ export default function PotentialLeads() {
           </button>
         </div>
         <p className="text-[13px] text-slate-500">
-          Potential and Qualified iClosed contacts; removed automatically when a call is booked (handled in Zapier).
+          Open iClosed contacts (Potential / Qualified). Status column shows CRM pipeline stage (LT1–LT5), not iClosed scheduling status.
         </p>
 
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Total: {rows.length}</span>
-          {ICLOSED_POTENTIAL_LEADS_TAB_UI.map((s) => (
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Total: {stats.total}</span>
+          {LT_STATUS_UI.map((s) => (
             <span
               key={s.value}
               className={`rounded-full px-2.5 py-1 ring-1 ring-inset ${s.cls}`}
+              title={s.description}
             >
-              {s.label}: {stats[s.value] ?? 0}
+              {s.label}: {stats.by[s.value] ?? 0}
             </span>
           ))}
+          {stats.noStage > 0 && (
+            <span
+              className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600 ring-1 ring-inset ring-slate-200"
+              title="Rows missing name+email or other LT requirements"
+            >
+              Other: {stats.noStage}
+            </span>
+          )}
           {stats.unassigned > 0 && (
             <span className="rounded-full bg-red-50 px-2.5 py-1 text-red-700 ring-1 ring-inset ring-red-200">
               Unassigned: {stats.unassigned}
@@ -157,9 +170,9 @@ export default function PotentialLeads() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700"
           >
-            <option value="all">All (Potential + Qualified)</option>
-            {ICLOSED_POTENTIAL_LEADS_TAB_UI.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
+            <option value="all">All stages</option>
+            {LT_STATUS_UI.map((s) => (
+              <option key={s.value} value={s.value}>{s.label} — {s.description}</option>
             ))}
           </select>
           <input
@@ -186,7 +199,7 @@ export default function PotentialLeads() {
               <th className="px-3 py-2 text-left">Email / Phone</th>
               <th className="px-3 py-2 text-left">Source</th>
               <th className="px-3 py-2 text-left">Assigned Setter</th>
-              <th className="px-3 py-2 text-left">iClosed status</th>
+              <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Notes</th>
               <th className="px-3 py-2 text-left">Last contact</th>
               <th className="px-3 py-2 text-left">Received</th>
@@ -197,25 +210,27 @@ export default function PotentialLeads() {
               <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">Loading…</td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-400">No potential leads.</td></tr>
-            ) : filtered.map((r) => (
+            ) : pagination.items.map((r) => (
               <PotentialLeadRow
                 key={r.id}
                 row={r}
                 setters={setters}
+                ltStatus={ltForRow(r)}
                 onUpdate={updateRow}
               />
             ))}
           </tbody>
         </table>
       </div>
+
+      <PotentialLeadsPagination pagination={pagination} onPageChange={setPage} />
     </div>
   );
 }
 
-function PotentialLeadRow({ row, setters, onUpdate }) {
+function PotentialLeadRow({ row, setters, ltStatus, onUpdate }) {
   const [noteDraft, setNoteDraft] = useState(row.notes || '');
   const [editingNote, setEditingNote] = useState(false);
-  const iclosedStatus = rowIclosedStatus(row);
 
   useEffect(() => {
     setNoteDraft(row.notes || '');
@@ -269,8 +284,7 @@ function PotentialLeadRow({ row, setters, onUpdate }) {
         </select>
       </td>
       <td className="px-3 py-2">
-        <StatusBadge value={iclosedStatus} />
-        <p className="mt-1 text-[10px] text-slate-400">Updated by iClosed webhook</p>
+        <LtStatusBadge value={ltStatus} />
       </td>
       <td className="px-3 py-2 min-w-[220px]">
         {editingNote ? (
