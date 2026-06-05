@@ -1,17 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import SectionInfoHint from "../section-info-hint";
-import { getShowUpColor } from "../../../../../utils/performanceBenchmarks";
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   BarElement,
-  ArcElement,
   Tooltip,
 } from "chart.js";
-import { Bar, Doughnut } from "react-chartjs-2";
+import { Bar } from "react-chartjs-2";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip);
 
 function clampPct(v) {
   const n = Number(v);
@@ -153,82 +151,6 @@ function MiniBarChart({
   );
 }
 
-const ATTENDANCE_DONUT_BASE_OPTS = {
-  responsive: true,
-  maintainAspectRatio: true,
-  rotation: -90,
-  circumference: 360,
-  cutout: "78%",
-  animation: {
-    animateRotate: true,
-    animateScale: false,
-    duration: 900,
-    easing: "easeOutQuart",
-  },
-  plugins: {
-    legend: { display: false },
-    tooltip: { enabled: false },
-  },
-};
-
-function AttendanceRing({ percent, compact = false }) {
-  const pct = Math.min(100, Math.max(0, Number(percent) || 0));
-  const color = getShowUpColor(pct);
-  const dim = compact ? "h-[56px] w-[56px]" : "h-[84px] w-[84px]";
-  const pctText = compact ? "text-[12px]" : "text-[17px]";
-
-  const data = useMemo(() => {
-    if (pct <= 0) {
-      return {
-        datasets: [
-          {
-            data: [100],
-            backgroundColor: ["#e8ecf1"],
-            borderWidth: 0,
-            hoverOffset: 0,
-          },
-        ],
-      };
-    }
-    if (pct >= 100) {
-      return {
-        datasets: [
-          {
-            data: [100],
-            backgroundColor: [color],
-            borderWidth: 0,
-            hoverOffset: 0,
-          },
-        ],
-      };
-    }
-    return {
-      datasets: [
-        {
-          data: [pct, 100 - pct],
-          backgroundColor: [color, "#e8ecf1"],
-          borderWidth: 0,
-          spacing: 0,
-          hoverOffset: 0,
-        },
-      ],
-    };
-  }, [pct, color]);
-
-  return (
-    <div className={`relative ${dim} shrink-0`}>
-      <Doughnut data={data} options={ATTENDANCE_DONUT_BASE_OPTS} />
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span
-          className={`${pctText} font-extrabold tabular-nums tracking-tight text-slate-900`}
-        >
-          {pct}%
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export default function TopOfFunnelPanel() {
   const CHART_DAYS = 7;
   const ADS_VSL_PATH = "/ads-new-masterclass-job";
@@ -248,6 +170,7 @@ export default function TopOfFunnelPanel() {
   const [attendanceState, setAttendanceState] = useState({
     loading: true,
     showUpRate: null,
+    avgAttendance: null,
     numberOfClasses: null,
     numberOfStudents: null,
     attendancePresent: null,
@@ -415,6 +338,7 @@ export default function TopOfFunnelPanel() {
         setAttendanceState({
           loading: false,
           showUpRate: data?.showUpRate ?? null,
+          avgAttendance: data?.avgAttendance ?? null,
           numberOfClasses: data?.numberOfClasses ?? null,
           numberOfStudents: data?.numberOfStudents ?? null,
           attendancePresent: data?.attendancePresent ?? null,
@@ -426,6 +350,7 @@ export default function TopOfFunnelPanel() {
         setAttendanceState({
           loading: false,
           showUpRate: null,
+          avgAttendance: null,
           numberOfClasses: null,
           numberOfStudents: null,
           attendancePresent: null,
@@ -545,24 +470,13 @@ export default function TopOfFunnelPanel() {
     };
   }, []);
 
-  const attendancePct = clampPct(attendanceState.showUpRate);
-  const attendancePresentDisplay =
-    attendanceState.attendancePresent != null
-      ? attendanceState.attendancePresent
-      : attendanceState.numberOfStudents;
-  const attendanceTotalDisplay =
-    attendanceState.attendanceTotal != null
-      ? attendanceState.attendanceTotal
-      : attendanceState.numberOfClasses;
-  const hasAttendanceRatio =
-    attendancePresentDisplay != null && attendanceTotalDisplay != null;
-  const attendanceMainLabel = hasAttendanceRatio
-    ? `${attendancePresentDisplay} / ${attendanceTotalDisplay}`
-    : attendanceState.showUpRate != null
-      ? formatPct(attendanceState.showUpRate)
-      : attendanceState.error
-        ? "—"
-        : "0 / 0";
+  const avgAttendanceDisplay =
+    attendanceState.avgAttendance != null
+      ? Number(attendanceState.avgAttendance).toFixed(1)
+      : "0.0";
+  const attendancePresentDisplay = attendanceState.attendancePresent ?? 0;
+  const attendanceClassesDisplay = attendanceState.numberOfClasses ?? 0;
+  const attendanceStudentsDisplay = attendanceState.numberOfStudents ?? 0;
   const occupancyPct = clampPct(occupancyState.occupancyPct);
 
   useEffect(() => {
@@ -700,18 +614,42 @@ export default function TopOfFunnelPanel() {
                 {shimmer("mt-1.5 h-3 w-full")}
               </div>
             </div>
+          ) : attendanceState.error ? (
+            <div className="mt-2 flex min-h-[56px] items-center text-[11px] font-semibold leading-snug text-[#9ca3af]">
+              Academic app unavailable
+            </div>
           ) : (
-            <div className="mt-2 flex flex-1 items-center gap-2">
-              <AttendanceRing percent={attendancePct} compact />
-              <div className="min-w-0 flex-1">
-                <div className="text-[15px] font-bold tabular-nums leading-none tracking-tight text-[#111827]">
-                  {attendanceMainLabel}
+            <div className="mt-2 flex flex-1 flex-col justify-center gap-2">
+              <div className="flex items-end justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[9px] font-bold uppercase leading-none tracking-wide text-[#9ca3af]">
+                    Avg / class
+                  </div>
+                  <div className="mt-0.5 text-[20px] font-extrabold leading-none tracking-tight text-[#111827]">
+                    {avgAttendanceDisplay}
+                  </div>
                 </div>
-                <p className="mt-1 text-[9px] font-medium leading-snug text-[#9ca3af]">
-                  {attendanceState.error
-                    ? "Academic app unavailable"
-                    : "From academic app"}
-                </p>
+                <div className="text-right text-[9px] font-semibold leading-tight text-[#9ca3af]">
+                  {attendancePresentDisplay} check-ins
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                <div className="rounded-md bg-slate-50 px-1.5 py-1">
+                  <div className="text-[11px] font-extrabold leading-none tabular-nums text-[#111827]">
+                    {attendanceClassesDisplay}
+                  </div>
+                  <div className="mt-0.5 text-[8px] font-bold uppercase leading-none tracking-wide text-[#9ca3af]">
+                    Classes
+                  </div>
+                </div>
+                <div className="rounded-md bg-slate-50 px-1.5 py-1">
+                  <div className="text-[11px] font-extrabold leading-none tabular-nums text-[#111827]">
+                    {attendanceStudentsDisplay}
+                  </div>
+                  <div className="mt-0.5 text-[8px] font-bold uppercase leading-none tracking-wide text-[#9ca3af]">
+                    Students
+                  </div>
+                </div>
               </div>
             </div>
           )}
