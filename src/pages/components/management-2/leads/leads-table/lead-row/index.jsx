@@ -67,9 +67,15 @@ function ResponsePill ( { lead } ) {
 }
 
 const GRID_CLASS_ALL =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_80px_100px_100px_130px_130px_150px_90px_76px]";
 const GRID_CLASS_DEFAULT =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_80px_100px_100px_130px_130px_150px_90px_76px]";
+
+const UTM_FIELDS = [
+  { key: "utm_source", badge: "S", label: "Source", color: "#6366f1" },
+  { key: "utm_medium", badge: "M", label: "Medium", color: "#0891b2" },
+  { key: "utm_campaign", badge: "C", label: "Campaign", color: "#d97706" },
+];
 
 function StatusBadge ( { value, label, title, outcomeLog } ) {
   const getColor = () => {
@@ -267,6 +273,26 @@ export default function LeadRow ( {
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="min-w-0 w-full space-y-0.5 overflow-hidden">
+          {UTM_FIELDS.map( ( { key, badge, label, color } ) => (
+            <div key={key} className="flex min-w-0 items-center gap-0.5">
+              <span
+                title={label}
+                className="inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded text-[8px] font-extrabold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]"
+                style={{ backgroundColor: color }}
+              >
+                {badge}
+              </span>
+              <span
+                className="min-w-0 truncate text-[9px] font-medium text-slate-600"
+                title={`${label}: ${lead?.[ key ] || "—"}`}
+              >
+                {lead?.[ key ] || "—"}
+              </span>
+            </div>
+          ) )}
         </div>
 
         {lead?.setter_id ? (
