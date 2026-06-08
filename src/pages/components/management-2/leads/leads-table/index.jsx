@@ -20,10 +20,19 @@ function shimmer ( className = "" ) {
   );
 }
 
+const UTM_FIELDS = [
+  { key: "utm_source", badge: "S", label: "Source", color: "#6366f1" },
+  { key: "utm_medium", badge: "M", label: "Medium", color: "#0891b2" },
+  { key: "utm_campaign", badge: "C", label: "Campaign", color: "#d97706" },
+];
+
+const UTM_FILTER_BADGE_CLASS =
+  "inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded text-[10px] font-extrabold leading-none text-white";
+
 const GRID_CLASS_ALL =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_80px_100px_100px_130px_130px_150px_90px_76px]";
 const GRID_CLASS_DEFAULT =
-  "grid-cols-[24px_minmax(170px,1fr)_100px_100px_130px_130px_150px_90px_76px]";
+  "grid-cols-[24px_minmax(170px,1fr)_80px_100px_100px_130px_130px_150px_90px_76px]";
 
 function TableSkeletonRows ( { subTab, count = 8 } ) {
   const gridClass = subTab === "all" ? GRID_CLASS_ALL : GRID_CLASS_DEFAULT;
@@ -39,6 +48,11 @@ function TableSkeletonRows ( { subTab, count = 8 } ) {
             <div className="min-w-0 space-y-2">
               {shimmer( "h-4 w-[72%] max-w-[200px]" )}
               {shimmer( "h-3 w-[88%] max-w-[240px]" )}
+            </div>
+            <div className="min-w-0 space-y-0.5">
+              {shimmer( "h-3.5 w-full rounded" )}
+              {shimmer( "h-3.5 w-full rounded" )}
+              {shimmer( "h-3.5 w-full rounded" )}
             </div>
             <div className="flex justify-center">
               {shimmer( "h-8 w-full max-w-[108px] rounded-full" )}
@@ -150,6 +164,9 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
   const [ endDate, setEndDate ] = useState( searchParams.get( "end" ) || "" );
   const [ setterFilter, setSetterFilter ] = useState( searchParams.get( "setter" ) || "" );
   const [ closerFilter, setCloserFilter ] = useState( searchParams.get( "closer" ) || "" );
+  const [ utmSourceFilter, setUtmSourceFilter ] = useState( searchParams.get( "utmSource" ) || "" );
+  const [ utmMediumFilter, setUtmMediumFilter ] = useState( searchParams.get( "utmMedium" ) || "" );
+  const [ utmCampaignFilter, setUtmCampaignFilter ] = useState( searchParams.get( "utmCampaign" ) || "" );
   const [ statusFilters, setStatusFilters ] = useState( {
     confirmed: searchParams.get( "confirmed" ) === "true",
     cancelled: searchParams.get( "cancelled" ) === "true",
@@ -257,6 +274,15 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     if ( closerFilter ) params.set( "closer", closerFilter );
     else params.delete( "closer" );
 
+    if ( utmSourceFilter ) params.set( "utmSource", utmSourceFilter );
+    else params.delete( "utmSource" );
+
+    if ( utmMediumFilter ) params.set( "utmMedium", utmMediumFilter );
+    else params.delete( "utmMedium" );
+
+    if ( utmCampaignFilter ) params.set( "utmCampaign", utmCampaignFilter );
+    else params.delete( "utmCampaign" );
+
     if ( noShowStateFilter ) params.set( "noShowState", noShowStateFilter );
     else params.delete( "noShowState" );
 
@@ -275,6 +301,9 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     endDate,
     setterFilter,
     closerFilter,
+    utmSourceFilter,
+    utmMediumFilter,
+    utmCampaignFilter,
     noShowStateFilter,
     statusFilters,
     setSearchParams,
@@ -300,6 +329,25 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
 
   const safeLeads = dataState?.leads || [];
 
+  const utmOptions = useMemo( () => {
+    const sources = new Set();
+    const mediums = new Set();
+    const campaigns = new Set();
+    for ( const l of safeLeads ) {
+      if ( l?.utm_source ) sources.add( l.utm_source );
+      if ( l?.utm_medium ) mediums.add( l.utm_medium );
+      if ( l?.utm_campaign ) campaigns.add( l.utm_campaign );
+    }
+    if ( utmSourceFilter ) sources.add( utmSourceFilter );
+    if ( utmMediumFilter ) mediums.add( utmMediumFilter );
+    if ( utmCampaignFilter ) campaigns.add( utmCampaignFilter );
+    return {
+      sources: [ ...sources ].sort(),
+      mediums: [ ...mediums ].sort(),
+      campaigns: [ ...campaigns ].sort(),
+    };
+  }, [ safeLeads, utmSourceFilter, utmMediumFilter, utmCampaignFilter ] );
+
   const filteredLeads = useMemo( () => {
     return safeLeads.filter( ( l ) => {
       if (
@@ -309,9 +357,19 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
       ) {
         return false;
       }
+      if ( utmSourceFilter && l?.utm_source !== utmSourceFilter ) return false;
+      if ( utmMediumFilter && l?.utm_medium !== utmMediumFilter ) return false;
+      if ( utmCampaignFilter && l?.utm_campaign !== utmCampaignFilter ) return false;
       return true;
     } );
-  }, [ safeLeads, subTab, noShowStateFilter ] );
+  }, [
+    safeLeads,
+    subTab,
+    noShowStateFilter,
+    utmSourceFilter,
+    utmMediumFilter,
+    utmCampaignFilter,
+  ] );
 
   // Keep server order, but always push cancelled (red background) rows to end.
   const sortedLeads = useMemo( () => {
@@ -549,6 +607,82 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
               </div>
             ) : null}
 
+            <div className="flex flex-col gap-3">
+              <div>
+                <div className="text-[13px] font-semibold text-slate-700">
+                  UTM
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  Filter rows by source, medium, or campaign
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={UTM_FILTER_BADGE_CLASS}
+                    style={{ backgroundColor: UTM_FIELDS[0].color }}
+                    title="Source"
+                  >
+                    S
+                  </span>
+                  <select
+                    value={utmSourceFilter}
+                    onChange={( e ) => setUtmSourceFilter( e.target.value )}
+                    className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
+                  >
+                    <option value="">All Sources</option>
+                    {utmOptions.sources.map( ( v ) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ) )}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={UTM_FILTER_BADGE_CLASS}
+                    style={{ backgroundColor: UTM_FIELDS[1].color }}
+                    title="Medium"
+                  >
+                    M
+                  </span>
+                  <select
+                    value={utmMediumFilter}
+                    onChange={( e ) => setUtmMediumFilter( e.target.value )}
+                    className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
+                  >
+                    <option value="">All Mediums</option>
+                    {utmOptions.mediums.map( ( v ) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ) )}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={UTM_FILTER_BADGE_CLASS}
+                    style={{ backgroundColor: UTM_FIELDS[2].color }}
+                    title="Campaign"
+                  >
+                    C
+                  </span>
+                  <select
+                    value={utmCampaignFilter}
+                    onChange={( e ) => setUtmCampaignFilter( e.target.value )}
+                    className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
+                  >
+                    <option value="">All Campaigns</option>
+                    {utmOptions.campaigns.map( ( v ) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ) )}
+                  </select>
+                </div>
+              </div>
+            </div>
+
             <div className="flex flex-col gap-2">
               <div className="text-[13px] font-semibold text-slate-700">
                 Status
@@ -759,6 +893,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
                 >
                   <div className="text-center"> </div>
                   <div>Name / Email</div>
+                  <div className="text-center">UTM</div>
                   <div className="text-center">Setter</div>
                   <div className="text-center">Closer</div>
                   <div className="text-center">Book Date</div>
@@ -766,7 +901,6 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
                   <div className="text-center">Status</div>
                   <div className="text-center">Response</div>
                   <div className="text-center">Notes</div>
-                  <div className="text-right"> </div>
                 </div>
               </div>
 

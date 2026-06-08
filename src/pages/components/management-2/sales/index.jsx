@@ -31,7 +31,7 @@ const UNIFIED_INCOME_MIX_DEFS = [
 
 /** Short classification rule shown in Income Source Mix tooltips. */
 const INCOME_MIX_SLICE_FORMULA = {
-  pif: "PIF = cash from paid-in-full offers (excludes payment plans, lock-in, and payoff).",
+  pif: "PIF = cash from purchases with payment_type single (one-time / paid-in-full).",
   new: "New = payment-plan cash where the agreement started inside the selected range.",
   old: "Old = payment-plan cash where the agreement started before the selected range.",
 };
@@ -228,8 +228,18 @@ function transactionCashDate(row) {
 
 function sumGrossTransactions(rows, startISO, endISO) {
   return (rows || []).reduce((sum, row) => {
-    if (!row?.created_at_kajabi || row.created_at_kajabi < startISO || row.created_at_kajabi > endISO) return sum;
-    const action = String(row?.action || (Number(row?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
+    const resolvedInRange =
+      row?.payment_resolved_at != null &&
+      row.payment_resolved_at >= startISO &&
+      row.payment_resolved_at <= endISO &&
+      (row.effective_date == null || row.effective_date < startISO || row.effective_date > endISO);
+    const inRange =
+      (row?.effective_date >= startISO && row.effective_date <= endISO) ||
+      resolvedInRange;
+    if (!inRange) return sum;
+    const action = resolvedInRange
+      ? "charge"
+      : String(row?.action || (Number(row?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
     const isRefund = action === "refund" || Number(row?.amount_in_cents || 0) < 0;
     return !isRefund && !isFailedTransaction(row, action) ? sum + txAmountUsd(row) : sum;
   }, 0);
@@ -286,13 +296,10 @@ function incomeMixClassifyTx(tx, ctx) {
   const treatment = txPurchaseId ? treatmentByPurchaseId[txPurchaseId] : null;
   const linkedPayoffOutcome = txPurchaseId ? outcomeByPayoffPurchaseId[txPurchaseId] : null;
   const linkedMainOutcome = purchaseId ? outcomeByMainPurchaseId[purchaseId] : null;
-  const offerName = String(offer?.name || "").toLowerCase();
-
   const isPayoff =
     treatment === "payoff" ||
     Boolean(linkedPayoffOutcome) ||
     payoffOfferIds.has(offerId);
-  const isLockIn = treatment === "lock_in" || offerName.includes("lock-in") || offerName.includes("lock in");
   const installments = Number(offer?.installments);
   const hasInstallments = Number.isFinite(installments) && installments > 1;
   const isPaymentPlan = !isPayoff && (
@@ -300,11 +307,7 @@ function incomeMixClassifyTx(tx, ctx) {
     paymentType.includes("payment plan") ||
     hasInstallments
   );
-  const outcomePif =
-    typeof linkedMainOutcome?.PIF === "boolean" ? linkedMainOutcome.PIF : null;
-  const isPif = !isPayoff && !isLockIn && (
-    outcomePif != null ? outcomePif : !isPaymentPlan
-  );
+  const isPif = paymentType === "single";
 
   const agreementDate =
     linkedPayoffOutcome?.purchase_date ||
@@ -354,8 +357,18 @@ function netLineContributionForIncomeMix(tx, startISO, endISO) {
 }
 
 function grossLineContributionForIncomeMix(tx, startISO, endISO) {
-  if (!tx?.created_at_kajabi || tx.created_at_kajabi < startISO || tx.created_at_kajabi > endISO) return null;
-  const action = String(tx?.action || (Number(tx?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
+  const resolvedInRange =
+    tx?.payment_resolved_at != null &&
+    tx.payment_resolved_at >= startISO &&
+    tx.payment_resolved_at <= endISO &&
+    (tx.effective_date == null || tx.effective_date < startISO || tx.effective_date > endISO);
+  const inRange =
+    (tx?.effective_date >= startISO && tx.effective_date <= endISO) ||
+    resolvedInRange;
+  if (!inRange) return null;
+  const action = resolvedInRange
+    ? "charge"
+    : String(tx?.action || (Number(tx?.amount_in_cents || 0) >= 0 ? "charge" : "refund")).toLowerCase();
   const isRefund = action === "refund" || Number(tx?.amount_in_cents || 0) < 0;
   if (isRefund || isFailedTransaction(tx, action)) return null;
   return { signedUsd: txAmountUsd(tx) };
@@ -802,9 +815,19 @@ function RevenueCard({ card, loading }) {
 function RiskCard({ card, loading }) {
   return (
     <article className="min-h-[70px] rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-      <p className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
-        {card.label}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+          {card.label}
+        </p>
+        {card.info ? (
+          <span className="group relative inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-[11px] font-extrabold leading-none text-slate-400 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600">
+            ?
+            <span className="pointer-events-none absolute right-0 top-6 z-20 hidden w-52 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-medium leading-snug text-slate-600 shadow-[0_10px_28px_rgba(15,23,42,0.16)] group-hover:block">
+              {card.info}
+            </span>
+          </span>
+        ) : null}
+      </div>
       {loading ? (
         <div className="mt-1 h-6 w-16 animate-pulse rounded bg-slate-100" />
       ) : (
@@ -1034,15 +1057,10 @@ function IncomeMixPanel({
   error,
 }) {
   const chartHitRef = useRef(null);
-  const [incomeTotalBasis, setIncomeTotalBasis] = useState("net");
-  const rows =
-    incomeTotalBasis === "gross"
-      ? unifiedMix?.slicesGross || []
-      : unifiedMix?.slicesNet || [];
+  const rows = unifiedMix?.slicesNet || [];
   const sliceSumCents = rows.reduce((sum, row) => sum + row.valueCents, 0);
   const netHeadlineCents = Number(unifiedMix?.netTotalCents) || 0;
-  const grossHeadlineCents = Number(unifiedMix?.grossTotalCents) || 0;
-  const headlineCents = incomeTotalBasis === "gross" ? grossHeadlineCents : netHeadlineCents;
+  const headlineCents = netHeadlineCents;
   const pieRows = rows.filter((row) => row.valueCents > 0);
   const chartData = pieRows.map((row) => ({
     name: row.label,
@@ -1071,11 +1089,11 @@ function IncomeMixPanel({
     if (
       loading ||
       error ||
-      (sliceSumCents === 0 && netHeadlineCents === 0 && grossHeadlineCents === 0)
+      (sliceSumCents === 0 && netHeadlineCents === 0)
     ) {
       setIncomeCursorTip(null);
     }
-  }, [loading, error, sliceSumCents, netHeadlineCents, grossHeadlineCents, incomeTotalBasis]);
+  }, [loading, error, sliceSumCents, netHeadlineCents]);
 
   useEffect(() => {
     if (!incomeCursorTip) return undefined;
@@ -1173,7 +1191,7 @@ function IncomeMixPanel({
         <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-[12px] font-semibold text-red-700">
           {error}
         </div>
-      ) : sliceSumCents === 0 && netHeadlineCents === 0 && grossHeadlineCents === 0 ? (
+      ) : sliceSumCents === 0 && netHeadlineCents === 0 ? (
         <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-[12px] font-semibold text-slate-500">
           No income found in selected range.
         </div>
@@ -1221,7 +1239,7 @@ function IncomeMixPanel({
                     incomeCursorTip.clientY,
                   )}
                 >
-                  <IncomeMixTooltipCard p={incomeCursorTip.p} totalBasis={incomeTotalBasis} />
+                  <IncomeMixTooltipCard p={incomeCursorTip.p} totalBasis="net" />
                 </div>,
                 document.body,
               )
@@ -1230,17 +1248,8 @@ function IncomeMixPanel({
             <div className="min-h-[48px] rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[8px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
-                  {incomeTotalBasis === "gross" ? "Total gross income" : "Total net income"}
+                  Total net income
                 </p>
-                <select
-                  value={incomeTotalBasis}
-                  onChange={(e) => setIncomeTotalBasis(e.target.value)}
-                  className="h-7 shrink-0 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600 focus:border-blue-500 focus:outline-none"
-                  aria-label="Income total basis"
-                >
-                  <option value="net">Net</option>
-                  <option value="gross">Gross</option>
-                </select>
               </div>
               <p className="mt-0.5 text-[18px] font-extrabold leading-none text-slate-950">
                 {formatCents(headlineCents)}
@@ -1839,34 +1848,15 @@ export default function Sales() {
         );
         const mainStartISO = start.toISOString();
         const mainEndISO = end.toISOString();
-        const prior = priorPeriodBoundsInclusive(start, end);
-        const priorStartISO = prior.start.toISOString();
-        const priorEndISO = prior.end.toISOString();
-
-        const queryStartISO = [mainStartISO, priorStartISO].sort()[0];
-        const queryEndISO = [mainEndISO, priorEndISO].sort().slice(-1)[0];
-
         const txResult = await supabase
           .from("kajabi_transactions")
           .select("action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, kajabi_offer_id, kajabi_purchase_id")
-          .or(`and(created_at_kajabi.gte.${queryStartISO},created_at_kajabi.lte.${queryEndISO}),and(effective_date.gte.${queryStartISO},effective_date.lte.${queryEndISO}),and(payment_resolved_at.gte.${queryStartISO},payment_resolved_at.lte.${queryEndISO})`);
+          .or(`and(created_at_kajabi.gte.${mainStartISO},created_at_kajabi.lte.${mainEndISO}),and(effective_date.gte.${mainStartISO},effective_date.lte.${mainEndISO}),and(payment_resolved_at.gte.${mainStartISO},payment_resolved_at.lte.${mainEndISO})`);
 
         if (txResult.error) throw txResult.error;
 
-        const rangeDayCount = listDaysISO(startOfUTCDate(start), startOfUTCDate(end)).length;
         const paceTargetSafe = calculateSnapshotGoalUsd(monthlyRevenueGoal, start, end);
-
-        const grossUsd = sumGrossTransactions(txResult.data, mainStartISO, mainEndISO);
         const netUsd = sumNetTransactions(txResult.data, mainStartISO, mainEndISO);
-        const lastGrossUsd = sumGrossTransactions(txResult.data, priorStartISO, priorEndISO);
-
-        const grossChangeValue = Math.round(pct(grossUsd - lastGrossUsd, lastGrossUsd));
-
-        const monthAtEnd = DateHelpers.getMonthRangeInTimezone(end, DateHelpers.DEFAULT_TIMEZONE);
-        if (!monthAtEnd) throw new Error("Invalid month range");
-        const daysInForecastMonth = monthAtEnd.endDate.getUTCDate();
-        const avgDaily = rangeDayCount > 0 ? netUsd / rangeDayCount : 0;
-        const forecastedNetUsd = avgDaily * daysInForecastMonth;
 
         function getRevenueStatus(val, target) {
           const isGood = val >= target;
@@ -1880,26 +1870,9 @@ export default function Sales() {
         }
 
         const netStatus = getRevenueStatus(netUsd, paceTargetSafe);
-        const forecastStatus = getRevenueStatus(forecastedNetUsd, monthlyRevenueGoal);
-        const grossStatus = getRevenueStatus(grossUsd, paceTargetSafe);
-
-        const grossTitle = snapshotRange === "mtd" ? "Gross revenue MTD" : "Gross revenue";
         const netTitle = snapshotRange === "mtd" ? "Net revenue MTD" : "Net revenue";
 
         const nextRevenueCards = [
-          {
-            label: grossTitle,
-            value: formatUsd(grossUsd),
-            valueClass: grossStatus.textClass,
-            badge: `${grossChangeValue >= 0 ? "▲" : "▼"} ${Math.abs(grossChangeValue)}% vs prior ${rangeDayCount}d`,
-            badgeClass: grossChangeValue >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
-            note: `${rangeDayCount}d · ${formatShortUtcRange(start, end)}`,
-            pie: {
-              mainUsd: grossUsd,
-              capUsd: paceTargetSafe,
-              accentFill: paceProgressFill(grossUsd, paceTargetSafe),
-            },
-          },
           {
             label: netTitle,
             value: formatUsd(netUsd),
@@ -1914,19 +1887,6 @@ export default function Sales() {
               mainUsd: netUsd,
               capUsd: paceTargetSafe,
               accentFill: paceProgressFill(netUsd, paceTargetSafe),
-            },
-          },
-          {
-            label: "Forecasted month-end",
-            value: formatUsd(forecastedNetUsd),
-            valueClass: forecastStatus.textClass,
-            note: `Run-rate in ${end.toISOString().slice(0, 7)} (${daysInForecastMonth}d month)`,
-            badge: forecastStatus.label,
-            badgeClass: forecastStatus.badgeClass,
-            pie: {
-              mainUsd: forecastedNetUsd,
-              capUsd: monthlyRevenueGoal,
-              accentFill: paceProgressFill(forecastedNetUsd, monthlyRevenueGoal),
             },
           },
         ];
@@ -2018,18 +1978,21 @@ export default function Sales() {
             value: formatUsd(refundUsd),
             valueClass: refundStatusClass,
             note: `${refundPctValue}% of gross`,
+            info: "Refund dollars from Kajabi transactions in this range, as a percentage of gross charges in the same period.",
           },
           {
             label: "Outstanding A/R",
             value: formatUsd(failedUsd),
             valueClass: "text-amber-600",
             note: `${failedCount} payments currently failed`,
+            info: "Sum of failed and disputed charge amounts in this range from kajabi_transactions — not unpaid installment balances.",
           },
           {
             label: "Failed attempts",
             value: String(failedCount),
             valueClass: "text-rose-600",
             note: "Includes disputes & declines",
+            info: "Number of charges in this range where Kajabi marked the payment failed, declined, or disputed.",
           },
         ];
 
@@ -2190,7 +2153,7 @@ export default function Sales() {
           ? await Promise.all([
               supabase
                 .from("outcome_log")
-                .select("purchase_date, kajabi_purchase_id, kajabi_payoff_id, PIF")
+                .select("purchase_date, kajabi_purchase_id, kajabi_payoff_id")
                 .or(`kajabi_purchase_id.in.(${txPurchaseIds.join(",")}),kajabi_payoff_id.in.(${txPurchaseIds.join(",")})`),
               supabase
                 .from("purchase_treatment_override")
