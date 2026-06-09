@@ -24,6 +24,7 @@ const UTM_FIELDS = [
   { key: "utm_source", badge: "S", label: "Source", color: "#6366f1" },
   { key: "utm_medium", badge: "M", label: "Medium", color: "#0891b2" },
   { key: "utm_campaign", badge: "C", label: "Campaign", color: "#d97706" },
+  { key: "utm_content", badge: "Ct", label: "Content", color: "#7c3aed" },
 ];
 
 const UTM_FILTER_BADGE_CLASS =
@@ -49,10 +50,8 @@ function TableSkeletonRows ( { subTab, count = 8 } ) {
               {shimmer( "h-4 w-[72%] max-w-[200px]" )}
               {shimmer( "h-3 w-[88%] max-w-[240px]" )}
             </div>
-            <div className="min-w-0 space-y-0.5">
-              {shimmer( "h-3.5 w-full rounded" )}
-              {shimmer( "h-3.5 w-full rounded" )}
-              {shimmer( "h-3.5 w-full rounded" )}
+            <div className="flex justify-center">
+              {shimmer( "h-[18px] w-[68px] rounded border border-slate-200/40" )}
             </div>
             <div className="flex justify-center">
               {shimmer( "h-8 w-full max-w-[108px] rounded-full" )}
@@ -167,6 +166,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
   const [ utmSourceFilter, setUtmSourceFilter ] = useState( searchParams.get( "utmSource" ) || "" );
   const [ utmMediumFilter, setUtmMediumFilter ] = useState( searchParams.get( "utmMedium" ) || "" );
   const [ utmCampaignFilter, setUtmCampaignFilter ] = useState( searchParams.get( "utmCampaign" ) || "" );
+  const [ utmContentFilter, setUtmContentFilter ] = useState( searchParams.get( "utmContent" ) || "" );
   const [ statusFilters, setStatusFilters ] = useState( {
     confirmed: searchParams.get( "confirmed" ) === "true",
     cancelled: searchParams.get( "cancelled" ) === "true",
@@ -283,6 +283,9 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     if ( utmCampaignFilter ) params.set( "utmCampaign", utmCampaignFilter );
     else params.delete( "utmCampaign" );
 
+    if ( utmContentFilter ) params.set( "utmContent", utmContentFilter );
+    else params.delete( "utmContent" );
+
     if ( noShowStateFilter ) params.set( "noShowState", noShowStateFilter );
     else params.delete( "noShowState" );
 
@@ -304,6 +307,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     utmSourceFilter,
     utmMediumFilter,
     utmCampaignFilter,
+    utmContentFilter,
     noShowStateFilter,
     statusFilters,
     setSearchParams,
@@ -333,20 +337,24 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     const sources = new Set();
     const mediums = new Set();
     const campaigns = new Set();
+    const contents = new Set();
     for ( const l of safeLeads ) {
       if ( l?.utm_source ) sources.add( l.utm_source );
       if ( l?.utm_medium ) mediums.add( l.utm_medium );
       if ( l?.utm_campaign ) campaigns.add( l.utm_campaign );
+      if ( l?.utm_content ) contents.add( l.utm_content );
     }
     if ( utmSourceFilter ) sources.add( utmSourceFilter );
     if ( utmMediumFilter ) mediums.add( utmMediumFilter );
     if ( utmCampaignFilter ) campaigns.add( utmCampaignFilter );
+    if ( utmContentFilter ) contents.add( utmContentFilter );
     return {
       sources: [ ...sources ].sort(),
       mediums: [ ...mediums ].sort(),
       campaigns: [ ...campaigns ].sort(),
+      contents: [ ...contents ].sort(),
     };
-  }, [ safeLeads, utmSourceFilter, utmMediumFilter, utmCampaignFilter ] );
+  }, [ safeLeads, utmSourceFilter, utmMediumFilter, utmCampaignFilter, utmContentFilter ] );
 
   const filteredLeads = useMemo( () => {
     return safeLeads.filter( ( l ) => {
@@ -360,6 +368,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
       if ( utmSourceFilter && l?.utm_source !== utmSourceFilter ) return false;
       if ( utmMediumFilter && l?.utm_medium !== utmMediumFilter ) return false;
       if ( utmCampaignFilter && l?.utm_campaign !== utmCampaignFilter ) return false;
+      if ( utmContentFilter && l?.utm_content !== utmContentFilter ) return false;
       return true;
     } );
   }, [
@@ -369,6 +378,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     utmSourceFilter,
     utmMediumFilter,
     utmCampaignFilter,
+    utmContentFilter,
   ] );
 
   // Keep server order, but always push cancelled (red background) rows to end.
@@ -613,7 +623,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
                   UTM
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
-                  Filter rows by source, medium, or campaign
+                  Filter rows by source, medium, campaign, or content
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-4">
@@ -674,6 +684,27 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
                   >
                     <option value="">All Campaigns</option>
                     {utmOptions.campaigns.map( ( v ) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ) )}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={UTM_FILTER_BADGE_CLASS}
+                    style={{ backgroundColor: UTM_FIELDS[3].color }}
+                    title="Content"
+                  >
+                    Ct
+                  </span>
+                  <select
+                    value={utmContentFilter}
+                    onChange={( e ) => setUtmContentFilter( e.target.value )}
+                    className="h-9 min-w-[140px] rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none"
+                  >
+                    <option value="">All Content</option>
+                    {utmOptions.contents.map( ( v ) => (
                       <option key={v} value={v}>
                         {v}
                       </option>

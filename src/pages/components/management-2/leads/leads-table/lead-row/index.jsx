@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { StickyNote, UserRound } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { NotesModal, ViewNotesModal } from "../../../../Modal";
@@ -75,7 +76,130 @@ const UTM_FIELDS = [
   { key: "utm_source", badge: "S", label: "Source", color: "#6366f1" },
   { key: "utm_medium", badge: "M", label: "Medium", color: "#0891b2" },
   { key: "utm_campaign", badge: "C", label: "Campaign", color: "#d97706" },
+  { key: "utm_content", badge: "Ct", label: "Content", color: "#7c3aed" },
 ];
+
+function UtmCell ( { lead } ) {
+  const anchorRef = useRef( null );
+  const [ open, setOpen ] = useState( false );
+  const [ coords, setCoords ] = useState( { x: 0, y: 0 } );
+
+  const syncPosition = () => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if ( !rect ) return;
+    const popoverWidth = 220;
+    const margin = 8;
+    let left = rect.right + margin;
+    if ( left + popoverWidth > window.innerWidth - margin ) {
+      left = rect.left - margin - popoverWidth;
+    }
+    setCoords( {
+      x: Math.max( margin, left ),
+      y: rect.top + rect.height / 2,
+    } );
+  };
+
+  const showPopover = () => {
+    syncPosition();
+    setOpen( true );
+  };
+
+  useEffect( () => {
+    if ( !open ) return undefined;
+
+    const onScrollOrResize = () => syncPosition();
+    window.addEventListener( "scroll", onScrollOrResize, true );
+    window.addEventListener( "resize", onScrollOrResize );
+    return () => {
+      window.removeEventListener( "scroll", onScrollOrResize, true );
+      window.removeEventListener( "resize", onScrollOrResize );
+    };
+  }, [ open ] );
+
+  const hasAnyUtm = UTM_FIELDS.some( ( { key } ) => Boolean( lead?.[ key ] ) );
+
+  return (
+    <>
+      <div
+        ref={anchorRef}
+        className={cx(
+          "mx-auto flex w-fit items-center gap-px rounded border border-slate-200/90 bg-white p-0.5 outline-none transition-colors",
+          open ? "border-slate-300 shadow-sm" : "hover:border-slate-300",
+          !hasAnyUtm && "opacity-50",
+        )}
+        onMouseEnter={showPopover}
+        onMouseLeave={() => setOpen( false )}
+        onFocus={showPopover}
+        onBlur={() => setOpen( false )}
+        tabIndex={0}
+        role="button"
+        aria-label="View UTM details"
+      >
+        {UTM_FIELDS.map( ( { key, badge, color } ) => {
+          const hasValue = Boolean( lead?.[ key ] );
+          const isWideBadge = badge.length > 1;
+          return (
+            <span
+              key={key}
+              className={cx(
+                "inline-flex items-center justify-center rounded-sm font-extrabold text-white",
+                isWideBadge ? "h-[14px] w-[16px] text-[7px] leading-none" : "h-[14px] w-[14px] text-[8px]",
+                !hasValue && "opacity-25",
+              )}
+              style={{ backgroundColor: color }}
+            >
+              {badge}
+            </span>
+          );
+        } )}
+      </div>
+
+      {open
+        ? createPortal(
+          <div
+            className="pointer-events-none fixed z-[10001] w-[220px] -translate-y-1/2 rounded-md border border-slate-200/90 bg-white py-1.5 shadow-lg ring-1 ring-black/5"
+            style={{ left: coords.x, top: coords.y }}
+          >
+            <div className="divide-y divide-slate-100">
+              {UTM_FIELDS.map( ( { key, badge, label, color } ) => {
+                const value = lead?.[ key ] || "—";
+                const isEmpty = value === "—";
+                return (
+                  <div
+                    key={key}
+                    className="grid grid-cols-[14px_58px_minmax(0,1fr)] items-baseline gap-x-1.5 px-2 py-1"
+                  >
+                    <span
+                      className={cx(
+                        "inline-flex items-center justify-center rounded-sm font-extrabold text-white",
+                        badge.length > 1
+                          ? "h-3.5 w-4 text-[7px] leading-none"
+                          : "h-3.5 w-3.5 text-[8px]",
+                      )}
+                      style={{ backgroundColor: color }}
+                    >
+                      {badge}
+                    </span>
+                    <span className="text-[10px] font-medium text-slate-400">{label}</span>
+                    <span
+                      className={cx(
+                        "break-all text-[12px] font-semibold leading-tight",
+                        isEmpty ? "text-slate-300" : "text-slate-800",
+                      )}
+                    >
+                      {value}
+                    </span>
+                  </div>
+                );
+              } )}
+            </div>
+          </div>,
+          document.body,
+        )
+        : null}
+    </>
+  );
+}
 
 function StatusBadge ( { value, label, title, outcomeLog } ) {
   const getColor = () => {
@@ -275,25 +399,7 @@ export default function LeadRow ( {
           </div>
         </div>
 
-        <div className="min-w-0 w-full space-y-0.5 overflow-hidden">
-          {UTM_FIELDS.map( ( { key, badge, label, color } ) => (
-            <div key={key} className="flex min-w-0 items-center gap-0.5">
-              <span
-                title={label}
-                className="inline-flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded text-[8px] font-extrabold text-white shadow-[0_1px_2px_rgba(15,23,42,0.12)]"
-                style={{ backgroundColor: color }}
-              >
-                {badge}
-              </span>
-              <span
-                className="min-w-0 truncate text-[9px] font-medium text-slate-600"
-                title={`${label}: ${lead?.[ key ] || "—"}`}
-              >
-                {lead?.[ key ] || "—"}
-              </span>
-            </div>
-          ) )}
-        </div>
+        <UtmCell lead={lead} />
 
         {lead?.setter_id ? (
           <a
