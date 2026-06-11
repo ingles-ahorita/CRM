@@ -12,6 +12,10 @@ const OFFERS = [
   { id: '2150473800', installments: 3, title: '3×$299' },
   { id: '2150511913', installments: 7, title: '7×$199' },
   { id: '2149979884', installments: 2, title: '2×$499' },
+    { id: '2150961576', installments: 3, title: '3×$500' },
+  { id: '2151122152', installments: 6, title: '6×$349' },
+  { id: '2150879496', installments: 3, title: 'Student 3×$349' },
+  { id: '2150991083', installments: 5, title: 'Student 5×$199' },
 ];
 const DAYS_BETWEEN = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

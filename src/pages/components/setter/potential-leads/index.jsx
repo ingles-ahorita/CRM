@@ -5,7 +5,6 @@ import { subDays } from 'date-fns';
 import { Pencil, X } from 'lucide-react';
 import { ICLOSED_POTENTIAL_LEADS_TAB_STATUSES } from '../../../../../lib/iclosedLeadStatus.js';
 import {
-  LT_STATUS_UI,
   computePotentialLeadLtStatus,
   fetchCrmConfirmedEmails,
 } from '../../../../../lib/potentialLeadLtStatus.js';
@@ -14,6 +13,8 @@ import {
   buildPotentialLeadStats,
   paginateItems,
   PotentialLeadsPagination,
+  VISIBLE_LT_STATUS_UI,
+  HIDDEN_LT_STATUSES,
 } from '../../potential-leads/potentialLeadsListHelpers.jsx';
 import IclosedBookingCalendar from './IclosedBookingCalendar.jsx';
 
@@ -438,6 +439,7 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
     return rows.filter((r) => {
       if (!String(r.phone ?? '').trim()) return false;
       const lt = ltForRow(r);
+      if (HIDDEN_LT_STATUSES.has(lt)) return false;
       if (statusFilter !== 'all' && lt !== statusFilter) return false;
       if (!q) return true;
       return [r.name, r.email, r.phone, r.assigned_setter?.name]
@@ -482,7 +484,7 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
 
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
           <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">Total: {stats.total}</span>
-          {LT_STATUS_UI.map((s) => (
+          {VISIBLE_LT_STATUS_UI.map((s) => (
             <span
               key={s.value}
               className={`rounded-full px-2.5 py-1 ring-1 ring-inset ${s.cls}`}
@@ -508,7 +510,7 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
             className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700"
           >
             <option value="all">All stages</option>
-            {LT_STATUS_UI.map((s) => (
+            {VISIBLE_LT_STATUS_UI.map((s) => (
               <option key={s.value} value={s.value}>{s.label} — {s.description}</option>
             ))}
           </select>

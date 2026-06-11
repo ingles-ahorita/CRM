@@ -12,6 +12,19 @@ import * as DateHelpers from '../../utils/dateHelpers';
 import * as ManychatService from '../../utils/manychatService';
 import { getCountryFlagFromPhone, getCountryFromPhone } from '../../utils/phoneNumberParser';
 import { buildCallDataFromLead, updateManychatCallFields, sendToCloserMC, setManychatFieldsByName } from '../../utils/manychatService';
+import {
+  getBookingPlatform,
+  getCalendlyEventUri,
+  getIclosedEventCallId,
+  isIclosedLead,
+  ICLOSED_CANCELLED_CONFIRMED_TOOLTIP,
+} from '../../lib/iclosedBooking';
+import { useIclosedEventCallStatus } from '../../hooks/useIclosedEventCallStatus';
+import {
+  buildConfirmedNoResultMessage,
+  formatConfirmedYesError,
+  formatSupabaseConfirmedError,
+} from '../../lib/confirmationStatusMessages';
 
 const formatStatusValue = (value) => {
   if (value === true) return 'true';
@@ -19,25 +32,6 @@ const formatStatusValue = (value) => {
   if (value === null || value === undefined) return 'null';
   return value;
 };
-
-/** Platform from calls.reschedule_link (app.iclosed.io vs calendly.com). */
-function getBookingPlatform(rescheduleLink) {
-  const link = String(rescheduleLink || '').toLowerCase();
-  if (link.includes('iclosed')) return 'iclosed';
-  if (link.includes('calendly')) return 'calendly';
-  return null;
-}
-
-function getCalendlyEventUri(calendlyId) {
-  const raw = String(calendlyId || '').trim();
-  return raw.includes('api.calendly.com/scheduled_events') ? raw : null;
-}
-
-/** iClosed cancel id: numeric value in calls.calendly_id (from Zapier). */
-function getIclosedEventCallId(calendlyId) {
-  const raw = String(calendlyId || '').trim();
-  return /^\d+$/.test(raw) ? raw : null;
-}
 
 async function cancelExternalBooking(lead) {
   const platform = getBookingPlatform(lead.reschedule_link);
@@ -126,7 +120,12 @@ async function cancelWithPlatform({ url, body, platformLabel, functionName, erro
     // ignore logging failures
   }
 
-  return { ok: false, platformLabel, errorMessage };
+  return {
+    ok: false,
+    platformLabel,
+    errorMessage,
+    userMessage: null,
+  };
 }
 
  function callTimeColor(time, isRescheduled, called){
@@ -154,6 +153,13 @@ export async function deleteCallWithDependencies(callId) {
 export function LeadItem({ lead, setterMap = {}, closerMap = {}, closerList = [], mode = 'full', calltimeLoading = false, onDeleteCall: onDeleteCallProp, onLeadUpdated }) {
   const location = useLocation();
 const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith('/lead/');
+  const canEditConfirmed = mode === 'setter' || mode === 'admin' || mode === 'full';
+  const { canceled: iclosedCanceled } = useIclosedEventCallStatus({
+    lead,
+    enabled: canEditConfirmed,
+  });
+  const isIclosedCancelledCall =
+    isIclosedLead(lead) && (lead.cancelled === true || iclosedCanceled);
   // Add CSS for loading spinner animation
   useEffect(() => {
     const style = document.createElement('style');
@@ -276,13 +282,19 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
       const { data: updateData, error } = await supabase.from('calls').update(updatePayload).eq('id', id).select('id');
       if (error) {
         console.error('[LeadItem] Supabase update error:', error);
-        showToast(error.message || 'Failed to update', 'error');
+        const message = field === 'confirmed'
+          ? formatSupabaseConfirmedError(error)
+          : (error.message || 'Failed to update');
+        showToast(message, 'error');
         setterF(formatStatusValue(leadData?.[field])); // revert optimistic update on error
         return false;
       }
       if (!updateData || updateData.length === 0) {
         console.warn('[LeadItem] Supabase update matched 0 rows (possible RLS or missing column). id:', id, 'payload:', updatePayload);
-        showToast('Update may not have been applied. Check permissions or DB schema.', 'error');
+        const message = field === 'confirmed'
+          ? 'Could not save Confirmed — no rows updated. Check your permissions.'
+          : 'Update may not have been applied. Check permissions or DB schema.';
+        showToast(message, 'error');
         setterF(formatStatusValue(leadData?.[field])); // revert optimistic update
         return false;
       }
@@ -346,8 +358,9 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           showToast('Lead confirmed and sent to closer', 'success');
         } catch (error) {
           console.error('❌ Error creating ManyChat user:', error);
-          showToast('Lead confirmed but failed to send to ManyChat. See console or function_errors.', 'error');
-          alert('Failed to send lead to closer. Lead is still marked confirmed. Check console or function_errors for details.');
+          const yesErrorMessage = formatConfirmedYesError(error);
+          showToast(yesErrorMessage, 'error');
+          alert(yesErrorMessage);
           try {
             await supabase.from('function_errors').insert({
               function_name: 'sendToCloserMC',
@@ -478,8 +491,9 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             disabled={mode === 'closer' || mode === 'view'}
           />
           <StatusDropdown
-            value={confirmed}
+            value={isIclosedCancelledCall ? 'false' : confirmed}
             onChange={(value) => {
+              if (isIclosedCancelledCall) return;
               // If changing to "no" (false), show confirmation modal
               if (value === 'false' || value === false) {
                 setPendingConfirmedValue(value);
@@ -490,7 +504,8 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               }
             }}
             label="Confirmed"
-            disabled={mode === 'closer' || mode === 'view'}
+            disabled={mode === 'closer' || mode === 'view' || isIclosedCancelledCall}
+            title={isIclosedCancelledCall ? ICLOSED_CANCELLED_CONFIRMED_TOOLTIP : undefined}
           />
           <StatusDropdown
             value={showUp}
@@ -863,29 +878,48 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             <button
               onClick={async () => {
                 try {
-                  const cancelResult = await cancelExternalBooking(lead);
-                  if (!cancelResult.skipped) {
-                    if (cancelResult.ok) {
-                      showToast(`Call and ${cancelResult.platformLabel} event cancelled`, 'success');
-                      if (cancelResult.alreadyCanceled) {
-                        showToast(`${cancelResult.platformLabel} event is already canceled`, 'info');
-                      }
-                    } else {
-                      alert(
-                        `Could not cancel the ${cancelResult.platformLabel} event automatically. Please inform support (Ruben) to cancel this event manually. Error: ${cancelResult.errorMessage}`
-                      );
-                      showToast(`Call updated but ${cancelResult.platformLabel} cancellation failed`, 'error');
-                    }
+                  if (isIclosedCancelledCall) {
+                    setShowConfirmCancelModal(false);
+                    setPendingConfirmedValue(null);
+                    return;
                   }
 
-                  // Update confirmed status
+                  const cancelResult = await cancelExternalBooking(lead);
+                  let crmUpdated = false;
+
                   if (pendingConfirmedValue !== null) {
-                    updateStatus(lead.id, 'confirmed', pendingConfirmedValue, setConfirmed, lead.manychat_user_id);
+                    crmUpdated = await updateStatus(
+                      lead.id,
+                      'confirmed',
+                      pendingConfirmedValue,
+                      setConfirmed,
+                      lead.manychat_user_id,
+                      lead,
+                    );
                   }
-                } catch {
-                  showToast('Error cancelling call', 'error');
+
+                  const summaryMessage = buildConfirmedNoResultMessage({
+                    cancelResult,
+                    lead,
+                    crmUpdated,
+                  });
+
+                  if (cancelResult.skipped) {
+                    showToast(summaryMessage, crmUpdated ? 'info' : 'error');
+                  } else if (cancelResult.ok) {
+                    showToast(summaryMessage, 'success');
+                  } else {
+                    showToast(summaryMessage, crmUpdated ? 'error' : 'error');
+                    alert(summaryMessage);
+                  }
+                } catch (err) {
+                  const message = err?.message
+                    ? `Could not complete cancellation: ${err.message}`
+                    : 'Could not complete cancellation. Please try again.';
+                  showToast(message, 'error');
+                  alert(message);
                 }
-                
+
                 setShowConfirmCancelModal(false);
                 setPendingConfirmedValue(null);
               }}
@@ -1006,7 +1040,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   );
 }
 
-  const StatusDropdown = ({ value, onChange, label, disabled = false, onClick = null, outcomeLog = null}) => {
+  const StatusDropdown = ({ value, onChange, label, disabled = false, onClick = null, outcomeLog = null, title = undefined }) => {
 
     // Get background color based on value
     const getBackgroundColor = () => {
@@ -1052,6 +1086,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   value={String(value)}
   onChange={(e) => onChange(e.target.value)}
   disabled={disabled}
+  title={title}
   style={{
     appearance: 'none',
     backgroundColor: getBackgroundColor(),
@@ -1069,10 +1104,12 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   }}
   
   onMouseEnter={(e) => {
+    if (disabled) return;
     e.currentTarget.style.opacity = '0.8';
     e.currentTarget.style.borderColor = '#bcbec0ff';
   }}
   onMouseLeave={(e) => {
+    if (disabled) return;
     e.currentTarget.style.opacity = '1';
     e.currentTarget.style.borderColor = '#d1d5db';
   }}
