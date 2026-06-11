@@ -1,5 +1,8 @@
 import React from 'react';
-import { LT_STATUS_LIST } from '../../../../lib/potentialLeadLtStatus.js';
+import { LT_STATUS, LT_STATUS_LIST, LT_STATUS_UI } from '../../../../lib/potentialLeadLtStatus.js';
+
+export const HIDDEN_LT_STATUSES = new Set([LT_STATUS.LT4, LT_STATUS.LT5]);
+export const VISIBLE_LT_STATUS_UI = LT_STATUS_UI.filter((s) => !HIDDEN_LT_STATUSES.has(s.value));
 
 export const POTENTIAL_LEADS_PAGE_SIZE = 20;
 
