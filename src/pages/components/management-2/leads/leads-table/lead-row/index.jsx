@@ -10,6 +10,7 @@ import {
   getCountryFlagFromPhone,
   getCountryFromPhone,
 } from "../../../../../../utils/phoneNumberParser";
+import { isPaidUtmSourceForIcon } from "../../../../../../utils/isPaidUtmSourceForIcon";
 
 function cx ( ...p ) {
   return p.filter( Boolean ).join( " " );
@@ -299,8 +300,7 @@ export default function LeadRow ( {
   }, [ profile?.email ] );
 
   const emojiStack = ( () => {
-    const callSource = lead?.source_type || profile?.source || "organic";
-    const isAds = String( callSource ).toLowerCase().includes( "ad" );
+    const isAds = isPaidUtmSourceForIcon( lead );
     const callCampaign = lead?.utm_campaign;
     return (
       <>
