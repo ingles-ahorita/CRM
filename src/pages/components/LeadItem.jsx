@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react';
 import './LeadItem.css';
 
 import * as DateHelpers from '../../utils/dateHelpers';
+import { isPaidUtmSourceForIcon } from '../../utils/isPaidUtmSourceForIcon';
 import * as ManychatService from '../../utils/manychatService';
 import { getCountryFlagFromPhone, getCountryFromPhone } from '../../utils/phoneNumberParser';
 import { buildCallDataFromLead, updateManychatCallFields, sendToCloserMC, setManychatFieldsByName } from '../../utils/manychatService';
@@ -25,6 +26,9 @@ import {
   formatConfirmedYesError,
   formatSupabaseConfirmedError,
 } from '../../lib/confirmationStatusMessages';
+
+const CANCELLED_CONFIRMED_TOOLTIP =
+  'This call is cancelled. Confirmed status cannot be changed — Book a new call instead.';
 
 const formatStatusValue = (value) => {
   if (value === true) return 'true';
@@ -160,6 +164,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   });
   const isIclosedCancelledCall =
     isIclosedLead(lead) && (lead.cancelled === true || iclosedCanceled);
+  const isCancelledCall = lead.cancelled === true || isIclosedCancelledCall;
   // Add CSS for loading spinner animation
   useEffect(() => {
     const style = document.createElement('style');
@@ -405,8 +410,7 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
         {/* Emoji Column */}
         <div className="lead-emoji-column">
           {(() => {
-            const callSource = lead.source_type || 'organic';
-            const isAds = callSource.toLowerCase().includes('ad') || callSource.toLowerCase().includes('ads');
+            const isAds = isPaidUtmSourceForIcon(lead);
             const callCampaign = lead.utm_campaign;
             return (
               <>
@@ -491,9 +495,9 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             disabled={mode === 'closer' || mode === 'view'}
           />
           <StatusDropdown
-            value={isIclosedCancelledCall ? 'false' : confirmed}
+            value={isCancelledCall ? 'false' : confirmed}
             onChange={(value) => {
-              if (isIclosedCancelledCall) return;
+              if (isCancelledCall) return;
               // If changing to "no" (false), show confirmation modal
               if (value === 'false' || value === false) {
                 setPendingConfirmedValue(value);
@@ -504,8 +508,14 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               }
             }}
             label="Confirmed"
-            disabled={mode === 'closer' || mode === 'view' || isIclosedCancelledCall}
-            title={isIclosedCancelledCall ? ICLOSED_CANCELLED_CONFIRMED_TOOLTIP : undefined}
+            disabled={mode === 'closer' || mode === 'view' || isCancelledCall}
+            title={
+              isIclosedCancelledCall
+                ? ICLOSED_CANCELLED_CONFIRMED_TOOLTIP
+                : isCancelledCall
+                  ? CANCELLED_CONFIRMED_TOOLTIP
+                  : undefined
+            }
           />
           <StatusDropdown
             value={showUp}
@@ -878,13 +888,41 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
             <button
               onClick={async () => {
                 try {
-                  if (isIclosedCancelledCall) {
+                  if (isCancelledCall) {
                     setShowConfirmCancelModal(false);
                     setPendingConfirmedValue(null);
                     return;
                   }
 
                   const cancelResult = await cancelExternalBooking(lead);
+
+                  // iClosed "not found" / "already cancelled" means the call no longer
+                  // exists on their calendar — treat it as already cancelled instead of
+                  // surfacing an error: persist confirmed=NO + cancelled in the CRM.
+                  const iclosedAlreadyCancelled =
+                    !cancelResult.ok &&
+                    cancelResult.platformLabel === 'iClosed' &&
+                    /not found|already cancel/i.test(String(cancelResult.errorMessage || ''));
+
+                  if (iclosedAlreadyCancelled) {
+                    const ok = await updateStatus(
+                      lead.id,
+                      'confirmed',
+                      pendingConfirmedValue ?? 'false',
+                      setConfirmed,
+                      lead.manychat_user_id,
+                      lead,
+                      { cancelled: true },
+                    );
+                    if (ok) {
+                      onLeadUpdated?.(lead.id, { confirmed: false, cancelled: true });
+                      showToast('Call was already cancelled in iClosed — Confirmed set to NO.', 'success');
+                    }
+                    setShowConfirmCancelModal(false);
+                    setPendingConfirmedValue(null);
+                    return;
+                  }
+
                   let crmUpdated = false;
 
                   if (pendingConfirmedValue !== null) {
@@ -1615,8 +1653,7 @@ export function LeadItemCompact({ lead, setterMap = {}, closerMap = {}, closerLi
         paddingTop: '2px'
       }}>
         {(() => {
-          const callSource = lead.source_type || 'organic';
-          const isAds = callSource.toLowerCase().includes('ad') || callSource.toLowerCase().includes('ads');
+          const isAds = isPaidUtmSourceForIcon(lead);
           const callCampaign = lead.utm_campaign;
           return (
             <>

@@ -31,6 +31,7 @@ import {
   getCountryFlagFromPhone,
   getCountryFromPhone,
 } from "../../../../../../utils/phoneNumberParser";
+import { isPaidUtmSourceForIcon } from "../../../../../../utils/isPaidUtmSourceForIcon";
 import NoShowStateModal from "../../../../NoShowStateModal";
 
 /** `calls` columns that affect Recovered Leads sidebar (Closer.jsx loadRecoveredAside). */
@@ -688,8 +689,7 @@ function LeadRow ( {
   }, [ profile?.email ] );
 
   const emojiStack = ( () => {
-    const callSource = lead?.source_type || profile?.source || "organic";
-    const isAds = String( callSource ).toLowerCase().includes( "ad" );
+    const isAds = isPaidUtmSourceForIcon( lead );
     const callCampaign = lead?.utm_campaign;
     return (
       <>
