@@ -175,6 +175,27 @@ export function getLastDaysUTC(n) {
 }
 
 /**
+ * Last N days as a UTC range ending at end-of-today (inclusive).
+ * e.g. getLastNDaysRange(10) → [start of day 9 days ago 00:00:00.000Z, today 23:59:59.999Z].
+ * Used by the Watch List and the "Last 10 days" snapshots. Timezone-aware via
+ * DEFAULT_TIMEZONE day boundaries (UTC by default).
+ * @param {number} n - Number of days in the window (including today)
+ * @returns {{ startDate: Date, endDate: Date, startISO: string, endISO: string }}
+ */
+export function getLastNDaysRange(n = 10) {
+  const now = new Date();
+  const { dayEnd: endDate } = getDayBoundsUTC(now);
+  const startBase = subDays(now, Math.max(0, n - 1));
+  const { dayStart: startDate } = getDayBoundsUTC(startBase);
+  return {
+    startDate,
+    endDate,
+    startISO: startDate.toISOString(),
+    endISO: endDate.toISOString(),
+  };
+}
+
+/**
  * Day bounds in local timezone (browser's timezone).
  * Use for tab filtering (Today, Yesterday, etc.) so users see their local day.
  * @param {Date|string} dateValue

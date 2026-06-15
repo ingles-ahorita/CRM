@@ -14,15 +14,19 @@ import SalesTab from "./components/management-2/sales";
 import PerformanceTab from "./components/management-2/performance";
 import OrganicStatsTab from "./components/management-2/organic-stats";
 import NotificationsTab from "./components/management-2/notifications";
+import WatchListTab from "./components/management-2/watch-list";
 import { usePlatformEventsBadge } from "../hooks/usePlatformEventsBadge";
+import { useWatchList } from "../hooks/useWatchList";
 
 export default function Management2() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { refresh: refreshNotificationsBadge } = usePlatformEventsBadge();
+  const { count: watchBelowCount } = useWatchList({ pollMs: 5 * 60 * 1000 });
 
   // Validate and parse the current tab from URL
   const validTabs = [
     "overview",
+    "watch",
     "leads",
     "potential-leads",
     "closer",
@@ -55,13 +59,14 @@ export default function Management2() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-6">
           <Header />
           <div className="flex-shrink-0">
-            <Tabs activeTab={activeTab} onTabChange={handleTabChange} />
+            <Tabs activeTab={activeTab} onTabChange={handleTabChange} watchBelowCount={watchBelowCount} />
           </div>
         </div>
 
         {/* Tab Content Area */}
         <div>
           {activeTab === "overview" && <OverviewTab />}
+          {activeTab === "watch" && <WatchListTab />}
           {activeTab === "closer" && <CloserTab />}
           {activeTab === "leads" && <LeadsTab />}
           {activeTab === "potential-leads" && <PotentialLeadsTab />}

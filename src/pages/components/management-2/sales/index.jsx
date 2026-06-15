@@ -307,7 +307,7 @@ function incomeMixClassifyTx(tx, ctx) {
     paymentType.includes("payment plan") ||
     hasInstallments
   );
-  const isPif = paymentType === "single";
+  const isPif = offerId === "2150757309";
 
   const agreementDate =
     linkedPayoffOutcome?.purchase_date ||

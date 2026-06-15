@@ -6,6 +6,7 @@ import { useTodayNewLeadsCount } from "../../../../hooks/useTodayNewLeadsCount";
 
 const TABS = [
   { id: "overview", label: "Overview" },
+  { id: "watch", label: "Watch List" },
   { id: "leads", label: "Leads" },
   { id: "potential-leads", label: "Potential Leads" },
   { id: "closer", label: "Closers" },
@@ -20,7 +21,7 @@ function cx(...c) {
   return c.filter(Boolean).join(" ");
 }
 
-export default function Tabs({ activeTab, onTabChange }) {
+export default function Tabs({ activeTab, onTabChange, watchBelowCount }) {
   const todayBookedStats = useTodayNewLeadsCount();
   const handleNotificationsClick = useCallback(() => {
     onTabChange?.("notifications");
@@ -29,6 +30,25 @@ export default function Tabs({ activeTab, onTabChange }) {
   const items = useMemo(
     () =>
       TABS.map((t) => {
+        if (t.id === "watch") {
+          if (watchBelowCount == null) return t;
+          const below = Math.max(Number(watchBelowCount) || 0, 0);
+          const trailing = (
+            <span
+              className={cx(
+                "inline-flex shrink-0 items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums leading-none shadow-sm ring-1 ring-inset",
+                below > 0
+                  ? "bg-rose-600 text-white ring-rose-700/30"
+                  : "bg-emerald-100 text-emerald-700 ring-emerald-300/40",
+              )}
+              title={`${below} metric${below === 1 ? "" : "s"} below benchmark (last 10 days)`}
+              aria-label={`${below} metrics below benchmark`}
+            >
+              {below}
+            </span>
+          );
+          return { ...t, trailing };
+        }
         if (t.id !== "leads") return t;
         const booked = todayBookedStats?.booked ?? 0;
         const confirmed = todayBookedStats?.confirmed ?? 0;
@@ -54,7 +74,7 @@ export default function Tabs({ activeTab, onTabChange }) {
           );
         return { ...t, trailing };
       }),
-    [todayBookedStats],
+    [todayBookedStats, watchBelowCount],
   );
 
   const segmentedActiveId = activeTab === "notifications" ? null : activeTab;
