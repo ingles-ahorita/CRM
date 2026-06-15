@@ -29,7 +29,30 @@ const COLUMNS = [
   { key: "open", label: "", align: "right", sortable: false },
 ];
 
-import { getShowUpClass, getConversionClass, getPifClass, getAovClass } from "../../../../../utils/performanceBenchmarks";
+import { BENCHMARKS, getShowUpClass, getConversionClass, getPifClass, getAovClass } from "../../../../../utils/performanceBenchmarks";
+
+/**
+ * A closer's tracked core metrics that are below benchmark.
+ * Mirrors the Watch List logic so the table tells the same story.
+ */
+function rowBreaches(row) {
+  const checks = [
+    { label: "Closing rate", value: row.closingRate, target: BENCHMARKS.CONVERSION, unit: "%", active: row.showed > 0 },
+    { label: "PIF rate", value: row.pifRate, target: BENCHMARKS.PIF_RATE, unit: "%", active: row.sales > 0 },
+    { label: "Show-up rate", value: row.showUpRate, target: BENCHMARKS.SHOW_UP, unit: "%", active: row.confirmed > 0 },
+    { label: "AOV", value: row.aov, target: BENCHMARKS.AOV, unit: "$", active: row.sales > 0 },
+  ];
+  return checks.filter((c) => c.active && Number(c.value) < c.target);
+}
+
+/** Compact multi-line tooltip listing each below-benchmark metric. */
+function breachTooltip(breaches) {
+  const fmt = (v, unit) => (unit === "$" ? fmtUSD(v) : fmtPct(v));
+  return (
+    `${breaches.length} below benchmark\n` +
+    breaches.map((b) => `${b.label}: ${fmt(b.value, b.unit)} (target ${fmt(b.target, b.unit)})`).join("\n")
+  );
+}
 
 // Threshold helpers — mirror the rest of the app.
 function closingRateClass(v) {
@@ -58,6 +81,7 @@ const fmtUSD = (n) =>
 const fmtPct = (n) => `${(Number(n) || 0).toFixed(1)}%`;
 
 const PERIOD_FILTER_ITEMS = [
+  { id: "last10", label: "Last 10 days", title: "Average of the last 10 days" },
   { id: "thisWeek", label: "This week", title: "This week (month-aligned early in month, through today)" },
   { id: "lastWeek", label: "Last week", title: "Last week" },
   {
@@ -136,6 +160,10 @@ function getPeriodBounds(periodFilter) {
   const tz = DateHelpers.DEFAULT_TIMEZONE;
   const now = new Date();
 
+  if (periodFilter === "last10") {
+    const { startISO, endISO } = DateHelpers.getLastNDaysRange(10);
+    return { startISO, endISO };
+  }
   if (periodFilter === "thisWeek") {
     return getCloserThisWeekBounds(now);
   }
@@ -204,7 +232,7 @@ function SortHeader({ col, sortKey, sortDir, onChange }) {
 export default function CloserComparisonTable() {
   const [sortKey, setSortKey] = useState("commission");
   const [sortDir, setSortDir] = useState("desc");
-  const [periodFilter, setPeriodFilter] = useState("thisWeek");
+  const [periodFilter, setPeriodFilter] = useState("last10");
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [rows, setRows] = useState([]);
@@ -330,7 +358,7 @@ export default function CloserComparisonTable() {
           const cur = byCloser.get(k);
           if (!cur) continue;
           cur.sales += 1;
-          if (sale?.PIF === true) cur.pifSales += 1;
+          if (String(sale?.offers?.kajabi_id) === "2150757309") cur.pifSales += 1;
           cur.commission += commissionForSale(sale);
 
           const offerPrice = Number(sale?.offers?.price);
@@ -355,6 +383,8 @@ export default function CloserComparisonTable() {
             aoc: r.aocCount > 0 ? r.aocSum / r.aocCount : 0,
             sales: r.sales,
             pifSales: r.pifSales,
+            confirmed: r.confirmed,
+            showed: r.showed,
             closingRate,
             pifRate,
             showUpRate,
@@ -671,8 +701,21 @@ export default function CloserComparisonTable() {
                         className="border-b border-slate-200 last:border-b-0 transition-colors hover:bg-slate-50/70"
                       >
                         <td className="px-3 py-3.5 text-left">
-                          <span className="text-[13.5px] font-bold text-slate-900">
-                            {row.name}
+                          <span className="inline-flex items-center gap-1.5">
+                            {(() => {
+                              const breaches = rowBreaches(row);
+                              return breaches.length > 0 ? (
+                                <span
+                                  className="inline-flex h-4 min-w-4 cursor-help items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-extrabold leading-none text-white"
+                                  title={breachTooltip(breaches)}
+                                >
+                                  {breaches.length}
+                                </span>
+                              ) : null;
+                            })()}
+                            <span className="text-[13.5px] font-bold text-slate-900">
+                              {row.name}
+                            </span>
                           </span>
                         </td>
 

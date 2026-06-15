@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../../lib/supabaseClient";
 import * as DateHelpers from "../../../../utils/dateHelpers";
-import { getConfirmationColor, getShowUpColor } from "../../../../utils/performanceBenchmarks";
+import { BENCHMARKS, getConfirmationColor, getShowUpColor } from "../../../../utils/performanceBenchmarks";
 
 function cx ( ...parts ) {
   return parts.filter( Boolean ).join( " " );
@@ -19,12 +19,22 @@ function pct ( num, den ) {
 }
 
 const TIME_RANGE_ITEMS = [
+  { id: "last10", label: "Last 10 days", title: "Average of the last 10 days" },
   { id: "mtd", label: "MTD", title: "This month (MTD)" },
   { id: "lastMonth", label: "Last Month", title: "Last month" },
 ];
 
 function getSnapshotRange ( range ) {
   const now = new Date();
+
+  if ( range === "last10" ) {
+    const { startDate, endDate } = DateHelpers.getLastNDaysRange( 10 );
+    return {
+      startISO: startDate.toISOString(),
+      endISO: endDate.toISOString(),
+      label: "Last 10 days",
+    };
+  }
 
   if ( range === "lastMonth" ) {
     const previousMonthDate = new Date(
@@ -70,7 +80,7 @@ function SetterBarsShimmer () {
   );
 }
 
-function BarChartRow ( { name, value, colorClass, customStyle, delayMs, animate, tooltip } ) {
+function BarChartRow ( { name, value, colorClass, customStyle, delayMs, animate, tooltip, flagged } ) {
   const [ width, setWidth ] = useState( 0 );
 
   useEffect( () => {
@@ -92,7 +102,15 @@ function BarChartRow ( { name, value, colorClass, customStyle, delayMs, animate,
       <div className="pointer-events-none absolute -top-8 left-1/2 z-20 -translate-x-1/2 rounded-md bg-slate-950 px-2 py-1 text-[10px] font-semibold whitespace-nowrap text-white opacity-0 shadow-[0_10px_24px_rgba(2,6,23,0.35)] transition-opacity duration-150 group-hover:opacity-100">
         {tooltip}
       </div>
-      <div className="w-[70px] text-[13px] font-semibold text-slate-700">{name}</div>
+      <div className="flex w-[90px] items-center gap-1 text-[13px] font-semibold text-slate-700">
+        {flagged ? (
+          <span
+            className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500"
+            title="Below benchmark"
+          />
+        ) : null}
+        <span className="truncate">{name}</span>
+      </div>
       <div className="relative h-[14px] flex-1 overflow-hidden rounded-full bg-slate-100 shadow-inner">
         <div
           className={cx( `absolute top-0 left-0 h-full rounded-full transition-all duration-[1200ms] ease-[cubic-bezier(0.16,1,0.3,1)]`, finalColorClass )}
@@ -124,6 +142,7 @@ function BarChartCard ( { title, data, colorClass, customStyle, kind, animate } 
               delayMs={100 + idx * 100}
               animate={animate}
               tooltip={item.tooltip}
+              flagged={item.flagged}
             />
           ) )}
         </div>
@@ -164,7 +183,7 @@ export default function Setter () {
   const [ errorMsg, setErrorMsg ] = useState( "" );
   const [ animateBars, setAnimateBars ] = useState( false );
   const [ rows, setRows ] = useState( [] );
-  const [ range, setRange ] = useState( "mtd" );
+  const [ range, setRange ] = useState( "last10" );
 
   useEffect( () => {
     let cancelled = false;
@@ -243,6 +262,7 @@ export default function Setter () {
           id: r.id,
           name: r.name,
           value: r.pickupRate,
+          flagged: r.booked > 0 && r.pickupRate < BENCHMARKS.CONFIRMATION,
           tooltip: `${r.name}: ${r.confirmed} / ${r.booked} confirmed`,
         } ) ),
     [ rows ],
@@ -256,10 +276,31 @@ export default function Setter () {
           id: r.id,
           name: r.name,
           value: r.showUpRate,
+          flagged: r.confirmed > 0 && r.showUpRate < BENCHMARKS.SHOW_UP,
           tooltip: `${r.name}: ${r.showed} / ${r.confirmed} showed up`,
         } ) ),
     [ rows ],
   );
+
+  const belowCount = useMemo(
+    () =>
+      pickupData.filter( ( d ) => d.flagged ).length +
+      showupData.filter( ( d ) => d.flagged ).length,
+    [ pickupData, showupData ],
+  );
+
+  const belowTooltip = useMemo( () => {
+    if ( belowCount === 0 ) return "All setters on benchmark";
+    const lines = [
+      ...pickupData
+        .filter( ( d ) => d.flagged )
+        .map( ( d ) => `${d.name} · Confirmation: ${d.value.toFixed( 1 )}% (target ${BENCHMARKS.CONFIRMATION}%)` ),
+      ...showupData
+        .filter( ( d ) => d.flagged )
+        .map( ( d ) => `${d.name} · Show-up: ${d.value.toFixed( 1 )}% (target ${BENCHMARKS.SHOW_UP}%)` ),
+    ];
+    return `${belowCount} below benchmark\n${lines.join( "\n" )}`;
+  }, [ belowCount, pickupData, showupData ] );
 
   useEffect( () => {
     if ( loading ) return;
@@ -274,7 +315,23 @@ export default function Setter () {
     <div className="w-full max-w-[1400px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col items-start gap-1">
-          <h2 className="text-[20px] font-bold tracking-tight text-[#0f172a]">Setter performance snapshot</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[20px] font-bold tracking-tight text-[#0f172a]">Setter performance snapshot</h2>
+            {!loading ? (
+              <span
+                className={cx(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-extrabold tabular-nums ring-1 ring-inset",
+                  belowCount > 0
+                    ? "bg-rose-50 text-rose-700 ring-rose-200"
+                    : "bg-emerald-50 text-emerald-700 ring-emerald-200",
+                  "cursor-help",
+                )}
+                title={belowTooltip}
+              >
+                {belowCount > 0 ? `${belowCount} below benchmark` : "On benchmark"}
+              </span>
+            ) : null}
+          </div>
           <p className="text-[12px] font-medium text-slate-500">{rangeLabel} · live from database</p>
         </div>
         <div className="shrink-0">
