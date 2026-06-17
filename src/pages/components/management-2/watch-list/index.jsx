@@ -1,10 +1,29 @@
-import React, { useMemo } from "react";
-import { CheckCircle2, TrendingDown, TrendingUp, Minus } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { CheckCircle2, TrendingDown, TrendingUp, Minus, ChevronRight } from "lucide-react";
 import { useWatchList } from "../../../../hooks/useWatchList";
 import { PERFORMANCE_COLORS } from "../../../../utils/performanceBenchmarks";
+import * as DateHelpers from "../../../../utils/dateHelpers";
+import { getEffectiveRangeBounds } from "../overview/overview-range-helpers";
+import SegmentedTabs from "../segmented-tabs";
 
 function cx(...c) {
   return c.filter(Boolean).join(" ");
+}
+
+// ── date-range filter ─────────────────────────────────────────────────────────
+const RANGE_ITEMS = [
+  { id: "last10", label: "Last 10 days", title: "Last 10 days" },
+  { id: "custom", label: "Custom", title: "Custom date range" },
+];
+
+/** Resolve the selected preset (+ custom inputs) into a { startISO, endISO } window. */
+function resolveSelectedRange(range, customStart, customEnd) {
+  if (range === "last10") {
+    const r = DateHelpers.getLastNDaysRange(10);
+    return { startISO: r.startISO, endISO: r.endISO };
+  }
+  const { start, end } = getEffectiveRangeBounds(range, customStart, customEnd);
+  return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
 // ── formatters ────────────────────────────────────────────────────────────────
@@ -114,6 +133,132 @@ function SummaryCard({ data, loading, rangeLabel, errorMsg, severityCounts }) {
   );
 }
 
+// ── shared section header (used by both Sales Funnel + Watch List) ───────────
+function SectionHeader({ title, badge, subtitle, right }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <div className="flex items-center gap-2">
+          <h2 className="text-[16px] font-bold tracking-tight text-[#0f172a]">{title}</h2>
+          {badge ? (
+            <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500 ring-1 ring-black/[0.04]">
+              {badge}
+            </span>
+          ) : null}
+        </div>
+        {subtitle ? <p className="mt-0.5 text-[11px] font-medium text-slate-500">{subtitle}</p> : null}
+      </div>
+      {right ? <div className="shrink-0">{right}</div> : null}
+    </div>
+  );
+}
+
+// ── date-range controls (preset tabs + custom date inputs) ───────────────────
+function RangeControls({ range, setRange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <SegmentedTabs items={RANGE_ITEMS} activeId={range} onChange={setRange} size="xs" fit />
+      {range === "custom" ? (
+        <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1">
+          <input
+            type="date"
+            value={customStart}
+            onChange={(e) => setCustomStart(e.target.value)}
+            className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+            aria-label="Custom start date"
+          />
+          <span className="text-[10px] font-semibold text-slate-500">–</span>
+          <input
+            type="date"
+            value={customEnd}
+            onChange={(e) => setCustomEnd(e.target.value)}
+            className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] font-medium text-slate-700 !outline-none"
+            aria-label="Custom end date"
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── sales funnel (team-wide aggregate) ───────────────────────────────────────
+function FunnelStat({ metric }) {
+  const has = metric.value != null && Number.isFinite(metric.value);
+  const color = !has ? "#cbd5e1" : (PERFORMANCE_COLORS[metric.level] ?? PERFORMANCE_COLORS.BAD);
+  const above = has && metric.value >= metric.target;
+  const delta = has ? Math.abs(metric.value - metric.target) : 0;
+  const deltaTxt = metric.unit === "$" ? fmtUSD(delta) : `${delta.toFixed(1)} pts`;
+  // Bar = attainment vs target (full track = the benchmark). Capped at 100%.
+  const attainment = has && metric.target > 0 ? (metric.value / metric.target) * 100 : 0;
+  const barPct = has ? Math.max(4, Math.min(100, attainment)) : 0;
+  return (
+    <div className="flex min-w-[132px] flex-1 flex-col rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-1.5">
+        <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500">{metric.label}</span>
+        {has ? (
+          <span className={cx(
+            "shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold tabular-nums",
+            above ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700",
+          )}>
+            <span className="text-[8px] leading-none">{above ? "▲" : "▼"}</span>{deltaTxt}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-2 text-[24px] font-extrabold leading-none tabular-nums" style={{ color }}>{fmtValue(metric.value, metric.unit)}</div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${barPct}%`, backgroundColor: color }} />
+      </div>
+      <div className="mt-1.5 flex items-center justify-between text-[9px] font-medium text-slate-400">
+        <span>Target {fmtTarget(metric.target, metric.unit)}</span>
+        {has ? <span className={above ? "text-emerald-600" : "text-rose-500"}>{Math.round(attainment)}%</span> : <span>No data</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Embedded funnel section (no own card) — renders inside the Watch List card. */
+function SalesFunnel({ funnel, loading }) {
+  if (loading) {
+    return (
+      <div className="mb-5">
+        <h3 className={cx("mb-2 px-0.5", SECTION_TITLE)}>Sales Funnel · Team-wide</h3>
+        <div className="flex flex-wrap gap-2">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-[104px] flex-1 min-w-[132px] animate-pulse rounded-2xl bg-slate-100" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (!funnel || funnel.length === 0) return null;
+
+  // First four are the funnel stages (chevron-linked); AOV trails as a companion stat.
+  const stages = funnel.filter((m) => m.id !== "aov");
+  const aov = funnel.find((m) => m.id === "aov");
+
+  return (
+    <div className="mb-5">
+      <h3 className={cx("mb-2 px-0.5", SECTION_TITLE)}>Sales Funnel · Team-wide</h3>
+      <div className="flex flex-wrap items-stretch gap-2">
+        {stages.map((m, i) => (
+          <React.Fragment key={m.id}>
+            <FunnelStat metric={m} />
+            {i < stages.length - 1 ? (
+              <div className="flex shrink-0 items-center text-slate-300"><ChevronRight size={16} /></div>
+            ) : null}
+          </React.Fragment>
+        ))}
+        {aov ? (
+          <>
+            <div className="mx-0.5 hidden w-px shrink-0 self-stretch bg-slate-200 sm:block" />
+            <FunnelStat metric={aov} />
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 // ── middle column: breach tables (split by role) ─────────────────────────────
 function BreachSection({ title, rows }) {
   if (rows.length === 0) return null;
@@ -134,7 +279,7 @@ function BreachSection({ title, rows }) {
       <div className="mb-1.5 flex items-center gap-2 px-0.5">
         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{title}</span>
         <span
-          title={`${rows.length} ${title.toLowerCase()} metric${rows.length === 1 ? "" : "s"} below benchmark (last 10 days)`}
+          title={`${rows.length} ${title.toLowerCase()} metric${rows.length === 1 ? "" : "s"} below benchmark`}
           className="inline-flex h-4 min-w-4 cursor-help items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-extrabold tabular-nums text-white"
         >
           {rows.length}
@@ -145,7 +290,7 @@ function BreachSection({ title, rows }) {
           <thead>
             <tr className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               <th className="px-2.5 py-2">Metric</th>
-              <th className="px-2.5 py-2 text-right">10-day avg</th>
+              <th className="px-2.5 py-2 text-right">Avg</th>
               <th className="px-2.5 py-2 text-right">Benchmark</th>
               <th className="px-2.5 py-2 text-right">Gap</th>
               <th className="px-2.5 py-2">Trend</th>
@@ -210,7 +355,7 @@ function BreachTable({ rows, loading }) {
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center">
           <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald-500" />
           <div className="text-[14px] font-bold text-emerald-700">All tracked metrics are currently meeting benchmark.</div>
-          <div className="mt-0.5 text-[12px] text-emerald-600">Nothing to flag over the last 10 days.</div>
+          <div className="mt-0.5 text-[12px] text-emerald-600">Nothing to flag in the selected period.</div>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
@@ -291,21 +436,96 @@ function PeopleColumn({ groups, loading }) {
   );
 }
 
+// ── below-benchmark summary cards ────────────────────────────────────────────
+/** Stacked severity bar — segment widths proportional to each severity count. */
+function SeverityBar({ severityCounts, track = "bg-slate-100" }) {
+  return (
+    <div className={cx("flex h-1.5 w-full overflow-hidden rounded-full", track)}>
+      {SEVERITY_ORDER.map((s) => {
+        const n = severityCounts[s] ?? 0;
+        return n > 0 ? <div key={s} style={{ flexGrow: n, backgroundColor: SEVERITY_DOT[s] }} /> : null;
+      })}
+    </div>
+  );
+}
+
+/** Flagged/total ratio card with a proportional fill bar. */
+function RatioCard({ label, flagged, total }) {
+  const has = total > 0;
+  const pctFlagged = has ? (flagged / total) * 100 : 0;
+  const isBad = flagged > 0;
+  const color = isBad ? PERFORMANCE_COLORS.BAD : PERFORMANCE_COLORS.GOOD;
+  return (
+    <div className="flex min-w-[150px] flex-1 flex-col rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+      <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
+      <div className={cx("mt-1.5 text-[22px] font-extrabold leading-none tabular-nums", isBad ? "text-rose-600" : "text-emerald-600")}>
+        {flagged}<span className="text-[14px] text-slate-400">/{total}</span>
+      </div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full transition-[width] duration-500"
+          style={{ width: `${has ? Math.max(isBad ? 6 : 0, Math.min(100, pctFlagged)) : 0}%`, backgroundColor: color }}
+        />
+      </div>
+      <div className="mt-1.5 text-[9px] font-medium text-slate-400">{has ? `${Math.round(pctFlagged)}% flagged` : "No activity"}</div>
+    </div>
+  );
+}
+
+function SummaryCards({ counts, severityCounts }) {
+  const total = counts.total ?? 0;
+  const flaggedPeople = (counts.flaggedSetters ?? 0) + (counts.flaggedClosers ?? 0);
+  return (
+    <div className="mb-5 flex flex-wrap gap-2">
+      {/* Headline — total below benchmark + severity composition bar */}
+      <div className={cx("flex min-w-[150px] flex-1 flex-col rounded-2xl px-3 py-3 ring-1", total > 0 ? "bg-rose-50 ring-rose-200" : "bg-emerald-50 ring-emerald-200")}>
+        <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500">Metrics below benchmark</span>
+        <div className={cx("mt-1.5 text-[26px] font-extrabold leading-none tabular-nums", total > 0 ? "text-rose-600" : "text-emerald-600")}>{total}</div>
+        {total > 0 ? <div className="mt-2.5"><SeverityBar severityCounts={severityCounts} track="bg-white/70" /></div> : null}
+        <div className={cx("mt-1.5 text-[9px] font-medium", total > 0 ? "text-rose-500" : "text-emerald-600")}>
+          {total > 0 ? `${flaggedPeople} ${flaggedPeople === 1 ? "person" : "people"} flagged` : "All on benchmark"}
+        </div>
+      </div>
+
+      <RatioCard label="Setters flagged" flagged={counts.flaggedSetters} total={counts.totalSetters} />
+      <RatioCard label="Closers flagged" flagged={counts.flaggedClosers} total={counts.totalClosers} />
+
+      {total > 0 ? (
+        <div className="flex min-w-[160px] flex-1 flex-col rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+          <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-500">By severity</span>
+          <div className="mt-2"><SeverityBar severityCounts={severityCounts} /></div>
+          <div className="mt-2 flex flex-col gap-1">
+            {SEVERITY_ORDER.map((s) => (
+              <div key={s} className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: SEVERITY_DOT[s] }} />
+                  <span className="text-[10px] font-medium text-slate-600">{s}</span>
+                </span>
+                <span className="text-[11px] font-bold tabular-nums text-slate-700">{severityCounts[s] ?? 0}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 export default function WatchListTab() {
-  const { data, loading, errorMsg } = useWatchList();
+  const [range, setRange] = useState("last10");
+  const [customStart, setCustomStart] = useState(() => DateHelpers.getLastNDaysRange(10).startISO.slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(() => DateHelpers.getLastNDaysRange(10).endISO.slice(0, 10));
+
+  const selectedRange = useMemo(
+    () => resolveSelectedRange(range, customStart, customEnd),
+    [range, customStart, customEnd],
+  );
+
+  const { data, loading, errorMsg } = useWatchList({ range: selectedRange });
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const counts = data?.counts;
-
-  const rangeLabel = useMemo(() => {
-    if (!data?.range) return "last 10 days";
-    try {
-      const fmt = (d) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      return `${fmt(data.range.startDate)} – ${fmt(data.range.endDate)}`;
-    } catch {
-      return "last 10 days";
-    }
-  }, [data]);
+  const funnel = data?.funnel;
 
   const severityCounts = useMemo(() => {
     const c = { Critical: 0, Warning: 0, "Slightly below": 0 };
@@ -313,76 +533,45 @@ export default function WatchListTab() {
     return c;
   }, [rows]);
 
-  const total = counts?.total ?? 0;
   const closerRows = rows.filter((r) => r.role === "Closer");
   const setterRows = rows.filter((r) => r.role === "Setter");
 
   return (
     <div className={CARD}>
       {/* ── Header ── */}
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-[16px] font-bold tracking-tight text-[#0f172a]">Watch List</h2>
-            <span className="shrink-0 rounded-md bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500 ring-1 ring-black/[0.04]">
-              Last 10 days
-            </span>
-          </div>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">Below benchmark · {rangeLabel}</p>
-        </div>
-      </div>
+      <SectionHeader
+        title="Watch List"
+        right={
+          <RangeControls
+            range={range}
+            setRange={setRange}
+            customStart={customStart}
+            setCustomStart={setCustomStart}
+            customEnd={customEnd}
+            setCustomEnd={setCustomEnd}
+          />
+        }
+      />
 
       {errorMsg ? (
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-medium text-amber-800">{errorMsg}</div>
       ) : null}
 
+      {/* ── Sales Funnel (team-wide) — funnel cards on top ── */}
+      <SalesFunnel funnel={funnel} loading={loading} />
+
       {/* ── Summary Stats ── */}
       {loading ? (
         <div className="mb-4 flex flex-wrap gap-2">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-16 flex-1 min-w-[90px] animate-pulse rounded-xl bg-slate-100" />
+            <div key={i} className="h-16 flex-1 min-w-[90px] animate-pulse rounded-2xl bg-slate-100" />
           ))}
         </div>
       ) : counts ? (
-        <div className="mb-5 flex flex-wrap gap-2">
-          <div className={cx("flex min-w-[90px] flex-1 flex-col items-center justify-center rounded-xl px-3 py-2.5 text-center ring-1", total > 0 ? "bg-rose-50 ring-rose-200" : "bg-emerald-50 ring-emerald-200")}>
-            <div className={cx("text-[28px] font-extrabold leading-none tabular-nums", total > 0 ? "text-rose-600" : "text-emerald-600")}>{total}</div>
-            <div className={cx("mt-0.5 text-[9px] font-bold uppercase tracking-wider", total > 0 ? "text-rose-500" : "text-emerald-600")}>
-              {total === 0 ? "All on benchmark" : `metric${total !== 1 ? "s" : ""} below`}
-            </div>
-          </div>
-
-          <div className="flex min-w-[90px] flex-1 flex-col items-center justify-center rounded-xl border border-slate-200 px-3 py-2.5 text-center">
-            <div className={cx("text-[22px] font-bold leading-none tabular-nums", counts.flaggedSetters > 0 ? "text-rose-600" : "text-emerald-600")}>
-              {counts.flaggedSetters}/{counts.totalSetters}
-            </div>
-            <div className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">Setters flagged</div>
-          </div>
-
-          <div className="flex min-w-[90px] flex-1 flex-col items-center justify-center rounded-xl border border-slate-200 px-3 py-2.5 text-center">
-            <div className={cx("text-[22px] font-bold leading-none tabular-nums", counts.flaggedClosers > 0 ? "text-rose-600" : "text-emerald-600")}>
-              {counts.flaggedClosers}/{counts.totalClosers}
-            </div>
-            <div className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">Closers flagged</div>
-          </div>
-
-          {total > 0 ? (
-            <div className="flex min-w-[130px] flex-1 flex-col justify-center rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-              <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">By severity</div>
-              <div className="flex flex-col gap-1">
-                {SEVERITY_ORDER.map((s) => (
-                  <div key={s} className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5">
-                      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: SEVERITY_DOT[s] }} />
-                      <span className="text-[10px] font-medium text-slate-600">{s}</span>
-                    </span>
-                    <span className="text-[11px] font-bold tabular-nums text-slate-700">{severityCounts[s] ?? 0}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <>
+          <h3 className={cx("mb-2 px-0.5", SECTION_TITLE)}>Below Benchmark</h3>
+          <SummaryCards counts={counts} severityCounts={severityCounts} />
+        </>
       ) : null}
 
       {/* ── Breach Table ── */}
@@ -396,7 +585,7 @@ export default function WatchListTab() {
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center">
           <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald-500" />
           <div className="text-[14px] font-bold text-emerald-700">All tracked metrics are currently meeting benchmark.</div>
-          <div className="mt-0.5 text-[12px] text-emerald-600">Nothing to flag over the last 10 days.</div>
+          <div className="mt-0.5 text-[12px] text-emerald-600">Nothing to flag in the selected period.</div>
         </div>
       ) : (
         <div className="flex flex-col gap-5">

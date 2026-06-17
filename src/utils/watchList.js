@@ -42,9 +42,13 @@ const CORE = {
 };
 
 // Mirrors the Setter tab (confirmation + show-up) and Closer table (show-up,
-// conversion, PIF, AOV, success) so all three tabs tell the same story.
-const SETTER_METRICS = ["confirmationRate", "showUpRate", "successRate"];
-const CLOSER_METRICS = ["showUpRate", "conversionRate", "successRate", "pifRate", "aov"];
+// conversion, PIF, AOV). Success rate is tracked team-wide in the funnel header
+// (see FUNNEL_METRICS) rather than flagged per person.
+const SETTER_METRICS = ["confirmationRate", "showUpRate"];
+const CLOSER_METRICS = ["showUpRate", "conversionRate", "pifRate", "aov"];
+
+// Team-wide aggregate funnel shown above the per-person breach tables.
+const FUNNEL_METRICS = ["confirmationRate", "showUpRate", "conversionRate", "successRate", "aov"];
 
 function pct(num, den) {
   const n = Number(num);
@@ -138,11 +142,17 @@ export function computeWatchList({ calls = [], sales = [], setters = [], closers
   for (const c of closers)
     closerMap.set(String(c.id), { id: String(c.id), name: c.name || `Closer ${c.id}`, recent: emptyAgg(), prior: emptyAgg() });
 
+  // Team-wide aggregate for the funnel header — each call/sale counted ONCE
+  // (not once per matched setter + closer) so the funnel reflects the business.
+  const teamRecent = emptyAgg();
+
   for (const c of calls) {
     if (c?.cancelled === true) continue;
-    const bucket = isRecent(c?.call_date) ? "recent" : "prior";
+    const recent = isRecent(c?.call_date);
+    const bucket = recent ? "recent" : "prior";
     const confirmed = c?.confirmed === true;
     const showed = c?.showed_up === true;
+    if (recent) { teamRecent.booked += 1; if (confirmed) teamRecent.confirmed += 1; if (showed) teamRecent.showed += 1; }
     const s = setterMap.get(String(c?.setter_id || ""));
     if (s) { const a = s[bucket]; a.booked += 1; if (confirmed) a.confirmed += 1; if (showed) a.showed += 1; }
     const cl = closerMap.get(String(c?.closer_id || ""));
@@ -150,10 +160,12 @@ export function computeWatchList({ calls = [], sales = [], setters = [], closers
   }
 
   for (const sale of sales) {
-    const bucket = isRecent(sale?.purchase_date) ? "recent" : "prior";
+    const recent = isRecent(sale?.purchase_date);
+    const bucket = recent ? "recent" : "prior";
     const isPif = sale?.PIF === true;
     const price = Number(sale?.price);
     const priceOk = Number.isFinite(price) && price > 0;
+    if (recent) { teamRecent.sales += 1; if (isPif) teamRecent.pifSales += 1; if (priceOk) teamRecent.aovSum += price; }
     const s = setterMap.get(String(sale?.setter_id || ""));
     if (s) { const a = s[bucket]; a.sales += 1; if (isPif) a.pifSales += 1; if (priceOk) a.aovSum += price; }
     const cl = closerMap.get(String(sale?.closer_id || ""));
@@ -176,8 +188,24 @@ export function computeWatchList({ calls = [], sales = [], setters = [], closers
     .flatMap((e) => e.breaches.map((m) => ({ person: e.name, role: e.role, ...m })))
     .sort((a, b) => b.gapPct - a.gapPct || a.person.localeCompare(b.person));
 
+  // Team-wide funnel (last window) — value + benchmark + color level per metric.
+  const teamRates = ratesFromAgg(teamRecent);
+  const funnel = FUNNEL_METRICS.map((id) => {
+    const def = CORE[id];
+    const value = teamRates[id];
+    return {
+      id,
+      label: def.label,
+      unit: def.unit,
+      value,
+      target: def.target,
+      level: value == null ? null : levelFor(id, value),
+    };
+  });
+
   return {
     rows,
+    funnel,
     badgeCount: rows.length,
     counts: {
       total: rows.length,
@@ -202,13 +230,37 @@ async function fetchAllRows(buildQuery, pageSize = 1000, maxRows = 50000) {
 }
 
 /**
- * Load + compute the watch list for the last `days` days. Fetches a 2×window so
- * trend direction can compare the recent window against the one before it.
+ * Resolve the recent window from either a day count (number) or an explicit
+ * { startISO, endISO } range. Returns { startISO, endISO, startDate, endDate }.
  */
-export async function loadWatchList(days = WATCH_WINDOW_DAYS) {
-  const range = DateHelpers.getLastNDaysRange(days); // recent window (headline + label)
-  const full = DateHelpers.getLastNDaysRange(days * 2); // recent + prior (trend)
+function resolveRange(arg) {
+  if (arg && typeof arg === "object" && arg.startISO && arg.endISO) {
+    return {
+      startISO: arg.startISO,
+      endISO: arg.endISO,
+      startDate: new Date(arg.startISO),
+      endDate: new Date(arg.endISO),
+    };
+  }
+  const days = typeof arg === "number" ? arg : WATCH_WINDOW_DAYS;
+  const r = DateHelpers.getLastNDaysRange(days);
+  return { startISO: r.startISO, endISO: r.endISO, startDate: r.startDate, endDate: r.endDate };
+}
+
+/**
+ * Load + compute the watch list for a window — either a `days` count (number,
+ * default 10) or an explicit `{ startISO, endISO }` range. Also fetches the
+ * equal-length window immediately before it so trend direction can compare the
+ * recent window against the one before it.
+ */
+export async function loadWatchList(arg = WATCH_WINDOW_DAYS) {
+  const range = resolveRange(arg); // recent window (headline + label)
   const cutoffISO = range.startISO;
+
+  // Prior window = equal-length period immediately before the recent window.
+  const spanMs = Math.max(0, range.endDate.getTime() - range.startDate.getTime());
+  const fullStartISO = new Date(range.startDate.getTime() - spanMs).toISOString();
+  const fullEndISO = range.endISO;
 
   const [settersRes, closersRes, calls, sales] = await Promise.all([
     supabase.from("setters").select("id, name").eq("active", true),
@@ -217,16 +269,16 @@ export async function loadWatchList(days = WATCH_WINDOW_DAYS) {
       supabase
         .from("calls")
         .select("setter_id, closer_id, confirmed, showed_up, cancelled, call_date")
-        .gte("call_date", full.startISO)
-        .lte("call_date", full.endISO),
+        .gte("call_date", fullStartISO)
+        .lte("call_date", fullEndISO),
     ),
     fetchAllRows(() =>
       supabase
         .from("outcome_log")
         .select("PIF, purchase_date, calls!inner!closer_notes_call_id_fkey(setter_id, closer_id), offers!offer_id(price, kajabi_id)")
         .eq("outcome", "yes")
-        .gte("purchase_date", full.startISO)
-        .lte("purchase_date", full.endISO),
+        .gte("purchase_date", fullStartISO)
+        .lte("purchase_date", fullEndISO),
     ),
   ]);
 
