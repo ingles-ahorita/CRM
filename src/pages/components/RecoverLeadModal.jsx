@@ -112,6 +112,7 @@ export default function RecoverLeadModal({ isOpen, onClose, lead, closerList = [
           startDateTime,
           leadName,
           leadId,
+          originalCallId: lead?.id ?? undefined,
           leadEmail: leadEmailValue || undefined,
           closerId: closerId || undefined,
           setterId: lead?.setter_id ?? undefined,
