@@ -30,7 +30,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler, iclosedHandler, iclosedWebhookHandler, iclosedPotentialLeadSlaCronHandler;
+let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler, iclosedHandler, iclosedWebhookHandler, iclosedPotentialLeadSlaCronHandler, googleEventHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -67,6 +67,7 @@ async function loadHandlers() {
   zoomWebhookHandler = await loadHandler('./lib/api-handlers/zoom-webhook.js', 'zoom-webhook');
   closerAvailabilityHandler = await loadHandler('./lib/api-handlers/closer-availability.js', 'closer-availability');
   createCalendarEventHandler = await loadHandler('./lib/api-handlers/create-calendar-event.js', 'create-calendar-event');
+  googleEventHandler = await loadHandler('./lib/api-handlers/google-event.js', 'google-event');
   crmAiQueryHandler = await loadHandler('./lib/api-handlers/crm-ai-query.js', 'crm-ai-query');
   iclosedHandler = await loadHandler('./lib/api-handlers/iclosed.js', 'iclosed');
   iclosedWebhookHandler = await loadHandler('./lib/api-handlers/iclosed-webhook.js', 'iclosed-webhook');
@@ -133,6 +134,16 @@ app.post('/api/cancel-calendly', async (req, res) => {
 app.post('/api/cancel-iclosed', async (req, res) => {
   if (!cancelIclosedHandler) await loadHandlers();
   return adaptVercelHandler(cancelIclosedHandler)(req, res);
+});
+
+app.get('/api/google-event', async (req, res) => {
+  if (!googleEventHandler) await loadHandlers();
+  return adaptVercelHandler(googleEventHandler)(req, res);
+});
+
+app.post('/api/google-event', async (req, res) => {
+  if (!googleEventHandler) await loadHandlers();
+  return adaptVercelHandler(googleEventHandler)(req, res);
 });
 
 app.get('/api/iclosed', async (req, res) => {

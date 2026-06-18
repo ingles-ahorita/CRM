@@ -1420,25 +1420,25 @@ export default function CloserTodaysLeads ( {
               {
                 name: "DATE (LEAD TZ)",
                 value:
-                  callRow?.call_date && callRow?.timezone
+                  callRow?.call_date
                     ? new Date( callRow.call_date ).toLocaleDateString( "en-US", {
-                      timeZone: callRow.timezone,
+                      timeZone: callRow?.timezone || "UTC",
                       year: "numeric",
                       month: "2-digit",
                       day: "2-digit",
                     } )
-                    : ( callRow?.call_date || "" ) + " (Tu fecha local)",
+                    : "",
               },
               {
                 name: "CALL TIME (LEAD TZ)",
                 value:
-                  callRow?.call_date && callRow?.timezone
+                  callRow?.call_date
                     ? new Date( callRow.call_date ).toLocaleTimeString( "en-US", {
-                      timeZone: callRow.timezone,
+                      timeZone: callRow?.timezone || "UTC",
                       hour: "2-digit",
                       minute: "2-digit",
                     } )
-                    : ( callRow?.call_date || "" ) + " (Tu hora local)",
+                    : "",
               },
               { name: "call_date", value: callRow?.call_date },
             ],

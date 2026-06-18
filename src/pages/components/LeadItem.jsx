@@ -17,10 +17,13 @@ import {
   getBookingPlatform,
   getCalendlyEventUri,
   getIclosedEventCallId,
+  getGoogleEventId,
   isIclosedLead,
+  isGoogleLead,
   ICLOSED_CANCELLED_CONFIRMED_TOOLTIP,
 } from '../../lib/iclosedBooking';
 import { useIclosedEventCallStatus } from '../../hooks/useIclosedEventCallStatus';
+import { useGoogleEventStatus } from '../../hooks/useGoogleEventStatus';
 import {
   buildConfirmedNoResultMessage,
   formatConfirmedYesError,
@@ -62,6 +65,19 @@ async function cancelExternalBooking(lead) {
       platformLabel: 'iClosed',
       functionName: 'cancelIclosedEvent',
       errorSource: 'LeadItem.jsx/cancel-iclosed',
+      callId: lead.id,
+    });
+  }
+
+  if (platform === 'google') {
+    const eventId = getGoogleEventId(lead.calendly_id);
+    if (!eventId) return { skipped: true };
+    return cancelWithPlatform({
+      url: '/api/google-event',
+      body: { callId: lead.id },
+      platformLabel: 'Google',
+      functionName: 'cancelGoogleEvent',
+      errorSource: 'LeadItem.jsx/google-event',
       callId: lead.id,
     });
   }
@@ -162,9 +178,16 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     lead,
     enabled: canEditConfirmed,
   });
+  const { canceled: googleCanceled } = useGoogleEventStatus({
+    lead,
+    enabled: canEditConfirmed,
+  });
   const isIclosedCancelledCall =
     isIclosedLead(lead) && (lead.cancelled === true || iclosedCanceled);
-  const isCancelledCall = lead.cancelled === true || isIclosedCancelledCall;
+  const isGoogleCancelledCall =
+    isGoogleLead(lead) && (lead.cancelled === true || googleCanceled);
+  const isCancelledCall =
+    lead.cancelled === true || isIclosedCancelledCall || isGoogleCancelledCall;
   // Add CSS for loading spinner animation
   useEffect(() => {
     const style = document.createElement('style');
@@ -336,22 +359,22 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
               { name: 'SETTER', value: leadData?.setters?.name },
               { name: 'CLOSER', value: leadData?.closers?.name },
               { name: 'CALL LINK', value: leadData?.call_link },
-              { name: 'DATE (LEAD TZ)', value: leadData?.call_date && leadData?.timezone
+              { name: 'DATE (LEAD TZ)', value: leadData?.call_date
                 ? new Date(leadData.call_date).toLocaleDateString('en-US', {
-                    timeZone: leadData.timezone,
+                    timeZone: leadData?.timezone || 'UTC',
                     year: 'numeric',
                     month: '2-digit',
                     day: '2-digit'
                   })
-                : (leadData?.call_date || '') + ' (Tu fecha local)' },
+                : '' },
               { name: 'CALL TIME (LEAD TZ)',
-                value: leadData?.call_date && leadData?.timezone
+                value: leadData?.call_date
                   ? new Date(leadData.call_date).toLocaleTimeString('en-US', {
-                      timeZone: leadData.timezone,
+                      timeZone: leadData?.timezone || 'UTC',
                       hour: '2-digit',
                       minute: '2-digit'
                     })
-                  : (leadData?.call_date || '') + ' (Tu hora local)'
+                  : ''
               },
               { name: 'call_date', value: leadData?.call_date }
             ]
