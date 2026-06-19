@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 // Components
@@ -15,13 +15,32 @@ import PerformanceTab from "./components/management-2/performance";
 import OrganicStatsTab from "./components/management-2/organic-stats";
 import NotificationsTab from "./components/management-2/notifications";
 import WatchListTab from "./components/management-2/watch-list";
+import { resolveSelectedRange } from "./components/management-2/watch-list/range-helpers";
 import { usePlatformEventsBadge } from "../hooks/usePlatformEventsBadge";
 import { useWatchList } from "../hooks/useWatchList";
+import * as DateHelpers from "../utils/dateHelpers";
 
 export default function Management2() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { refresh: refreshNotificationsBadge } = usePlatformEventsBadge();
-  const { count: watchBelowCount } = useWatchList({ pollMs: 5 * 60 * 1000 });
+
+  // Watch List date-range state lives here so the tab badge and the Watch List
+  // body share one window — the badge count always matches the metrics on the page.
+  const [watchRange, setWatchRange] = useState("last10");
+  const [watchCustomStart, setWatchCustomStart] = useState(() => DateHelpers.getLastNDaysRange(10).startISO.slice(0, 10));
+  const [watchCustomEnd, setWatchCustomEnd] = useState(() => DateHelpers.getLastNDaysRange(10).endISO.slice(0, 10));
+
+  const watchSelectedRange = useMemo(
+    () => resolveSelectedRange(watchRange, watchCustomStart, watchCustomEnd),
+    [watchRange, watchCustomStart, watchCustomEnd],
+  );
+
+  const {
+    data: watchData,
+    count: watchBelowCount,
+    loading: watchLoading,
+    errorMsg: watchErrorMsg,
+  } = useWatchList({ range: watchSelectedRange, pollMs: 5 * 60 * 1000 });
 
   // Validate and parse the current tab from URL
   const validTabs = [
@@ -66,7 +85,19 @@ export default function Management2() {
         {/* Tab Content Area */}
         <div>
           {activeTab === "overview" && <OverviewTab />}
-          {activeTab === "watch" && <WatchListTab />}
+          {activeTab === "watch" && (
+            <WatchListTab
+              data={watchData}
+              loading={watchLoading}
+              errorMsg={watchErrorMsg}
+              range={watchRange}
+              setRange={setWatchRange}
+              customStart={watchCustomStart}
+              setCustomStart={setWatchCustomStart}
+              customEnd={watchCustomEnd}
+              setCustomEnd={setWatchCustomEnd}
+            />
+          )}
           {activeTab === "closer" && <CloserTab />}
           {activeTab === "leads" && <LeadsTab />}
           {activeTab === "potential-leads" && <PotentialLeadsTab />}

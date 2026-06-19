@@ -529,7 +529,7 @@ export default function UTMAnalyticsPage() {
           </h1>
           <button
             onClick={() => navigate('/admin')}
-            className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+            className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 bg-white hover:bg-gray-100"
           >
             Back
           </button>
@@ -940,4 +940,3 @@ export default function UTMAnalyticsPage() {
     </div>
   );
 }
-

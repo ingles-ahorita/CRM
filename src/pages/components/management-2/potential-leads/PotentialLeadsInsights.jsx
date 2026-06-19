@@ -15,6 +15,9 @@ import {
   buildInsights,
 } from './potentialLeadSegments.js';
 
+// LT1 is hidden completely on this page, so it gets no chart series / toggle.
+const TREND_KEYS = LT_TREND_KEYS.filter((k) => k.key !== 'lt1');
+
 function shimmer(className = '') {
   return <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />;
 }
@@ -66,8 +69,8 @@ function TrendTooltip({ active, payload }) {
 export function PotentialLeadsInsightsShimmer() {
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
             {shimmer('mb-1.5 h-5 w-12')}
             {shimmer('mb-1 h-3 w-20')}
@@ -91,15 +94,23 @@ export function PotentialLeadsInsightsShimmer() {
   );
 }
 
-export default function PotentialLeadsInsights({ rows, ltForRow, loading, dateBounds }) {
+export default function PotentialLeadsInsights({ rows, ltForRow, isUnassigned, loading, dateBounds }) {
+  const unassignedFn = useMemo(
+    () => isUnassigned || ((r) => !r.assigned_setter_id),
+    [isUnassigned],
+  );
   const insights = useMemo(() => buildInsights(rows, ltForRow), [rows, ltForRow]);
   const trend = useMemo(
-    () => buildLtTrend(rows, ltForRow, dateBounds?.start, dateBounds?.end),
-    [rows, ltForRow, dateBounds],
+    () => buildLtTrend(rows, ltForRow, dateBounds?.start, dateBounds?.end, unassignedFn),
+    [rows, ltForRow, dateBounds, unassignedFn],
+  );
+  const unassignedCount = useMemo(
+    () => (rows || []).filter(unassignedFn).length,
+    [rows, unassignedFn],
   );
   const [hiddenKeys, setHiddenKeys] = useState(() => new Set());
 
-  const visibleTrendKeys = LT_TREND_KEYS.filter((k) => !hiddenKeys.has(k.key));
+  const visibleTrendKeys = TREND_KEYS.filter((k) => !hiddenKeys.has(k.key));
   const allVisible = hiddenKeys.size === 0;
   const tickStep = Math.max(1, Math.ceil(trend.series.length / 7));
 
@@ -120,7 +131,7 @@ export default function PotentialLeadsInsights({ rows, ltForRow, loading, dateBo
   return (
     <div className="flex flex-col gap-4">
       {/* KPI cards — full width on top */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <KpiCard
           label="Received"
           value={rows?.length ?? 0}
@@ -148,6 +159,13 @@ export default function PotentialLeadsInsights({ rows, ltForRow, loading, dateBo
           valueClass="text-teal-600"
           tooltip="Percentage of received leads that have been contacted (booked calls excluded). Calculated as: Contacted ÷ Total Received."
         />
+        <KpiCard
+          label="Unassigned"
+          value={unassignedCount}
+          sub="needs a setter"
+          valueClass="text-amber-600"
+          tooltip="Leads in scope with no setter assigned yet. Assign a setter so they get worked."
+        />
       </div>
 
       <div className="border-t border-slate-100" />
@@ -168,7 +186,7 @@ export default function PotentialLeadsInsights({ rows, ltForRow, loading, dateBo
             >
               All
             </button>
-            {LT_TREND_KEYS.map((k) => {
+            {TREND_KEYS.map((k) => {
               const active = !hiddenKeys.has(k.key);
               return (
                 <button

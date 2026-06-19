@@ -2,8 +2,9 @@
  * Watch List — data access + metric computation (single file).
  *
  * Surfaces every individual setter/closer core metric that is currently below
- * benchmark, averaged over the last N days (default 10). Used by both the tab
- * body and the tab badge (via useWatchList) so the count always matches the page.
+ * benchmark, averaged over the last N days (default 10). The tab badge
+ * (via useWatchList) counts these per-person breaches plus any team-wide funnel
+ * metric below benchmark; the page body shows the per-person breaches in detail.
  *
  * Benchmarks + colors come from utils/performanceBenchmarks.js (the approved
  * source). Nothing is hard-coded here. All tracked metrics are "higher is
@@ -160,7 +161,9 @@ export function computeWatchList({ calls = [], sales = [], setters = [], closers
   }
 
   for (const sale of sales) {
-    const recent = isRecent(sale?.purchase_date);
+    // Bucket by the call's date so the funnel numerator shares the same call
+    // cohort as the booked/confirmed/showed denominators.
+    const recent = isRecent(sale?.call_date);
     const bucket = recent ? "recent" : "prior";
     const isPif = sale?.PIF === true;
     const price = Number(sale?.price);
@@ -203,10 +206,15 @@ export function computeWatchList({ calls = [], sales = [], setters = [], closers
     };
   });
 
+  // Team-wide funnel metrics below benchmark — counted in the tab badge on top
+  // of the per-person breach rows. These are surfaced in the funnel header cards
+  // (not the per-person table), so they only feed the badge total.
+  const funnelBreachCount = funnel.filter((m) => m.value != null && m.value < m.target).length;
+
   return {
     rows,
     funnel,
-    badgeCount: rows.length,
+    badgeCount: rows.length + funnelBreachCount,
     counts: {
       total: rows.length,
       flaggedSetters: setterList.filter((e) => e.breaches.length > 0).length,
@@ -273,12 +281,16 @@ export async function loadWatchList(arg = WATCH_WINDOW_DAYS) {
         .lte("call_date", fullEndISO),
     ),
     fetchAllRows(() =>
+      // Cohort by the CALL's date, not purchase_date: a sale belongs to the
+      // window its call happened in (matching the booked/showed denominators),
+      // regardless of when payment landed. Filtering on the embedded calls
+      // table is the same pattern used elsewhere (e.g. Closer.jsx).
       supabase
         .from("outcome_log")
-        .select("PIF, purchase_date, calls!inner!closer_notes_call_id_fkey(setter_id, closer_id), offers!offer_id(price, kajabi_id)")
+        .select("PIF, calls!inner!closer_notes_call_id_fkey(setter_id, closer_id, call_date), offers!offer_id(price, kajabi_id)")
         .eq("outcome", "yes")
-        .gte("purchase_date", fullStartISO)
-        .lte("purchase_date", fullEndISO),
+        .gte("calls.call_date", fullStartISO)
+        .lte("calls.call_date", fullEndISO),
     ),
   ]);
 
@@ -290,7 +302,8 @@ export async function loadWatchList(arg = WATCH_WINDOW_DAYS) {
     closer_id: s?.calls?.closer_id ?? null,
     PIF: String(s?.offers?.kajabi_id) === "2150757309",
     price: Number(s?.offers?.price),
-    purchase_date: s?.purchase_date ?? null,
+    // Cohort key — the call's date (see query above), not the payment date.
+    call_date: s?.calls?.call_date ?? null,
   }));
 
   const result = computeWatchList({

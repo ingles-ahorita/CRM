@@ -1,29 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { CheckCircle2, TrendingDown, TrendingUp, Minus, ChevronRight } from "lucide-react";
-import { useWatchList } from "../../../../hooks/useWatchList";
 import { PERFORMANCE_COLORS } from "../../../../utils/performanceBenchmarks";
-import * as DateHelpers from "../../../../utils/dateHelpers";
-import { getEffectiveRangeBounds } from "../overview/overview-range-helpers";
+import { RANGE_ITEMS } from "./range-helpers";
 import SegmentedTabs from "../segmented-tabs";
 
 function cx(...c) {
   return c.filter(Boolean).join(" ");
-}
-
-// ── date-range filter ─────────────────────────────────────────────────────────
-const RANGE_ITEMS = [
-  { id: "last10", label: "Last 10 days", title: "Last 10 days" },
-  { id: "custom", label: "Custom", title: "Custom date range" },
-];
-
-/** Resolve the selected preset (+ custom inputs) into a { startISO, endISO } window. */
-function resolveSelectedRange(range, customStart, customEnd) {
-  if (range === "last10") {
-    const r = DateHelpers.getLastNDaysRange(10);
-    return { startISO: r.startISO, endISO: r.endISO };
-  }
-  const { start, end } = getEffectiveRangeBounds(range, customStart, customEnd);
-  return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
 // ── formatters ────────────────────────────────────────────────────────────────
@@ -286,7 +268,16 @@ function BreachSection({ title, rows }) {
         </span>
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200">
-        <table className="w-full border-collapse text-left">
+        <table className="w-full table-fixed border-collapse text-left">
+          {/* Fixed column widths so the Closers and Setters tables align identically. */}
+          <colgroup>
+            <col className="w-[28%]" />
+            <col className="w-[13%]" />
+            <col className="w-[15%]" />
+            <col className="w-[13%]" />
+            <col className="w-[16%]" />
+            <col className="w-[15%]" />
+          </colgroup>
           <thead>
             <tr className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               <th className="px-2.5 py-2">Metric</th>
@@ -325,8 +316,8 @@ function BreachSection({ title, rows }) {
                       <td className="px-2.5 py-2 text-right font-extrabold tabular-nums" style={{ color: PERFORMANCE_COLORS[r.level] ?? PERFORMANCE_COLORS.BAD }}>{fmtValue(r.value, r.unit)}</td>
                       <td className="px-2.5 py-2 text-right tabular-nums text-slate-500">{fmtTarget(r.target, r.unit)}</td>
                       <td className="px-2.5 py-2 text-right font-semibold tabular-nums text-rose-600">{fmtGap(r.gap, r.unit)}</td>
-                      <td className="px-2.5 py-2"><TrendCell trend={r.trend} /></td>
-                      <td className="px-2.5 py-2"><span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset", SEVERITY_STYLE[r.severity] ?? SEVERITY_STYLE.Warning)}>{r.severity}</span></td>
+                      <td className="whitespace-nowrap px-2.5 py-2"><TrendCell trend={r.trend} /></td>
+                      <td className="whitespace-nowrap px-2.5 py-2"><span className={cx("inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset", SEVERITY_STYLE[r.severity] ?? SEVERITY_STYLE.Warning)}>{r.severity}</span></td>
                     </tr>
                   ))}
                 </React.Fragment>
@@ -512,17 +503,17 @@ function SummaryCards({ counts, severityCounts }) {
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
-export default function WatchListTab() {
-  const [range, setRange] = useState("last10");
-  const [customStart, setCustomStart] = useState(() => DateHelpers.getLastNDaysRange(10).startISO.slice(0, 10));
-  const [customEnd, setCustomEnd] = useState(() => DateHelpers.getLastNDaysRange(10).endISO.slice(0, 10));
-
-  const selectedRange = useMemo(
-    () => resolveSelectedRange(range, customStart, customEnd),
-    [range, customStart, customEnd],
-  );
-
-  const { data, loading, errorMsg } = useWatchList({ range: selectedRange });
+export default function WatchListTab({
+  data,
+  loading,
+  errorMsg,
+  range,
+  setRange,
+  customStart,
+  setCustomStart,
+  customEnd,
+  setCustomEnd,
+}) {
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const counts = data?.counts;
   const funnel = data?.funnel;

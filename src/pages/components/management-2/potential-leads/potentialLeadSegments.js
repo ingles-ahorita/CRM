@@ -85,7 +85,8 @@ export function enumerateDaysUTC(start, end) {
  * chart. Booked rows (LT4/LT5) are excluded; "unassigned" is orthogonal to
  * stage (counts rows with no setter), so series are not mutually exclusive.
  */
-export function buildLtTrend(rows, ltForRow, start, end) {
+export function buildLtTrend(rows, ltForRow, start, end, isUnassigned) {
+  const unassignedFn = isUnassigned || ((r) => !r.assigned_setter_id);
   const days = start && end ? enumerateDaysUTC(start, end) : getLastDaysUTC(14);
   const byDay = Object.fromEntries(
     days.map((d) => [d, { date: d, lt1: 0, lt2: 0, lt3: 0, other: 0, unassigned: 0 }]),
@@ -99,7 +100,7 @@ export function buildLtTrend(rows, ltForRow, start, end) {
     else if (lt === LT_STATUS.LT2) byDay[k].lt2 += 1;
     else if (lt === LT_STATUS.LT3) byDay[k].lt3 += 1;
     else byDay[k].other += 1;
-    if (!r.assigned_setter_id) byDay[k].unassigned += 1;
+    if (unassignedFn(r)) byDay[k].unassigned += 1;
   });
   const series = days.map((d) => ({
     ...byDay[d],
