@@ -4,7 +4,12 @@ import { ICLOSED_POTENTIAL_LEADS_TAB_STATUSES } from '../../../../../lib/iclosed
 import {
   computePotentialLeadLtStatus,
   fetchCrmConfirmedEmails,
+  LT_STATUS,
 } from '../../../../../lib/potentialLeadLtStatus.js';
+import {
+  isHiddenPotentialLead,
+  isAssignedToActiveSetter,
+} from '../../../../lib/potentialLeadsBadgeStats.js';
 import LtStatusBadge from '../../potential-leads/LtStatusBadge.jsx';
 import {
   buildPotentialLeadStats,
@@ -134,12 +139,22 @@ export default function PotentialLeads() {
     [crmConfirmedEmails],
   );
 
+  // Non-actionable records are excluded here at the source — the whole page
+  // (KPIs, chart, stage counts, table) derives from baseRows, so these are
+  // hidden everywhere, not just from the table:
+  //  • LT1 ("Name + Email" only).
+  //  • "Other" (no LT stage) records without a phone number.
+  const baseRows = useMemo(
+    () => rows.filter((r) => !isHiddenPotentialLead(r, ltForRow(r))),
+    [rows, ltForRow],
+  );
+
   // Global date range — drives the whole page (KPIs, chart, table).
   // "All time" spans from the earliest lead to today so the chart covers everything.
   const dateBounds = useMemo(() => {
     if (range === 'all') {
       let min = Infinity;
-      rows.forEach((r) => {
+      baseRows.forEach((r) => {
         const t = r.created_at ? new Date(r.created_at).getTime() : NaN;
         if (!Number.isNaN(t) && t < min) min = t;
       });
@@ -150,18 +165,18 @@ export default function PotentialLeads() {
       };
     }
     return resolveDateRange(range, customStart, customEnd);
-  }, [range, customStart, customEnd, rows]);
+  }, [range, customStart, customEnd, baseRows]);
 
   // Rows within the selected date range (by created_at).
   const dateScopedRows = useMemo(() => {
     const start = dateBounds?.start?.getTime();
     const end = dateBounds?.end?.getTime();
-    if (start == null || end == null) return rows;
-    return rows.filter((r) => {
+    if (start == null || end == null) return baseRows;
+    return baseRows.filter((r) => {
       const t = r.created_at ? new Date(r.created_at).getTime() : NaN;
       return !Number.isNaN(t) && t >= start && t <= end;
     });
-  }, [rows, dateBounds]);
+  }, [baseRows, dateBounds]);
 
   // …then narrowed by the selected setters (empty = all setters).
   const scopedRows = useMemo(() => {
@@ -169,6 +184,15 @@ export default function PotentialLeads() {
     const set = new Set(selectedSetters);
     return dateScopedRows.filter((r) => set.has(r.assigned_setter_id));
   }, [dateScopedRows, selectedSetters]);
+
+  // A lead is "unassigned" when it has no setter OR its setter is no longer
+  // active — the assignment dropdown only lists active setters, so a row pointing
+  // at a deactivated setter already shows as "— Unassigned —" in the UI.
+  const activeSetterIds = useMemo(() => new Set(setters.map((s) => s.id)), [setters]);
+  const isUnassigned = useCallback(
+    (row) => !isAssignedToActiveSetter(row, activeSetterIds),
+    [activeSetterIds],
+  );
 
   // Whether a row belongs to a given status category.
   const rowMatchesStatus = useCallback((row, lt, key) => {
@@ -178,10 +202,10 @@ export default function PotentialLeads() {
       case 'lt3': return lt === 'lt3';
       case 'other': return lt == null;
       case 'contacted': return !!row.last_contact_attempt_at;
-      case 'unassigned': return !row.assigned_setter_id;
+      case 'unassigned': return isUnassigned(row);
       default: return true; // 'all'
     }
-  }, []);
+  }, [isUnassigned]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -209,8 +233,8 @@ export default function PotentialLeads() {
 
   // Overview pills reflect the current date + setter scope.
   const stats = useMemo(
-    () => buildPotentialLeadStats(scopedRows, ltForRow, { countUnassigned: true }),
-    [scopedRows, ltForRow],
+    () => buildPotentialLeadStats(scopedRows, ltForRow, { countUnassigned: true, isUnassigned }),
+    [scopedRows, ltForRow, isUnassigned],
   );
 
   // Extra pill count (contacted = has a logged attempt, excluding booked) over the same scope.
@@ -235,7 +259,8 @@ export default function PotentialLeads() {
   // Status filter options (each shows its colored badge + description + count).
   const statusOptions = [
     { value: 'all', label: 'All statuses', desc: 'Show everything in scope' },
-    ...VISIBLE_LT_STATUS_UI.map((s) => ({
+    // LT1 is hidden completely on this page (not actionable), so drop its filter option.
+    ...VISIBLE_LT_STATUS_UI.filter((s) => s.value !== LT_STATUS.LT1).map((s) => ({
       value: s.value,
       label: s.label,
       desc: s.description,
@@ -314,6 +339,7 @@ export default function PotentialLeads() {
       <PotentialLeadsInsights
         rows={scopedRows}
         ltForRow={ltForRow}
+        isUnassigned={isUnassigned}
         loading={loading}
         dateBounds={dateBounds}
       />

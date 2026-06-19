@@ -6,8 +6,15 @@ export const VISIBLE_LT_STATUS_UI = LT_STATUS_UI.filter((s) => !HIDDEN_LT_STATUS
 
 export const POTENTIAL_LEADS_PAGE_SIZE = 20;
 
-export function buildPotentialLeadStats(items, ltForRow, { countUnassigned = true } = {}) {
+export function buildPotentialLeadStats(
+  items,
+  ltForRow,
+  { countUnassigned = true, isUnassigned } = {},
+) {
   const by = Object.fromEntries(LT_STATUS_LIST.map((k) => [k, 0]));
+  // Default: unassigned = no setter id. Callers can pass a stricter predicate
+  // (e.g. also treat inactive-setter rows as unassigned).
+  const unassignedFn = isUnassigned || ((r) => !r.assigned_setter_id);
   let unassigned = 0;
   let noStage = 0;
 
@@ -15,7 +22,7 @@ export function buildPotentialLeadStats(items, ltForRow, { countUnassigned = tru
     const lt = ltForRow(r);
     if (lt && by[lt] != null) by[lt] += 1;
     else noStage += 1;
-    if (countUnassigned && !r.assigned_setter_id) unassigned += 1;
+    if (countUnassigned && unassignedFn(r)) unassigned += 1;
   });
 
   return {

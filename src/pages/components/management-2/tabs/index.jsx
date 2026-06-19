@@ -1,8 +1,9 @@
 import { useMemo, useCallback } from "react";
-import { Bell } from "lucide-react";
+import { Bell, PhoneCall } from "lucide-react";
 import SegmentedTabs from "../segmented-tabs";
 import NotificationsTabButton from "./notifications-tab-button";
 import { useTodayNewLeadsCount } from "../../../../hooks/useTodayNewLeadsCount";
+import { usePotentialLeadsBadge } from "../../../../hooks/usePotentialLeadsBadge";
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -23,6 +24,7 @@ function cx(...c) {
 
 export default function Tabs({ activeTab, onTabChange, watchBelowCount }) {
   const todayBookedStats = useTodayNewLeadsCount();
+  const potentialLeadsBadge = usePotentialLeadsBadge();
   const handleNotificationsClick = useCallback(() => {
     onTabChange?.("notifications");
   }, [onTabChange]);
@@ -41,10 +43,32 @@ export default function Tabs({ activeTab, onTabChange, watchBelowCount }) {
                   ? "bg-rose-600 text-white ring-rose-700/30"
                   : "bg-emerald-100 text-emerald-700 ring-emerald-300/40",
               )}
-              title={`${below} metric${below === 1 ? "" : "s"} below benchmark (last 10 days)`}
+              title={`${below} metric${below === 1 ? "" : "s"} below benchmark (selected range)`}
               aria-label={`${below} metrics below benchmark`}
             >
               {below}
+            </span>
+          );
+          return { ...t, trailing };
+        }
+        if (t.id === "potential-leads") {
+          if (potentialLeadsBadge == null) return t;
+          const received = potentialLeadsBadge.received ?? 0;
+          const contacted = potentialLeadsBadge.contacted ?? 0;
+          const pendingContact = Math.max(received - contacted, 0);
+          const trailing = (
+            <span
+              className={cx(
+                "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tabular-nums leading-none shadow-sm ring-1 ring-inset",
+                pendingContact > 0
+                  ? "bg-red-600 text-white ring-red-700/30"
+                  : "bg-slate-200/90 text-slate-600 ring-slate-400/20",
+              )}
+              title={`${contacted} contacted of ${received} received`}
+              aria-label={`${contacted} contacted of ${received} received`}
+            >
+              <PhoneCall className="h-3 w-3 shrink-0 opacity-95" strokeWidth={2.5} aria-hidden />
+              {contacted}/{received}
             </span>
           );
           return { ...t, trailing };
@@ -74,7 +98,7 @@ export default function Tabs({ activeTab, onTabChange, watchBelowCount }) {
           );
         return { ...t, trailing };
       }),
-    [todayBookedStats, watchBelowCount],
+    [todayBookedStats, potentialLeadsBadge, watchBelowCount],
   );
 
   const segmentedActiveId = activeTab === "notifications" ? null : activeTab;
