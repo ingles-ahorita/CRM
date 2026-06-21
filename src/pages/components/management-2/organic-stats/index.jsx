@@ -45,6 +45,7 @@ const CONVERSION_VIEW_ITEMS = [
 const BOOKING_TREND_VIEW_ITEMS = [
   { id: "total", label: "Total" },
   { id: "sources", label: "By source" },
+  { id: "aibot", label: "AI bot" },
 ];
 
 /** Display-only merge for duplicate UTM spellings (fb/facebook, ig/instagram). */
@@ -87,6 +88,7 @@ function buildDailyBookingsModel(bookingsPerDay, sourceKeys) {
           })
         : "",
       total: Number(row.total || 0),
+      aiBot: Number(row.aiBot || 0),
     };
 
     const bucket = {};
@@ -115,6 +117,7 @@ const EMPTY_DATA = {
   organicDaily: [],
   totalOrganicCalls: 0,
   totalPurchases: 0,
+  aiBot: { calls: 0, purchases: 0 },
   mediumBySource: [],
   campaignData: [],
   conversionByPlatform: [],
@@ -756,7 +759,9 @@ function buildSourceMiniPieSlices(pieData, maxSlices = 4) {
   return slices;
 }
 
-function OrganicPipelineSection({ totalOrganicCalls, totalPurchases, overallConversion, loading }) {
+function OrganicPipelineSection({ totalOrganicCalls, totalPurchases, aiBot, overallConversion, loading }) {
+  const aiBotCalls = aiBot?.calls ?? 0;
+  const aiBotPurchases = aiBot?.purchases ?? 0;
   const noSale = Math.max(0, totalOrganicCalls - totalPurchases);
   const callPie = useMemo(
     () => [
@@ -794,10 +799,15 @@ function OrganicPipelineSection({ totalOrganicCalls, totalPurchases, overallConv
           pie={<OrganicMiniPie slices={callPie} loading={loading} />}
           footer={
             totalOrganicCalls > 0 ? (
-              <p className="text-[11px] font-semibold text-slate-500">
-                <span className="text-emerald-700">{formatPct((totalPurchases / totalOrganicCalls) * 100, 1)}</span>{" "}
-                closed · {formatInt(noSale)} no sale
-              </p>
+              <>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  <span className="text-emerald-700">{formatPct((totalPurchases / totalOrganicCalls) * 100, 1)}</span>{" "}
+                  closed · {formatInt(noSale)} no sale
+                </p>
+                {aiBotCalls > 0 ? (
+                  <p className="text-[11px] font-semibold text-indigo-600">🤖 {formatInt(aiBotCalls)} via AI bot</p>
+                ) : null}
+              </>
             ) : null
           }
         />
@@ -810,9 +820,14 @@ function OrganicPipelineSection({ totalOrganicCalls, totalPurchases, overallConv
           pie={<OrganicMiniPie slices={purchasePie} loading={loading} />}
           footer={
             totalOrganicCalls > 0 ? (
-              <p className="text-[11px] font-semibold text-slate-500">
-                Goal {formatInt(purchaseGoal)} at {BENCHMARKS.CONVERSION}% close rate
-              </p>
+              <>
+                <p className="text-[11px] font-semibold text-slate-500">
+                  Goal {formatInt(purchaseGoal)} at {BENCHMARKS.CONVERSION}% close rate
+                </p>
+                {aiBotPurchases > 0 ? (
+                  <p className="text-[11px] font-semibold text-indigo-600">🤖 {formatInt(aiBotPurchases)} via AI bot</p>
+                ) : null}
+              </>
             ) : null
           }
         />
@@ -905,6 +920,7 @@ function OrganicSnapshotSection({
 function OrganicLeftColumn({
   totalOrganicCalls,
   totalPurchases,
+  aiBot,
   overallConversion,
   bookingsPerDay,
   pieData,
@@ -916,6 +932,7 @@ function OrganicLeftColumn({
       <OrganicPipelineSection
         totalOrganicCalls={totalOrganicCalls}
         totalPurchases={totalPurchases}
+        aiBot={aiBot}
         overallConversion={overallConversion}
         loading={loading}
       />
@@ -1058,9 +1075,14 @@ function DailyBookingsTrendPanel({ bookingsPerDay, sourceKeys, loading }) {
     [bookingsPerDay, sourceKeys],
   );
 
+  // "Total" and "By source" summarise overall bookings; "AI bot" summarises only
+  // the ai-setting series. The subtitle stats follow the active metric so they
+  // always match what the chart is showing.
+  const metricKey = trendView === "aibot" ? "aiBot" : "total";
+
   const totalBookings = useMemo(
-    () => series.reduce((s, r) => s + Number(r.total || 0), 0),
-    [series],
+    () => series.reduce((s, r) => s + Number(r[metricKey] || 0), 0),
+    [series, metricKey],
   );
 
   const avgPerDay = useMemo(() => {
@@ -1071,9 +1093,9 @@ function DailyBookingsTrendPanel({ bookingsPerDay, sourceKeys, loading }) {
   const peakDay = useMemo(() => {
     if (!series.length) return null;
     return series.reduce((best, row) =>
-      Number(row.total || 0) > Number(best.total || 0) ? row : best,
+      Number(row[metricKey] || 0) > Number(best[metricKey] || 0) ? row : best,
     );
-  }, [series]);
+  }, [series, metricKey]);
 
   const tickStep = Math.max(1, Math.ceil(series.length / 5));
   const visibleLineKeys = lineKeys.filter((k) => !hiddenSources.has(k));
@@ -1089,10 +1111,16 @@ function DailyBookingsTrendPanel({ bookingsPerDay, sourceKeys, loading }) {
 
   const bookingsSubtitle =
     !loading && series.length > 0
-      ? `${formatInt(totalBookings)} in range · ${avgPerDay.toFixed(1)}/day avg${
-          peakDay ? ` · peak ${formatInt(peakDay.total)} on ${peakDay.label}` : ""
+      ? `${trendView === "aibot" ? "AI bot · " : ""}${formatInt(totalBookings)} in range · ${avgPerDay.toFixed(1)}/day avg${
+          peakDay ? ` · peak ${formatInt(peakDay[metricKey])} on ${peakDay.label}` : ""
         }`
       : null;
+
+  // "Total" and "AI bot" share one area chart; only the series key, color and label differ.
+  const isAreaView = trendView === "total" || trendView === "aibot";
+  const areaKey = metricKey;
+  const areaColor = trendView === "aibot" ? "#6366f1" : "#3b82f6";
+  const areaLabel = trendView === "aibot" ? "AI bot bookings" : "Bookings";
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
@@ -1100,7 +1128,7 @@ function DailyBookingsTrendPanel({ bookingsPerDay, sourceKeys, loading }) {
         title="Daily bookings"
         badge="Booking date"
         infoTitle="Daily bookings"
-        infoBody="Bookings counted when they were scheduled. Total shows daily volume; By source splits top traffic sources (Facebook and Instagram merged)."
+        infoBody="Bookings counted when they were scheduled. Total shows daily volume; By source splits top traffic sources (Facebook and Instagram merged); AI bot shows only bookings from the n8n AI setter (ai-setting campaign)."
         subtitle={bookingsSubtitle}
         actions={
           <SegmentedTabs
@@ -1124,12 +1152,12 @@ function DailyBookingsTrendPanel({ bookingsPerDay, sourceKeys, loading }) {
         <>
           <div className="h-[168px] w-full overflow-hidden rounded-xl border border-slate-200/80 bg-white">
             <ResponsiveContainer width="100%" height="100%">
-              {trendView === "total" ? (
+              {isAreaView ? (
                 <AreaChart data={series} margin={{ top: 10, right: 12, left: 0, bottom: 4 }}>
                   <defs>
                     <linearGradient id="organicBookingFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
+                      <stop offset="0%" stopColor={areaColor} stopOpacity={0.28} />
+                      <stop offset="100%" stopColor={areaColor} stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
@@ -1158,16 +1186,16 @@ function DailyBookingsTrendPanel({ bookingsPerDay, sourceKeys, loading }) {
                       padding: "8px 10px",
                     }}
                     labelFormatter={(_, payload) => payload?.[0]?.payload?.label ?? ""}
-                    formatter={(value) => [formatInt(value), "Bookings"]}
+                    formatter={(value) => [formatInt(value), areaLabel]}
                   />
                   <Area
                     type="monotone"
-                    dataKey="total"
-                    stroke="#3b82f6"
+                    dataKey={areaKey}
+                    stroke={areaColor}
                     strokeWidth={2.5}
                     fill="url(#organicBookingFill)"
                     dot={false}
-                    activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff", fill: "#3b82f6" }}
+                    activeDot={{ r: 5, strokeWidth: 2, stroke: "#fff", fill: areaColor }}
                     isAnimationActive={false}
                   />
                 </AreaChart>
@@ -1730,6 +1758,7 @@ export default function OrganicStatsTab() {
           <OrganicLeftColumn
             totalOrganicCalls={data.totalOrganicCalls}
             totalPurchases={data.totalPurchases}
+            aiBot={data.aiBot}
             overallConversion={overallConversion}
             bookingsPerDay={data.bookingsPerDay}
             pieData={data.pieData}

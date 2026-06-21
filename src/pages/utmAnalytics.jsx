@@ -49,6 +49,12 @@ function isAdsSource(sourceType) {
   return lower.includes('ad') || lower.includes('ads');
 }
 
+// AI-bot bookings are stamped by the n8n setter workflow with this utm_campaign
+// (see docs/n8n/ai-setter-v2-intent-first.json — both booking-link nodes).
+const AI_BOT_CAMPAIGN = 'ai-setting';
+const isAiBotCampaign = (campaign) =>
+  String(campaign ?? '').trim().toLowerCase() === AI_BOT_CAMPAIGN;
+
 async function fetchUTMAnalytics(startDate, endDate) {
   // Normalize to UTC day boundaries (consistent with generalStats/closerStats)
   const startDateObj = parseDateAsUTC(startDate);
@@ -265,6 +271,15 @@ async function fetchUTMAnalytics(startDate, endDate) {
     purchasesByCampaign[camp] = (purchasesByCampaign[camp] || 0) + 1;
   });
 
+  // AI-bot (n8n setter) — booked calls and sales tagged utm_campaign = 'ai-setting'.
+  // Subset of the organic totals; summed case-insensitively across any campaign variants.
+  const aiBot = {
+    calls: Object.entries(bookingsByCampaign).reduce(
+      (sum, [camp, n]) => (isAiBotCampaign(camp) ? sum + n : sum), 0),
+    purchases: Object.entries(purchasesByCampaign).reduce(
+      (sum, [camp, n]) => (isAiBotCampaign(camp) ? sum + n : sum), 0),
+  };
+
   const allSources = new Set([...Object.keys(bookingsBySource), ...Object.keys(purchasesBySource)]);
   const conversionByPlatform = Array.from(allSources).map(name => {
     const bookings = bookingsBySource[name] || 0;
@@ -359,6 +374,7 @@ async function fetchUTMAnalytics(startDate, endDate) {
     pieData,
     organicDaily,
     totalOrganicCalls,
+    aiBot,
     mediumBySource,
     campaignData,
     mediumKeys: Array.from(allMediums),
@@ -435,6 +451,7 @@ export default function UTMAnalyticsPage() {
   const [endDate, setEndDate] = useState(endDefault.toISOString());
   const [pieData, setPieData] = useState([]);
   const [organicDaily, setOrganicDaily] = useState([]);
+  const [aiBot, setAiBot] = useState({ calls: 0, purchases: 0 });
   const [totalOrganicCalls, setTotalOrganicCalls] = useState(0);
   const [mediumBySource, setMediumBySource] = useState([]);
   const [mediumKeys, setMediumKeys] = useState([]);
@@ -452,6 +469,7 @@ export default function UTMAnalyticsPage() {
     setPieData(result.pieData);
     setOrganicDaily(result.organicDaily);
     setTotalOrganicCalls(result.totalOrganicCalls ?? 0);
+    setAiBot(result.aiBot ?? { calls: 0, purchases: 0 });
     setMediumBySource(result.mediumBySource ?? []);
     setMediumKeys(result.mediumKeys ?? []);
     setCampaignData(result.campaignData ?? []);
@@ -613,6 +631,27 @@ export default function UTMAnalyticsPage() {
               <h2 className="text-sm font-medium text-gray-500 mb-1">Organic calls booked (period)</h2>
               <div className="text-4xl font-bold text-gray-900">{totalOrganicCalls}</div>
               <p className="text-xs text-gray-500 mt-1">Reschedules deduped; ads excluded</p>
+            </div>
+
+            {/* AI Bot (n8n setter) — booked calls and sales tagged utm_campaign = 'ai-setting' */}
+            <div className="bg-white rounded-lg shadow border-l-4 border-indigo-500 p-6 mb-6">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">🤖</span>
+                <h2 className="text-sm font-medium text-gray-700">AI Bot (n8n setter)</h2>
+              </div>
+              <div className="flex flex-wrap gap-x-12 gap-y-2 mt-2">
+                <div>
+                  <div className="text-4xl font-bold text-indigo-600">{aiBot.calls}</div>
+                  <div className="text-xs text-gray-500 mt-1">Booked calls</div>
+                </div>
+                <div>
+                  <div className="text-4xl font-bold text-green-600">{aiBot.purchases}</div>
+                  <div className="text-xs text-gray-500 mt-1">Sales</div>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-3">
+                Calls booked by the AI bot (utm_campaign = &quot;ai-setting&quot;). Subset of the organic total above; same dedupe/ads rules.
+              </p>
             </div>
 
             {/* Booked calls per day by source (vertical bar chart) */}
