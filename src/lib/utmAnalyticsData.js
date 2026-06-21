@@ -31,6 +31,12 @@ export function isAdsSource(sourceType) {
   return lower.includes("ad") || lower.includes("ads");
 }
 
+// AI-bot bookings are stamped by the n8n setter workflow with this utm_campaign
+// (see docs/n8n/ai-setter-v2-intent-first.json — both booking-link nodes).
+export const AI_BOT_CAMPAIGN = "ai-setting";
+export const isAiBotCampaign = (campaign) =>
+  String(campaign ?? "").trim().toLowerCase() === AI_BOT_CAMPAIGN;
+
 /**
  * @param {string} startDate
  * @param {string} endDate
@@ -50,6 +56,7 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
       organicDaily: [],
       totalOrganicCalls: 0,
       totalPurchases: 0,
+      aiBot: { calls: 0, purchases: 0 },
       mediumBySource: [],
       campaignData: [],
       conversionByPlatform: [],
@@ -109,6 +116,7 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
       organicDaily: [],
       totalOrganicCalls: 0,
       totalPurchases: 0,
+      aiBot: { calls: 0, purchases: 0 },
       mediumBySource: [],
       campaignData: [],
       conversionByPlatform: [],
@@ -277,6 +285,15 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
     purchasesByCampaign[camp] = (purchasesByCampaign[camp] || 0) + 1;
   });
 
+  // AI-bot (n8n setter) — calls and sales tagged utm_campaign = 'ai-setting'.
+  // Subset of the organic totals; summed case-insensitively across campaign variants.
+  const aiBot = {
+    calls: Object.entries(bookingsByCampaign).reduce(
+      (sum, [camp, n]) => (isAiBotCampaign(camp) ? sum + n : sum), 0),
+    purchases: Object.entries(purchasesByCampaign).reduce(
+      (sum, [camp, n]) => (isAiBotCampaign(camp) ? sum + n : sum), 0),
+  };
+
   const allSources = new Set([...Object.keys(bookingsBySource), ...Object.keys(purchasesBySource)]);
   const conversionByPlatform = Array.from(allSources)
     .map((name) => {
@@ -309,7 +326,7 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
 
   const { data: bookingCalls } = await supabase
     .from("calls")
-    .select("id, book_date, utm_source, source_type, is_reschedule, lead_id")
+    .select("id, book_date, utm_source, utm_campaign, source_type, is_reschedule, lead_id")
     .gte("book_date", startISO)
     .lte("book_date", endISO);
 
@@ -337,6 +354,7 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
 
   const tz = DateHelpers.DEFAULT_TIMEZONE;
   const dayBuckets = {};
+  const aiBotDayCounts = {}; // AI-bot (ai-setting) bookings per day
   bookingsForChart.forEach((booking) => {
     if (!booking.book_date) return;
     const source = booking.utm_source ?? "Unknown";
@@ -348,6 +366,9 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
     );
     if (!dayBuckets[dayKey]) dayBuckets[dayKey] = {};
     dayBuckets[dayKey][source] = (dayBuckets[dayKey][source] || 0) + 1;
+    if (isAiBotCampaign(booking.utm_campaign)) {
+      aiBotDayCounts[dayKey] = (aiBotDayCounts[dayKey] || 0) + 1;
+    }
   });
   const allSourceKeys = new Set();
   Object.values(dayBuckets).forEach((b) => Object.keys(b).forEach((k) => allSourceKeys.add(k)));
@@ -375,6 +396,7 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
       total += count;
     });
     row.total = total;
+    row.aiBot = aiBotDayCounts[date] || 0;
     return row;
   });
 
@@ -383,6 +405,7 @@ export async function fetchUTMAnalytics(startDate, endDate, options = {}) {
     organicDaily,
     totalOrganicCalls,
     totalPurchases,
+    aiBot,
     mediumBySource,
     campaignData,
     mediumKeys: Array.from(allMediums),
