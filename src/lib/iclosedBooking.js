@@ -18,6 +18,10 @@ export function isGoogleLead(lead) {
   return getBookingPlatform(lead?.reschedule_link) === 'google';
 }
 
+export function isCalendlyLead(lead) {
+  return getBookingPlatform(lead?.reschedule_link) === 'calendly';
+}
+
 /** Google Calendar eventId stored in calls.calendly_id for recovered (Google) bookings.
  *  Returns null for iClosed (numeric id) and Calendly (api.calendly.com URI) values. */
 export function getGoogleEventId(calendlyId) {
@@ -41,3 +45,6 @@ export function getCalendlyEventUri(calendlyId) {
 
 export const ICLOSED_CANCELLED_CONFIRMED_TOOLTIP =
   'This call is cancelled in iClosed. Confirmed status cannot be changed — Book a new call instead.';
+
+export const CALENDLY_CANCELLED_CONFIRMED_TOOLTIP =
+  'This call is cancelled in Calendly. Confirmed status cannot be changed — Book a new call instead.';

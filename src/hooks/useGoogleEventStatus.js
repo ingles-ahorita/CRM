@@ -72,11 +72,12 @@ export function useGoogleEventStatus({ lead, enabled = true }) {
         };
         if (key) statusCache.set(key, next);
 
-        // Keep the CRM in sync: if Google says cancelled but our row isn't flagged, update it.
+        // Keep the CRM in sync: if Google says cancelled but our row isn't flagged,
+        // mark it cancelled and force Confirmed → NO.
         if (next.canceled && lead?.cancelled !== true && lead?.id) {
           supabase
             .from('calls')
-            .update({ cancelled: true })
+            .update({ cancelled: true, confirmed: false })
             .eq('id', lead.id)
             .then(({ error }) => {
               if (error) console.warn('[useGoogleEventStatus] cancelled sync failed:', error.message);

@@ -145,6 +145,11 @@ export function EndShiftModal({ isOpen, onClose, mode, userId, setterMap = {}, c
 
       // Filter for incomplete leads based on mode
       const incomplete = leads.filter(lead => {
+        // A cancelled call (e.g. cancelled externally via Calendly) never
+        // happened, so its pick-up/confirmed/note fields are expectedly empty.
+        // Exclude it entirely so it can't block ending the shift.
+        if (lead.cancelled === true) return false;
+
         if (mode === 'closer') {
           const now = new Date();
           const callDate = lead.call_date && new Date(lead.call_date);

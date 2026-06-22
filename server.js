@@ -131,6 +131,11 @@ app.post('/api/cancel-calendly', async (req, res) => {
   return adaptVercelHandler(cancelCalendlyHandler)(req, res);
 });
 
+app.get('/api/cancel-calendly', async (req, res) => {
+  if (!cancelCalendlyHandler) await loadHandlers();
+  return adaptVercelHandler(cancelCalendlyHandler)(req, res);
+});
+
 app.post('/api/cancel-iclosed', async (req, res) => {
   if (!cancelIclosedHandler) await loadHandlers();
   return adaptVercelHandler(cancelIclosedHandler)(req, res);
