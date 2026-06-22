@@ -58,6 +58,55 @@ function pct(num, den) {
   return (n / d) * 100;
 }
 
+const isTrue = (v) => v === true || v === "true";
+const isReschedule = (c) => isTrue(c?.is_reschedule);
+
+/**
+ * Team-wide funnel rates computed with the canonical Metrics-table definitions
+ * (see metrics-v2/useManagementMetricsData.js → fetchStatsData). Each stage of
+ * the funnel is measured on its OWN cohort/date field, not a single call_date
+ * cohort:
+ *   - Confirmation = confirmed / bookings, by `book_date` (reschedule-deduped)
+ *   - Show-up      = showed / confirmed, over calls that have HAPPENED (call_date ≤ now)
+ *   - Conversion   = purchased / showed, purchases counted by `purchase_date`
+ *   - Success      = purchased / totalBooked (booked by call_date, incl. cancelled + future)
+ * Returns only the four flagged funnel metrics; AOV stays on its existing basis.
+ */
+export function computeFunnelHeadline({ bookings = [], calls = [], purchases = [], now = new Date() } = {}) {
+  // Confirmation — bookings cohort (book_date), reschedule-deduped.
+  const reschedBookingLeads = new Set(bookings.filter(isReschedule).map((b) => b.lead_id));
+  const filteredBookings = bookings.filter((b) => isReschedule(b) || !reschedBookingLeads.has(b.lead_id));
+  const bookingsForConfirmation = filteredBookings.length;
+  const confirmedFromBookings = filteredBookings.filter((b) => isTrue(b.confirmed)).length;
+
+  // Booked / show-up cohort (call_date), reschedule-deduped. totalBooked keeps
+  // cancelled + future calls (matches the Metrics-table Success denominator).
+  const reschedCallLeads = new Set(calls.filter(isReschedule).map((c) => c.lead_id));
+  const filteredCalls = calls.filter((c) => isReschedule(c) || !reschedCallLeads.has(c.lead_id));
+  const totalBooked = filteredCalls.length;
+  const nowMs = now.getTime();
+  const happened = filteredCalls.filter((c) => c.call_date && new Date(c.call_date).getTime() <= nowMs);
+  const totalShowedUp = happened.filter((c) => isTrue(c.showed_up)).length;
+  const totalConfirmed = happened.filter((c) => isTrue(c.confirmed)).length;
+
+  // Purchases cohort (purchase_date) — latest outcome row per call.
+  const latestByCall = new Map();
+  for (const row of purchases) {
+    const cid = row?.calls?.id;
+    if (!cid) continue;
+    const existing = latestByCall.get(cid);
+    if (!existing || row.id > existing.id) latestByCall.set(cid, row);
+  }
+  const totalPurchased = latestByCall.size;
+
+  return {
+    confirmationRate: pct(confirmedFromBookings, bookingsForConfirmation),
+    showUpRate: pct(totalShowedUp, totalConfirmed),
+    conversionRate: pct(totalPurchased, totalShowedUp),
+    successRate: pct(totalPurchased, totalBooked),
+  };
+}
+
 function emptyAgg() {
   return { booked: 0, confirmed: 0, showed: 0, sales: 0, pifSales: 0, aovSum: 0 };
 }
@@ -128,7 +177,7 @@ function evalEntity(recentAgg, priorAgg, metricIds) {
  * (>= cutoff, used for the headline averages) and the prior window (used only
  * for trend direction).
  */
-export function computeWatchList({ calls = [], sales = [], setters = [], closers = [], cutoffISO } = {}) {
+export function computeWatchList({ calls = [], sales = [], setters = [], closers = [], cutoffISO, funnelOverrides = null } = {}) {
   const cutoff = cutoffISO ? new Date(cutoffISO).getTime() : null;
   const isRecent = (iso) => {
     if (cutoff == null) return true;
@@ -195,7 +244,9 @@ export function computeWatchList({ calls = [], sales = [], setters = [], closers
   const teamRates = ratesFromAgg(teamRecent);
   const funnel = FUNNEL_METRICS.map((id) => {
     const def = CORE[id];
-    const value = teamRates[id];
+    // Use the canonical Metrics-table value when provided (confirmation, show-up,
+    // conversion, success); AOV and any unmapped metric fall back to teamRates.
+    const value = funnelOverrides && id in funnelOverrides ? funnelOverrides[id] : teamRates[id];
     return {
       id,
       label: def.label,
@@ -270,7 +321,10 @@ export async function loadWatchList(arg = WATCH_WINDOW_DAYS) {
   const fullStartISO = new Date(range.startDate.getTime() - spanMs).toISOString();
   const fullEndISO = range.endISO;
 
-  const [settersRes, closersRes, calls, sales] = await Promise.all([
+  // Recent-window data for the team funnel, fetched on the canonical
+  // Metrics-table basis (each funnel stage on its own cohort/date field). These
+  // power ONLY the funnel header; the per-person breach logic below is unchanged.
+  const [settersRes, closersRes, calls, sales, funnelBookings, funnelCalls, funnelPurchases] = await Promise.all([
     supabase.from("setters").select("id, name").eq("active", true),
     supabase.from("closers").select("id, name").eq("active", true),
     fetchAllRows(() =>
@@ -292,10 +346,42 @@ export async function loadWatchList(arg = WATCH_WINDOW_DAYS) {
         .gte("calls.call_date", fullStartISO)
         .lte("calls.call_date", fullEndISO),
     ),
+    // Funnel — Confirmation cohort: bookings by book_date (reschedule-deduped).
+    fetchAllRows(() =>
+      supabase
+        .from("calls")
+        .select("lead_id, confirmed, is_reschedule, book_date")
+        .gte("book_date", cutoffISO)
+        .lte("book_date", range.endISO),
+    ),
+    // Funnel — Show-up + Success-denominator cohort: calls by call_date
+    // (reschedule-deduped; keeps cancelled + future so totalBooked matches Metrics).
+    fetchAllRows(() =>
+      supabase
+        .from("calls")
+        .select("id, lead_id, confirmed, showed_up, is_reschedule, call_date")
+        .gte("call_date", cutoffISO)
+        .lte("call_date", range.endISO),
+    ),
+    // Funnel — Conversion + Success-numerator cohort: purchases by purchase_date.
+    fetchAllRows(() =>
+      supabase
+        .from("outcome_log")
+        .select("id, outcome, purchase_date, calls!inner!closer_notes_call_id_fkey(id)")
+        .in("outcome", ["yes", "refund"])
+        .gte("purchase_date", cutoffISO)
+        .lte("purchase_date", range.endISO),
+    ),
   ]);
 
   if (settersRes.error) throw settersRes.error;
   if (closersRes.error) throw closersRes.error;
+
+  const funnelOverrides = computeFunnelHeadline({
+    bookings: funnelBookings || [],
+    calls: funnelCalls || [],
+    purchases: funnelPurchases || [],
+  });
 
   const salesRows = (sales || []).map((s) => ({
     setter_id: s?.calls?.setter_id ?? null,
@@ -312,6 +398,7 @@ export async function loadWatchList(arg = WATCH_WINDOW_DAYS) {
     setters: settersRes.data || [],
     closers: closersRes.data || [],
     cutoffISO,
+    funnelOverrides,
   });
 
   return { ...result, range };
