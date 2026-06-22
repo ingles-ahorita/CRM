@@ -9,6 +9,7 @@ export default function StatusDropdown({
   label,
   disabled = false,
   outcomeLog = null,
+  loading = false,
 }) {
   const getBackgroundColor = () => {
     const isDontQualify = Array.isArray(outcomeLog)
@@ -61,12 +62,34 @@ export default function StatusDropdown({
       >
         {label}
       </label>
+      <div style={{ position: "relative", width: 50 }}>
+      {loading && (
+        <span
+          aria-label="Updating"
+          style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            width: 14,
+            height: 14,
+            marginTop: -7,
+            marginLeft: -7,
+            border: "2px solid rgba(0,0,0,0.2)",
+            borderTop: "2px solid #374151",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+            pointerEvents: "none",
+            zIndex: 2,
+          }}
+        />
+      )}
       <select
         value={String(value)}
         onChange={(e) => onChange?.(e.target.value)}
-        disabled={disabled}
+        disabled={disabled || loading}
         style={{
           appearance: "none",
+          opacity: loading ? 0.45 : 1,
           backgroundColor: getBackgroundColor(),
           color: isDontQualify && label === "PURCHASED" ? "#ffffff" : "#000000",
           borderColor: "#d1d5db",
@@ -106,6 +129,7 @@ export default function StatusDropdown({
         <option value={"false"}>NO</option>
         <option value={"null"}>TBD</option>
       </select>
+      </div>
     </div>
   );
 }

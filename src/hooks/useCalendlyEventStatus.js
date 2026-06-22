@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react';
-import { getIclosedEventCallId, isIclosedLead } from '../lib/iclosedBooking';
+import { getCalendlyEventUri, isCalendlyLead } from '../lib/iclosedBooking';
 import { supabase } from '../lib/supabaseClient';
 
 const statusCache = new Map();
 
 function cacheKey(lead) {
-  const eventCallId = getIclosedEventCallId(lead?.calendly_id);
-  return eventCallId ? `${lead?.id}:${eventCallId}` : null;
+  const eventUri = getCalendlyEventUri(lead?.calendly_id);
+  return eventUri ? `${lead?.id}:${eventUri}` : null;
 }
 
 /**
- * Check whether an iClosed event call is cancelled (fail-open on API errors).
+ * Check whether a Calendly scheduled event is cancelled (fail-open on API errors).
+ * Mirrors useGoogleEventStatus / useIclosedEventCallStatus. When the event is
+ * cancelled but the CRM row is not yet flagged, it best-effort syncs
+ * calls.cancelled = true and calls.confirmed = false.
  */
-export function useIclosedEventCallStatus({ lead, enabled = true }) {
+export function useCalendlyEventStatus({ lead, enabled = true }) {
   const [state, setState] = useState(() => {
     if (lead?.cancelled === true) {
       return { loading: false, canceled: true, found: true, error: null };
@@ -21,7 +24,7 @@ export function useIclosedEventCallStatus({ lead, enabled = true }) {
   });
 
   useEffect(() => {
-    if (!enabled || !isIclosedLead(lead)) {
+    if (!enabled || !isCalendlyLead(lead)) {
       setState({ loading: false, canceled: false, found: false, error: null });
       return undefined;
     }
@@ -31,8 +34,8 @@ export function useIclosedEventCallStatus({ lead, enabled = true }) {
       return undefined;
     }
 
-    const eventCallId = getIclosedEventCallId(lead?.calendly_id);
-    if (!eventCallId) {
+    const eventUri = getCalendlyEventUri(lead?.calendly_id);
+    if (!eventUri) {
       setState({ loading: false, canceled: false, found: false, error: null });
       return undefined;
     }
@@ -49,7 +52,7 @@ export function useIclosedEventCallStatus({ lead, enabled = true }) {
     (async () => {
       try {
         const response = await fetch(
-          `/api/iclosed?resource=event-call-status&eventCallId=${encodeURIComponent(eventCallId)}`,
+          `/api/cancel-calendly?eventUri=${encodeURIComponent(eventUri)}`,
         );
         if (cancelled) return;
 
@@ -59,7 +62,7 @@ export function useIclosedEventCallStatus({ lead, enabled = true }) {
             loading: false,
             canceled: false,
             found: false,
-            error: data?.error || 'Could not verify iClosed call status',
+            error: data?.error || 'Could not verify Calendly call status',
           });
           return;
         }
@@ -70,16 +73,15 @@ export function useIclosedEventCallStatus({ lead, enabled = true }) {
         };
         if (key) statusCache.set(key, next);
 
-        // Fallback sync: the iClosed webhook normally persists cancellations
-        // (cancelled=true, confirmed=false). If it was missed, mirror that here
-        // when the live API reports the event cancelled.
+        // Keep the CRM in sync: if Calendly says cancelled but our row isn't
+        // flagged, mark it cancelled and force Confirmed → NO.
         if (next.canceled && lead?.cancelled !== true && lead?.id) {
           supabase
             .from('calls')
             .update({ cancelled: true, confirmed: false })
             .eq('id', lead.id)
             .then(({ error }) => {
-              if (error) console.warn('[useIclosedEventCallStatus] cancelled sync failed:', error.message);
+              if (error) console.warn('[useCalendlyEventStatus] cancelled sync failed:', error.message);
             });
         }
 
@@ -90,7 +92,7 @@ export function useIclosedEventCallStatus({ lead, enabled = true }) {
           loading: false,
           canceled: false,
           found: false,
-          error: err?.message || 'Could not verify iClosed call status',
+          error: err?.message || 'Could not verify Calendly call status',
         });
       }
     })();

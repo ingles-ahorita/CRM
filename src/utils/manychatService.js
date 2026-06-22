@@ -339,7 +339,11 @@ export const sendToCloserMC = async (leadData) => {
       });
       if (!findResponse.ok) {
         const error = await findResponse.json().catch(() => errBody);
-        throw new Error(error.error || 'Failed to create or find ManyChat user');
+        const findErr = new Error(error.error || 'Failed to create or find ManyChat user');
+        // Attach the ManyChat debug trace so callers can log the exact reason.
+        findErr.debug = error?.debug || errBody?.debug;
+        findErr.serverError = error;
+        throw findErr;
       }
       result = await findResponse.json();
     } else {
@@ -359,7 +363,10 @@ export const sendToCloserMC = async (leadData) => {
     
     if (!subscriberId) {
       console.error('❌ No subscriber ID in response:', result);
-      throw new Error('Subscriber ID not returned from API');
+      const noIdErr = new Error('Subscriber ID not returned from API');
+      noIdErr.debug = result?.debug;
+      noIdErr.serverError = result;
+      throw noIdErr;
     }
 
     console.log(`✅ ManyChat user ${result.found ? 'found' : 'created'}:`, subscriberId);

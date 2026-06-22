@@ -20,15 +20,20 @@ import {
   getGoogleEventId,
   isIclosedLead,
   isGoogleLead,
+  isCalendlyLead,
   ICLOSED_CANCELLED_CONFIRMED_TOOLTIP,
+  CALENDLY_CANCELLED_CONFIRMED_TOOLTIP,
 } from '../../lib/iclosedBooking';
 import { useIclosedEventCallStatus } from '../../hooks/useIclosedEventCallStatus';
 import { useGoogleEventStatus } from '../../hooks/useGoogleEventStatus';
+import { useCalendlyEventStatus } from '../../hooks/useCalendlyEventStatus';
 import {
   buildConfirmedNoResultMessage,
   formatConfirmedYesError,
   formatSupabaseConfirmedError,
 } from '../../lib/confirmationStatusMessages';
+import { confirmLead, fireLeadConfirmedWebhook } from '../../utils/confirmLeadFlow';
+import ManychatConfirmRetryModal from './ManychatConfirmRetryModal';
 
 const CANCELLED_CONFIRMED_TOOLTIP =
   'This call is cancelled. Confirmed status cannot be changed — Book a new call instead.';
@@ -109,7 +114,7 @@ async function cancelWithPlatform({ url, body, platformLabel, functionName, erro
   }
 
   if (response.ok) {
-    await supabase.from('calls').update({ cancelled: true }).eq('id', callId);
+    await supabase.from('calls').update({ cancelled: true, confirmed: false }).eq('id', callId);
     const data = await response.json();
     return {
       ok: true,
@@ -182,12 +187,18 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     lead,
     enabled: canEditConfirmed,
   });
+  const { canceled: calendlyCanceled } = useCalendlyEventStatus({
+    lead,
+    enabled: canEditConfirmed,
+  });
   const isIclosedCancelledCall =
     isIclosedLead(lead) && (lead.cancelled === true || iclosedCanceled);
   const isGoogleCancelledCall =
     isGoogleLead(lead) && (lead.cancelled === true || googleCanceled);
+  const isCalendlyCancelledCall =
+    isCalendlyLead(lead) && (lead.cancelled === true || calendlyCanceled);
   const isCancelledCall =
-    lead.cancelled === true || isIclosedCancelledCall || isGoogleCancelledCall;
+    lead.cancelled === true || isIclosedCancelledCall || isGoogleCancelledCall || isCalendlyCancelledCall;
   // Add CSS for loading spinner animation
   useEffect(() => {
     const style = document.createElement('style');
@@ -229,7 +240,11 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
   const [pendingPhoneNumber, setPendingPhoneNumber] = useState(null);
   const [showRecoverModal, setShowRecoverModal] = useState(false);
   const [showNoShowStateModal, setShowNoShowStateModal] = useState(false);
-  const { setter: currentSetter } = useParams();  
+  // Confirmed → YES gated flow (ManyChat-first). isConfirming drives the
+  // dropdown spinner; mcRetry drives the failure/retry modal.
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [mcRetry, setMcRetry] = useState({ open: false });
+  const { setter: currentSetter } = useParams();
   const navigate = useNavigate();
 
   // Toast function
@@ -424,6 +439,61 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
     return true;
   };
 
+  // ── Confirmed → YES: ManyChat-first gated flow ─────────────────────────────
+  // ManyChat (closer bot) must sync before calls.confirmed is written, so the
+  // dropdown never shows "Yes" unless the closer was actually notified. On
+  // failure we open a retry modal instead of silently confirming.
+  const runConfirm = async ({ phoneOverride, cachedSubscriberId, dbOnly } = {}) => {
+    const retrying = mcRetry.open;
+    if (retrying) setMcRetry((s) => ({ ...s, busy: true }));
+    else setIsConfirming(true);
+
+    try {
+      const res = await confirmLead(lead, {
+        phoneOverride,
+        cachedSubscriberId,
+        dbOnly,
+        source: 'LeadItem.jsx/handleConfirmYes',
+      });
+
+      // Success: commit dropdown, sync owner bot (best-effort), fire n8n once.
+      setConfirmed('true');
+      setMcRetry({ open: false });
+
+      const ownerMcId = lead?.manychat_user_id;
+      if (ownerMcId) {
+        ManychatService.updateManychatField(ownerMcId, 'confirmed', true).catch((e) =>
+          console.error('[LeadItem] owner-bot confirmed update failed:', e)
+        );
+      }
+      fireLeadConfirmedWebhook(lead);
+
+      showToast(
+        res.mcSynced ? 'Lead confirmed and sent to closer' : 'Lead confirmed (ManyChat not synced)',
+        'success'
+      );
+    } catch (e) {
+      // e: { stage, code, reason, phone, subscriberId?, debug? }
+      setMcRetry({
+        open: true,
+        lead,
+        reason: e?.reason || 'Confirmation failed. Please retry.',
+        code: e?.code,
+        stage: e?.stage,
+        phone: phoneOverride || lead?.phone,
+        cachedSubscriberId: e?.subscriberId || cachedSubscriberId,
+        busy: false,
+      });
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const handleConfirmYes = () => {
+    if (isCancelledCall) return;
+    runConfirm();
+  };
+
   return (
     <div
       key={lead.id}
@@ -519,25 +589,31 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           />
           <StatusDropdown
             value={isCancelledCall ? 'false' : confirmed}
+            loading={isConfirming}
             onChange={(value) => {
               if (isCancelledCall) return;
               // If changing to "no" (false), show confirmation modal
               if (value === 'false' || value === false) {
                 setPendingConfirmedValue(value);
                 setShowConfirmCancelModal(true);
+              } else if (value === 'true' || value === true) {
+                // Confirmed → YES uses the ManyChat-first gated flow
+                handleConfirmYes();
               } else {
-                // For other values (yes/null), update directly
+                // TBD / null: update directly
                 updateStatus(lead.id, 'confirmed', value, setConfirmed, lead.manychat_user_id, lead);
               }
             }}
             label="Confirmed"
-            disabled={mode === 'closer' || mode === 'view' || isCancelledCall}
+            disabled={mode === 'closer' || mode === 'view' || isCancelledCall || isConfirming}
             title={
               isIclosedCancelledCall
                 ? ICLOSED_CANCELLED_CONFIRMED_TOOLTIP
-                : isCancelledCall
-                  ? CANCELLED_CONFIRMED_TOOLTIP
-                  : undefined
+                : isCalendlyCancelledCall
+                  ? CALENDLY_CANCELLED_CONFIRMED_TOOLTIP
+                  : isCancelledCall
+                    ? CANCELLED_CONFIRMED_TOOLTIP
+                    : undefined
             }
           />
           <StatusDropdown
@@ -1059,6 +1135,16 @@ const isLeadPage = location.pathname === '/lead' || location.pathname.startsWith
           }}
           leadName={lead?.name || lead?.leads?.name}
           currentNoShowState={lead.no_show_state}
+        />
+
+        {/* Confirmed → YES failure / retry modal */}
+        <ManychatConfirmRetryModal
+          state={mcRetry}
+          onRetry={(phoneOverride) =>
+            runConfirm({ phoneOverride, cachedSubscriberId: mcRetry.cachedSubscriberId })
+          }
+          onConfirmDbOnly={() => runConfirm({ dbOnly: true })}
+          onClose={() => setMcRetry({ open: false })}
         />
 
         {/* Toast Notification */}
