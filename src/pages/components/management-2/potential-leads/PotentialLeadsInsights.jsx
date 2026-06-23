@@ -108,6 +108,8 @@ export default function PotentialLeadsInsights({ rows, ltForRow, isUnassigned, l
     () => (rows || []).filter(unassignedFn).length,
     [rows, unassignedFn],
   );
+  const received = rows?.length ?? 0;
+  const convertedRate = received > 0 ? Math.round(((insights.counts.booked || 0) / received) * 100) : 0;
   const [hiddenKeys, setHiddenKeys] = useState(() => new Set());
 
   const visibleTrendKeys = TREND_KEYS.filter((k) => !hiddenKeys.has(k.key));
@@ -131,12 +133,19 @@ export default function PotentialLeadsInsights({ rows, ltForRow, isUnassigned, l
   return (
     <div className="flex flex-col gap-4">
       {/* KPI cards — full width on top */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <KpiCard
           label="Received"
           value={rows?.length ?? 0}
           sub="leads in scope"
-          tooltip="Total number of leads received within the selected date range and filtered setter scope."
+          tooltip="Total number of leads received within the selected date range and filtered scope."
+        />
+        <KpiCard
+          label="Converted"
+          value={insights.counts.booked ?? 0}
+          sub={`${convertedRate}% of received`}
+          valueClass="text-emerald-600"
+          tooltip="Potential leads that became leads — i.e. booked a call (pipeline stage LT4 'Call booked' or LT5 'Booked & confirmed'). Rate = Converted ÷ Received within the current scope."
         />
         <KpiCard
           label="Uncontacted"
