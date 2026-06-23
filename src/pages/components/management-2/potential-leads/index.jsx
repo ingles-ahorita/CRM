@@ -194,6 +194,18 @@ export default function PotentialLeads() {
     return dateScopedRows.filter((r) => set.has(r.assigned_setter_id));
   }, [dateScopedRows, selectedSetters]);
 
+  // …then narrowed by the global search box (name / email / phone / setter).
+  // Search is global: it scopes the KPIs, chart, status-option counts AND table.
+  const searchedRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return scopedRows;
+    return scopedRows.filter((r) =>
+      [r.name, r.email, r.phone, r.assigned_setter?.name]
+        .filter(Boolean)
+        .some((s) => String(s).toLowerCase().includes(q)),
+    );
+  }, [scopedRows, search]);
+
   // A lead is "unassigned" when it has no setter OR its setter is no longer
   // active — the assignment dropdown only lists active setters, so a row pointing
   // at a deactivated setter already shows as "— Unassigned —" in the UI.
@@ -216,20 +228,18 @@ export default function PotentialLeads() {
     }
   }, [isUnassigned]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return scopedRows.filter((r) => {
-      const lt = ltForRow(r);
-      if (HIDDEN_LT_STATUSES.has(lt)) return false; // booked (LT4/LT5) always hidden
+  // Global status filter — drives the whole page (KPIs, chart, table). Booked
+  // LT4/LT5 stay counted in the KPIs (e.g. "Converted") but are hidden from the
+  // table below, since they are no longer part of the actionable worklist.
+  const statusFilteredRows = useMemo(() => {
+    if (statusFilter === 'all') return searchedRows;
+    return searchedRows.filter((r) => rowMatchesStatus(r, ltForRow(r), statusFilter));
+  }, [searchedRows, statusFilter, ltForRow, rowMatchesStatus]);
 
-      if (statusFilter !== 'all' && !rowMatchesStatus(r, lt, statusFilter)) return false;
-
-      if (!q) return true;
-      return [r.name, r.email, r.phone, r.assigned_setter?.name]
-        .filter(Boolean)
-        .some((s) => String(s).toLowerCase().includes(q));
-    });
-  }, [scopedRows, search, statusFilter, ltForRow, rowMatchesStatus]);
+  const filtered = useMemo(
+    () => statusFilteredRows.filter((r) => !HIDDEN_LT_STATUSES.has(ltForRow(r))),
+    [statusFilteredRows, ltForRow],
+  );
 
   useEffect(() => {
     setPage(1);
@@ -240,22 +250,24 @@ export default function PotentialLeads() {
     [setters],
   );
 
-  // Overview pills reflect the current date + setter scope.
+  // Status-dropdown option counts reflect the date + setter + search scope, but
+  // NOT the status selection itself — so every option keeps a real count and you
+  // can switch between statuses without the numbers collapsing to zero.
   const stats = useMemo(
-    () => buildPotentialLeadStats(scopedRows, ltForRow, { countUnassigned: true, isUnassigned }),
-    [scopedRows, ltForRow, isUnassigned],
+    () => buildPotentialLeadStats(searchedRows, ltForRow, { countUnassigned: true, isUnassigned }),
+    [searchedRows, ltForRow, isUnassigned],
   );
 
   // Extra pill count (contacted = has a logged attempt, excluding booked) over the same scope.
   const extraStats = useMemo(() => {
     let contacted = 0;
-    scopedRows.forEach((r) => {
+    searchedRows.forEach((r) => {
       const lt = ltForRow(r);
       if (HIDDEN_LT_STATUSES.has(lt)) return; // skip booked (LT4/LT5)
       if (r.last_contact_attempt_at) contacted += 1;
     });
     return { contacted };
-  }, [scopedRows, ltForRow]);
+  }, [searchedRows, ltForRow]);
 
   const pagination = useMemo(() => paginateItems(filtered, page), [filtered, page]);
 
@@ -338,6 +350,29 @@ export default function PotentialLeads() {
         <p className="text-[13px] text-slate-500">
           Open iClosed contacts (Potential / Qualified). Status column shows CRM pipeline stage (LT1–LT5), not iClosed scheduling status.
         </p>
+
+        {/* Global filters — scope the KPIs, chart AND table below. */}
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
+          <MultiSelect
+            placeholder="All setters"
+            options={setterOptions}
+            selected={selectedSetters}
+            onChange={setSelectedSetters}
+            minWidth={200}
+          />
+          <StatusSelect
+            options={statusOptions}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name / email / phone / setter…"
+            className="min-w-[200px] flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-slate-400"
+          />
+        </div>
       </div>
 
       {error && (
@@ -347,7 +382,7 @@ export default function PotentialLeads() {
       )}
 
       <PotentialLeadsInsights
-        rows={scopedRows}
+        rows={statusFilteredRows}
         ltForRow={ltForRow}
         isUnassigned={isUnassigned}
         loading={loading}
@@ -355,29 +390,6 @@ export default function PotentialLeads() {
       />
 
       <div className="my-4 border-t border-slate-100" />
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <MultiSelect
-          placeholder="All setters"
-          options={setterOptions}
-          selected={selectedSetters}
-          onChange={setSelectedSetters}
-          minWidth={200}
-        />
-        <StatusSelect
-          options={statusOptions}
-          value={statusFilter}
-          onChange={setStatusFilter}
-        />
-
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name / email / phone / setter…"
-          className="min-w-[200px] flex-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-slate-400"
-        />
-      </div>
 
       <div className="overflow-x-auto rounded-[12px] border border-slate-200">
         <table className="w-full min-w-[1230px] table-fixed divide-y divide-slate-200 text-sm">
