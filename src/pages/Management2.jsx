@@ -19,6 +19,7 @@ import { resolveSelectedRange } from "./components/management-2/watch-list/range
 import { usePlatformEventsBadge } from "../hooks/usePlatformEventsBadge";
 import { useWatchList } from "../hooks/useWatchList";
 import * as DateHelpers from "../utils/dateHelpers";
+import { ManagementTimezoneProvider } from "../contexts/managementTimezone";
 
 export default function Management2() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -72,6 +73,7 @@ export default function Management2() {
   };
 
   return (
+    <ManagementTimezoneProvider>
     <div className="min-h-screen bg-slate-50/30 p-6 md:p-8">
       <div className="mx-auto max-w-[1600px]">
         {/* Header + Tabs on the same row */}
@@ -112,5 +114,6 @@ export default function Management2() {
         </div>
       </div>
     </div>
+    </ManagementTimezoneProvider>
   );
 }

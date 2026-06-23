@@ -11,6 +11,7 @@ import {
   getCountryFromPhone,
 } from "../../../../../../utils/phoneNumberParser";
 import { isPaidUtmSourceForIcon } from "../../../../../../utils/isPaidUtmSourceForIcon";
+import { useManagementTimezone } from "../../../../../../contexts/managementTimezone";
 
 function cx ( ...p ) {
   return p.filter( Boolean ).join( " " );
@@ -248,6 +249,7 @@ export default function LeadRow ( {
   mode = "full",
 } ) {
   const { setter: routeSetterId } = useParams();
+  const { timeZone } = useManagementTimezone();
   const [ viewModalOpen, setViewModalOpen ] = useState( false );
   const [ showNoteModal, setShowNoteModal ] = useState( false );
   const [ modeState, setModeState ] = useState( mode );
@@ -325,10 +327,11 @@ export default function LeadRow ( {
     if ( !iso ) return "—";
     const d = new Date( iso );
     if ( Number.isNaN( d.getTime() ) ) return "—";
-    return `${d.toLocaleDateString( "en-US", { month: "2-digit", day: "2-digit", year: "numeric" } )}, ${d.toLocaleTimeString( undefined, {
+    return `${d.toLocaleDateString( "en-US", { month: "2-digit", day: "2-digit", year: "numeric", timeZone } )}, ${d.toLocaleTimeString( undefined, {
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
+      timeZone,
     } )}`;
   };
   const bookDateLabel = formatDateTime( lead?.book_date );

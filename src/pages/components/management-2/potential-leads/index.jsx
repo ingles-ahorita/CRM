@@ -24,6 +24,8 @@ import StatusSelect from './StatusSelect.jsx';
 import SegmentedTabs from '../segmented-tabs';
 import * as DateHelpers from '../../../../utils/dateHelpers';
 import { normalizeCustomBounds } from '../overview/overview-range-helpers.js';
+import { useManagementTimezone } from '../../../../contexts/managementTimezone';
+import TimezoneToggle from '../TimezoneToggle';
 
 const TAB_STATUS_LIST = [...ICLOSED_POTENTIAL_LEADS_TAB_STATUSES];
 
@@ -36,9 +38,9 @@ const DATE_RANGE_ITEMS = [
   { id: 'custom', label: 'Custom', title: 'Custom date range' },
 ];
 
-function resolveDateRange(range, customStart, customEnd) {
+function resolveDateRange(range, customStart, customEnd, timeZone) {
   if (range === 'today') {
-    const { dayStart, dayEnd } = DateHelpers.getDayBoundsUTC(new Date());
+    const { dayStart, dayEnd } = DateHelpers.getDayBoundsInTimezone(new Date(), timeZone);
     return { start: dayStart, end: dayEnd };
   }
   if (range === 'lastWeek') {
@@ -52,22 +54,29 @@ function resolveDateRange(range, customStart, customEnd) {
     return { start: m.startDate, end: m.endDate };
   }
   if (range === 'custom') {
+    if (timeZone && timeZone !== 'UTC') {
+      return {
+        start: DateHelpers.getDayBoundsInTimezone(customStart, timeZone).dayStart,
+        end: DateHelpers.getDayBoundsInTimezone(customEnd, timeZone).dayEnd,
+      };
+    }
     return normalizeCustomBounds(customStart, customEnd);
   }
   // 'all' (or anything else) → no date bounds; caller spans the full dataset.
   return { start: null, end: null };
 }
 
-function formatDate(iso) {
+function formatDate(iso, timeZone) {
   if (!iso) return '—';
   try {
-    return new Date(iso).toLocaleString();
+    return new Date(iso).toLocaleString(undefined, timeZone ? { timeZone } : undefined);
   } catch {
     return iso;
   }
 }
 
 export default function PotentialLeads() {
+  const { timeZone } = useManagementTimezone();
   const [rows, setRows] = useState([]);
   const [setters, setSetters] = useState([]);
   const [crmConfirmedEmails, setCrmConfirmedEmails] = useState(() => new Set());
@@ -164,8 +173,8 @@ export default function PotentialLeads() {
         end: DateHelpers.getDayBoundsUTC(new Date()).dayEnd,
       };
     }
-    return resolveDateRange(range, customStart, customEnd);
-  }, [range, customStart, customEnd, baseRows]);
+    return resolveDateRange(range, customStart, customEnd, timeZone);
+  }, [range, customStart, customEnd, baseRows, timeZone]);
 
   // Rows within the selected date range (by created_at).
   const dateScopedRows = useMemo(() => {
@@ -296,6 +305,7 @@ export default function PotentialLeads() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-[28px] font-bold tracking-tight text-[#0f172a]">Potential Leads</h2>
           <div className="flex flex-wrap items-center gap-2">
+            <TimezoneToggle />
             <SegmentedTabs items={DATE_RANGE_ITEMS} activeId={range} onChange={setRange} size="xs" fit />
             {range === 'custom' && (
               <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-1.5 py-1">
@@ -413,6 +423,7 @@ export default function PotentialLeads() {
                 setters={setters}
                 ltStatus={ltForRow(r)}
                 onUpdate={updateRow}
+                timeZone={timeZone}
               />
             ))}
           </tbody>
@@ -424,7 +435,7 @@ export default function PotentialLeads() {
   );
 }
 
-function PotentialLeadRow({ row, setters, ltStatus, onUpdate }) {
+function PotentialLeadRow({ row, setters, ltStatus, onUpdate, timeZone }) {
   const [noteDraft, setNoteDraft] = useState(row.notes || '');
   const [editingNote, setEditingNote] = useState(false);
 
@@ -451,7 +462,7 @@ function PotentialLeadRow({ row, setters, ltStatus, onUpdate }) {
         <div className="truncate font-semibold text-slate-800">{row.name || '—'}</div>
         {row.assignment_reason === 'next_scheduled' && (
           <div className="mt-0.5 text-[10px] font-medium uppercase text-amber-600">
-            Waiting for shift{row.scheduled_handoff_at ? ` @ ${formatDate(row.scheduled_handoff_at)}` : ''}
+            Waiting for shift{row.scheduled_handoff_at ? ` @ ${formatDate(row.scheduled_handoff_at, timeZone)}` : ''}
           </div>
         )}
         {row.assignment_reason === 'unassigned' && (
@@ -505,7 +516,7 @@ function PotentialLeadRow({ row, setters, ltStatus, onUpdate }) {
         )}
       </td>
       <td className="px-3 py-2 text-xs text-slate-600">
-        <div>{formatDate(row.last_contact_attempt_at)}</div>
+        <div>{formatDate(row.last_contact_attempt_at, timeZone)}</div>
         <button
           type="button"
           onClick={markContactAttempt}
@@ -514,7 +525,7 @@ function PotentialLeadRow({ row, setters, ltStatus, onUpdate }) {
           Log contact attempt
         </button>
       </td>
-      <td className="px-3 py-2 text-xs text-slate-500">{formatDate(row.created_at)}</td>
+      <td className="px-3 py-2 text-xs text-slate-500">{formatDate(row.created_at, timeZone)}</td>
     </tr>
   );
 }

@@ -223,6 +223,37 @@ export function getDayBoundsUTC(dateValue) {
 }
 
 /**
+ * Day bounds (as UTC instants) for the calendar day that `dateValue` falls on
+ * **in the given IANA timezone**. Returns the UTC Date objects representing
+ * 00:00:00.000 and 23:59:59.999 of that local day.
+ *
+ * Accepts either a Date/ISO instant (the day is the one it lands on in `timeZone`)
+ * or a bare 'YYYY-MM-DD' string (treated as that calendar day in `timeZone`).
+ * Falls back to UTC bounds when no timezone (or 'UTC') is given.
+ * @param {Date|string} dateValue
+ * @param {string} timeZone - IANA timezone, e.g. 'Europe/Madrid'
+ * @returns {{ dayStart: Date, dayEnd: Date }}
+ */
+export function getDayBoundsInTimezone(dateValue, timeZone) {
+  if (!timeZone || timeZone === 'UTC') return getDayBoundsUTC(dateValue);
+
+  let ymd;
+  if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue.trim())) {
+    ymd = dateValue.trim();
+  } else {
+    const date = typeof dateValue === 'string'
+      ? parseISO(dateValue.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(dateValue) ? dateValue : dateValue + 'Z')
+      : new Date(dateValue);
+    ymd = formatInTimeZone(date, timeZone, 'yyyy-MM-dd');
+  }
+
+  return {
+    dayStart: fromZonedTime(`${ymd}T00:00:00.000`, timeZone),
+    dayEnd: fromZonedTime(`${ymd}T23:59:59.999`, timeZone),
+  };
+}
+
+/**
  * Week bounds for a given week offset (0 = current week, 1 = previous week, etc.).
  * @param {number} weekOffset
  * @returns {{ weekStart: Date, weekEnd: Date }}

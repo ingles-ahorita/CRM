@@ -1,11 +1,12 @@
 import React from "react";
 import LeadsTable from "./leads-table";
+import TimezoneToggle from "../TimezoneToggle";
 
 export default function Leads() {
   return (
     <div className="w-full max-w-[1400px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       {/* Header Area */}
-      <div className="mb-4 flex flex-col items-start gap-1">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h2 className="text-[28px] font-bold tracking-tight text-[#0f172a]">
             Leads
@@ -14,9 +15,7 @@ export default function Leads() {
               CURRENT (Kept as-is)
             </div> */}
         </div>
-        {/* <p className="text-[13px] font-medium text-slate-500">
-            Operational call list with all the existing tabs and status badges.
-          </p> */}
+        <TimezoneToggle />
       </div>
 
       {/* Dashed Container Area */}

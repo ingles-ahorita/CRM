@@ -31,3 +31,7 @@ temp_interactive_push.bat
 benchmark-guide.html
 calendly_to_iclosed.html
 config.bat
+
+# n8n docs (local only)
+docs/n8n/ai-setter-system-prompt.md
+docs/n8n/ai-setter-v2-intent-first.json

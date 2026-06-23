@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabaseClient';
 import { runAnalysis } from '../pages/reactionTime';
-import { getDayBoundsLocal } from '../utils/dateHelpers';
-import { subDays, addDays } from 'date-fns'; 
+import { getDayBoundsLocal, getDayBoundsInTimezone, formatInTimeZone } from '../utils/dateHelpers';
+import { subDays, addDays } from 'date-fns';
 
 
 
@@ -9,14 +9,30 @@ import { subDays, addDays } from 'date-fns';
 
 
 export async function fetchAll(searchTerm, activeTab = 'all' ,
-   sortField = 'book_date', order = 'desc', 
+   sortField = 'book_date', order = 'desc',
    setDataState,
-    closerId, setterId, 
+    closerId, setterId,
     filters, leadId, startDate, endDate, setterFilter, closerFilter,
-    dateFilterField)  {
+    dateFilterField, timeZone)  {
   // dateFilterField: when provided, use this for date filtering instead of sortField.
   // E.g. 'call_date' ensures confirmation counts are always based on when the call happens.
   const dateField = dateFilterField ?? sortField;
+
+  // timeZone: when provided (e.g. 'Europe/Madrid'), day tabs and custom date
+  // ranges are bucketed by that timezone's calendar days. When omitted, the
+  // viewer's browser-local day boundaries are used (unchanged legacy behavior).
+  const tz = timeZone || null;
+  const dayBoundsFor = (d) => (tz ? getDayBoundsInTimezone(d, tz) : getDayBoundsLocal(d));
+  const dayKeyFor = (d, fallbackStart) =>
+    tz ? formatInTimeZone(d, tz, 'yyyy-MM-dd') : fallbackStart.toISOString().slice(0, 10);
+  const rangeStartISO = (val) => {
+    if (tz) return getDayBoundsInTimezone(val, tz).dayStart.toISOString();
+    const d = new Date(val); d.setHours(0, 0, 0, 0); return d.toISOString();
+  };
+  const rangeEndISO = (val) => {
+    if (tz) return getDayBoundsInTimezone(val, tz).dayEnd.toISOString();
+    const d = new Date(val); d.setHours(23, 59, 59, 999); return d.toISOString();
+  };
 
 
 
@@ -65,14 +81,10 @@ let query = supabase
     }
     // Apply date range when provided; otherwise no date filter (like 'all') so it always shows results
     if (startDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      query = query.gte(dateField, start.toISOString());
+      query = query.gte(dateField, rangeStartISO(startDate));
     }
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      query = query.lte(dateField, end.toISOString());
+      query = query.lte(dateField, rangeEndISO(endDate));
     }
   } else if (activeTab === 'follow ups') {
     // For follow ups tab, filter at DB level based on lockIn filter:
@@ -87,59 +99,36 @@ let query = supabase
     
     // Apply date range filtering if provided
     if (startDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      query = query.gte(dateField, start.toISOString());
+      query = query.gte(dateField, rangeStartISO(startDate));
     }
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      query = query.lte(dateField, end.toISOString());
+      query = query.lte(dateField, rangeEndISO(endDate));
     }
   } else if (activeTab !== 'all' && activeTab !== 'no shows') {
-    // Use the user's local timezone for tab day boundaries.
+    // Day-tab boundaries in the selected timezone (browser-local by default,
+    // or Europe/Madrid when the Management timezone toggle is on).
     const now = new Date();
-    const { dayStart: todayStart, dayEnd: todayEnd } = getDayBoundsLocal(now);
-    const { dayStart: yesterdayStart, dayEnd: yesterdayEnd } = getDayBoundsLocal(subDays(now, 1));
-    const { dayStart: tomorrowStart } = getDayBoundsLocal(addDays(now, 1));
-    const { dayStart: dayAfterTomorrowStart } = getDayBoundsLocal(addDays(now, 2));
-    const { dayStart: dayAfterTomorrowPlusOneStart } = getDayBoundsLocal(addDays(now, 3));
+    const refDate =
+      activeTab === 'yesterday' ? subDays(now, 1)
+      : activeTab === 'tomorrow' ? addDays(now, 1)
+      : activeTab === 'tomorrow + 1' ? addDays(now, 2)
+      : now; // 'today'
 
-    if (activeTab === 'today') {
+    if (['today', 'yesterday', 'tomorrow', 'tomorrow + 1'].includes(activeTab)) {
+      const { dayStart, dayEnd } = dayBoundsFor(refDate);
       query = query
-        .gte(dateField, todayStart.toISOString())
-        .lte(dateField, todayEnd.toISOString());
-      updateDataState({ currentDate: todayStart.toISOString().slice(0, 10) });
-    } else if (activeTab === 'yesterday') {
-      query = query
-        .gte(dateField, yesterdayStart.toISOString())
-        .lte(dateField, yesterdayEnd.toISOString());
-      updateDataState({ currentDate: yesterdayStart.toISOString().slice(0, 10) });
-    } else if (activeTab === 'tomorrow') {
-      const { dayEnd: tomorrowEnd } = getDayBoundsLocal(addDays(now, 1));
-      query = query
-        .gte(dateField, tomorrowStart.toISOString())
-        .lte(dateField, tomorrowEnd.toISOString());
-      updateDataState({ currentDate: tomorrowStart.toISOString().slice(0, 10) });
-    } else if (activeTab === 'tomorrow + 1') {
-      const { dayEnd: dayAfterTomorrowEnd } = getDayBoundsLocal(addDays(now, 2));
-      query = query
-        .gte(dateField, dayAfterTomorrowStart.toISOString())
-        .lte(dateField, dayAfterTomorrowEnd.toISOString());
-      updateDataState({ currentDate: dayAfterTomorrowStart.toISOString().slice(0, 10) });
+        .gte(dateField, dayStart.toISOString())
+        .lte(dateField, dayEnd.toISOString());
+      updateDataState({ currentDate: dayKeyFor(refDate, dayStart) });
     }
   } else if (activeTab === 'all') {
     // When viewing 'all', optionally filter by provided date range
     // Use dateField (dateFilterField or sortField) for date filtering
     if (startDate) {
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      query = query.gte(dateField, start.toISOString());
+      query = query.gte(dateField, rangeStartISO(startDate));
     }
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      query = query.lte(dateField, end.toISOString());
+      query = query.lte(dateField, rangeEndISO(endDate));
     }
   }
 
