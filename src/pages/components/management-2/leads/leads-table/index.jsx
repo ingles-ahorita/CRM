@@ -6,6 +6,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { fetchAll } from "../../../../../utils/fetchLeads";
 import { useRealtimeLeads } from "../../../../../hooks/useRealtimeLeads";
 import { getDailySlotsTotal } from "../../../../../utils/ocuppancy";
+import { useManagementTimezone } from "../../../../../contexts/managementTimezone";
 
 function cx ( ...p ) {
   return p.filter( Boolean ).join( " " );
@@ -151,6 +152,7 @@ function SubTabs ( { value, onChange } ) {
 export default function LeadsTable ( { title = "Today's Leads" } ) {
   const [ searchParams, setSearchParams ] = useSearchParams();
   const navigate = useNavigate();
+  const { timeZone } = useManagementTimezone();
 
   const [ subTab, setSubTab ] = useState( searchParams.get( "subTab" ) || "today" );
   const [ sortOrder, setSortOrder ] = useState( searchParams.get( "sortOrder" ) || "desc" );
@@ -224,6 +226,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
       setterFilter || undefined,
       closerFilter || undefined,
       sortBy,
+      timeZone,
     );
   }, [
     searchTerm,
@@ -236,6 +239,7 @@ export default function LeadsTable ( { title = "Today's Leads" } ) {
     endDate,
     setterFilter,
     closerFilter,
+    timeZone,
   ] );
 
   // Debounce search input
