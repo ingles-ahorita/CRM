@@ -579,15 +579,6 @@ function rangeTitle(range, customStart, customEnd) {
   return "Month to date";
 }
 
-function addMonthsClamped(date, monthsToAdd) {
-  const source = new Date(date);
-  const day = source.getUTCDate();
-  const target = new Date(Date.UTC(source.getUTCFullYear(), source.getUTCMonth() + monthsToAdd, 1));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  target.setUTCDate(Math.min(day, lastDay));
-  return target;
-}
-
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
 }
@@ -1614,7 +1605,8 @@ function PaymentPlanForecastPanel({
           <SectionBadge>Kajabi forecast</SectionBadge>
         </div>
         <p className="text-[11px] font-medium text-slate-500 leading-snug">
-          Expected installment cash from active Kajabi payment plans due in the selected range.
+          Estimated installment cash from active Kajabi payment plans due in the selected
+          range. Approximate — Kajabi's exact forecast is not available via API.
         </p>
       </div>
 
@@ -2366,63 +2358,24 @@ export default function Sales() {
           forecastDayKeys.map((d) => [d, { amount: 0, paymentCount: 0 }]),
         );
 
-        const [offersResult, purchasesResult] = await Promise.all([
-          supabase.from("offers").select("kajabi_id, name, price, installments"),
-          supabase
-            .from("kajabi_purchases")
-            .select("kajabi_purchase_id, kajabi_offer_id, payment_type, amount_in_cents, created_at_kajabi, deactivated_at, multipay_payments_made"),
-        ]);
-
-        if (offersResult.error) throw offersResult.error;
-        if (purchasesResult.error) throw purchasesResult.error;
-
-        const offersById = {};
-        for (const offer of offersResult.data || []) {
-          if (offer?.kajabi_id != null) offersById[String(offer.kajabi_id)] = offer;
+        // The forecast is computed server-side (/api/payment-plan-forecast): the server
+        // pulls the CURRENT state of each plan live from Kajabi (freshness) and drops
+        // plans that are behind their payment schedule (delinquency). This keeps the
+        // estimate close to Kajabi's figure instead of inflating it off the stale mirror.
+        const forecastParams = new URLSearchParams({ start: startISO, end: endISO });
+        const forecastResponse = await fetch(`/api/payment-plan-forecast?${forecastParams.toString()}`);
+        if (!forecastResponse.ok) {
+          const body = await forecastResponse.json().catch(() => ({}));
+          throw new Error(body?.error || `Forecast request failed (${forecastResponse.status})`);
         }
+        const forecastJson = await forecastResponse.json();
+        const expectedUsd = Number(forecastJson?.expectedUsd) || 0;
+        const expectedPayments = Number(forecastJson?.expectedPayments) || 0;
 
-        let expectedUsd = 0;
-        let expectedPayments = 0;
-
-        for (const purchase of purchasesResult.data || []) {
-          if (purchase?.deactivated_at) continue;
-
-          const paymentType = String(purchase?.payment_type || "").toLowerCase();
-          const offerId = String(purchase?.kajabi_offer_id || "unknown");
-          const offer = offersById[offerId] || KAJABI_OFFER_FALLBACKS[offerId] || null;
-          const totalInstallments = Number(offer?.installments) || 0;
-          const isPaymentPlan =
-            paymentType.includes("multipay") ||
-            paymentType.includes("payment plan") ||
-            totalInstallments > 1;
-          if (!isPaymentPlan || totalInstallments <= 1 || !purchase?.created_at_kajabi) continue;
-
-          const madeRaw = Number(purchase?.multipay_payments_made);
-          const made = Number.isFinite(madeRaw) && madeRaw > 0 ? madeRaw : 1;
-          const remaining = totalInstallments - made;
-          if (remaining <= 0) continue;
-
-          const purchaseAmountUsd = Number(purchase?.amount_in_cents) > 0
-            ? Number(purchase.amount_in_cents) / 100
-            : null;
-          const fallbackAmountUsd = Number(offer?.price) > 0 ? Number(offer.price) : 0;
-          const perInstallmentUsd = purchaseAmountUsd ?? fallbackAmountUsd;
-          if (perInstallmentUsd <= 0) continue;
-
-          const created = new Date(purchase.created_at_kajabi);
-
-          for (let installmentNumber = made + 1; installmentNumber <= totalInstallments; installmentNumber++) {
-            const dueDate = addMonthsClamped(created, installmentNumber - 1);
-            const dueISO = dueDate.toISOString();
-            if (dueISO < startISO || dueISO > endISO) continue;
-            const dayKey = dueISO.slice(0, 10);
-            const dayBucket = byForecastDay[dayKey];
-            expectedUsd += perInstallmentUsd;
-            expectedPayments += 1;
-            if (dayBucket) {
-              dayBucket.amount += perInstallmentUsd;
-              dayBucket.paymentCount += 1;
-            }
+        for (const [dayKey, bucket] of Object.entries(forecastJson?.byDay || {})) {
+          if (byForecastDay[dayKey]) {
+            byForecastDay[dayKey].amount = Number(bucket?.amount) || 0;
+            byForecastDay[dayKey].paymentCount = Number(bucket?.paymentCount) || 0;
           }
         }
 
@@ -2442,7 +2395,7 @@ export default function Sales() {
               value: formatUsd(expectedUsd),
               valueClass: expectedUsd > 0 ? PERFORMANCE_TEXT_CLASSES.GOOD : "text-slate-900",
               note: `${rangeTitle(forecastRange, forecastCustomStart, forecastCustomEnd)} due window`,
-              info: "Money expected from payment-plan students during this selected period.",
+              info: "Estimated money from payment-plan students during this selected period. Excludes cancelled and behind-schedule plans; approximate vs Kajabi's own figure.",
             },
             {
               label: "Expected payments",

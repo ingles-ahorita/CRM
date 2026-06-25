@@ -954,7 +954,7 @@ function LeadRow ( {
               onReschedule={onReschedule}
               onDeleteCall={onDeleteCall}
               onReport={onReport}
-              canReschedule={!!lead?.reschedule_link}
+              canReschedule={false}
             />
           </div>
         </div>
