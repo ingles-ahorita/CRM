@@ -1085,11 +1085,14 @@ export default function ManagementPage() {
                 const yesterday = chartSeries.length >= 2 ? chartSeries[chartSeries.length - 2] : chartSeries.length ? chartSeries[chartSeries.length - 1] : null;
                 const showed = yesterday?.totalShowedUp ?? 0;
                 const confirmed = yesterday?.totalConfirmed ?? 0;
-                const calls = yesterday?.callsForConfirmation ?? yesterday?.callsDeduped ?? yesterday?.calls ?? 0;
                 const purchased = yesterday?.totalPurchased ?? 0;
+                // Confirmation + success use the book_date booking cohort (matches /metrics, generalStats)
+                const bookings = yesterday?.bookings ?? 0;
+                const bookingsForConfirmation = yesterday?.bookingsForConfirmation ?? 0;
+                const confirmedFromBookings = yesterday?.confirmedFromBookings ?? 0;
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
-                const successRate = calls > 0 ? (purchased / calls) * 100 : null;
-                const confirmationRate = calls > 0 ? (confirmed / calls) * 100 : null;
+                const successRate = bookings > 0 ? (purchased / bookings) * 100 : null;
+                const confirmationRate = bookingsForConfirmation > 0 ? (confirmedFromBookings / bookingsForConfirmation) * 100 : null;
                 const showUpRate = yesterday?.showUpRate ?? null;
                 const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
                 const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
@@ -1104,10 +1107,10 @@ export default function ManagementPage() {
                 );
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
-                    <Metric first label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
+                    <Metric first label="Confirmation" value={confirmationRate} subtext={bookingsForConfirmation > 0 ? `${confirmedFromBookings} / ${bookingsForConfirmation} bookings` : '—'} thresh={75} />
                     <Metric label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
-                    <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
+                    <Metric label="Success" value={successRate} subtext={bookings > 0 ? `${purchased} / ${bookings} bookings` : '—'} thresh={10} />
                   </div>
                 );
               })()}
@@ -1133,11 +1136,14 @@ export default function ManagementPage() {
                 const thisWeek = chartSeries.filter((d) => d.date && d.date >= mondayStr && d.date <= todayStr);
                 const showed = thisWeek.reduce((a, d) => a + (d.totalShowedUp ?? 0), 0);
                 const confirmed = thisWeek.reduce((a, d) => a + (d.totalConfirmed ?? 0), 0);
-                const calls = thisWeek.reduce((a, d) => a + (d.callsForConfirmation ?? d.callsDeduped ?? d.calls ?? 0), 0);
                 const purchased = thisWeek.reduce((a, d) => a + (d.totalPurchased ?? 0), 0);
+                // Confirmation + success use the book_date booking cohort (matches /metrics, generalStats)
+                const bookings = thisWeek.reduce((a, d) => a + (d.bookings ?? 0), 0);
+                const bookingsForConfirmation = thisWeek.reduce((a, d) => a + (d.bookingsForConfirmation ?? 0), 0);
+                const confirmedFromBookings = thisWeek.reduce((a, d) => a + (d.confirmedFromBookings ?? 0), 0);
                 const conversionRate = showed > 0 ? (purchased / showed) * 100 : null;
-                const successRate = calls > 0 ? (purchased / calls) * 100 : null;
-                const confirmationRate = calls > 0 ? (confirmed / calls) * 100 : null;
+                const successRate = bookings > 0 ? (purchased / bookings) * 100 : null;
+                const confirmationRate = bookingsForConfirmation > 0 ? (confirmedFromBookings / bookingsForConfirmation) * 100 : null;
                 const showUpRate = confirmed > 0 ? (showed / confirmed) * 100 : null;
                 const formatPct = (v) => (v != null ? `${Number(v).toFixed(1)}%` : '—');
                 const color = (v, threshold) => (v == null ? '#111827' : v >= threshold ? '#22c55e' : '#ef4444');
@@ -1152,10 +1158,10 @@ export default function ManagementPage() {
                 );
                 return (
                   <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 0 }}>
-                    <Metric first label="Confirmation" value={confirmationRate} subtext={calls > 0 ? `${confirmed} / ${calls} calls` : '—'} thresh={75} />
+                    <Metric first label="Confirmation" value={confirmationRate} subtext={bookingsForConfirmation > 0 ? `${confirmedFromBookings} / ${bookingsForConfirmation} bookings` : '—'} thresh={75} />
                     <Metric label="Show up" value={showUpRate} subtext={confirmed > 0 ? `${showed} / ${confirmed} confirmed` : '—'} thresh={55} />
                     <Metric label="Conversion" value={conversionRate} subtext={showed > 0 ? `${purchased} / ${showed} show-ups` : '—'} thresh={30} />
-                    <Metric label="Success" value={successRate} subtext={calls > 0 ? `${purchased} / ${calls} calls` : '—'} thresh={10} />
+                    <Metric label="Success" value={successRate} subtext={bookings > 0 ? `${purchased} / ${bookings} bookings` : '—'} thresh={10} />
                   </div>
                 );
               })()}

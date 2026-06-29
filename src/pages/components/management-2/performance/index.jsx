@@ -16,6 +16,7 @@ import { supabase } from "../../../../lib/supabaseClient";
 import { getCountryFromPhone } from "../../../../utils/phoneNumberParser";
 import * as DateHelpers from "../../../../utils/dateHelpers";
 import SegmentedTabs from "../segmented-tabs";
+import RateGraphs from "./rate-graphs";
 
 const FILTER_OPTIONS = [
   { id: "today", label: "Today" },
@@ -29,6 +30,7 @@ const ARM_FILTER_ITEMS = [
   { id: "all", label: "All" },
   { id: "organic", label: "Organic" },
   { id: "ads", label: "Ads" },
+  { id: "split", label: "Org vs Ads" },
 ];
 
 const COUNTRY_FLAGS = {
@@ -46,13 +48,27 @@ const COUNTRY_FLAGS = {
 const performanceDataCache = new Map();
 const SUPABASE_QUERY_TIMEOUT_MS = 12000;
 
-/** Canonical funnel paths — same as GoogleAnalyticsPage.jsx */
+/** Canonical funnel paths. */
 const ADS_VSL_PATH = "/ads-new-masterclass-job";
-const ADS_OPT_IN_PATH = "/ads-opt-in-masterclass";
 const ORGANIC_VSL_PATH = "/masterclass-job";
-const ORGANIC_OPT_IN_PATHS = "/pro,/";
-const FUNNEL_LANDING_PATHS = [ADS_VSL_PATH, ADS_OPT_IN_PATH, ORGANIC_VSL_PATH, "/pro", "/"];
-const ADS_PAGE_PREFIX = "/ads";
+// Opt-in landing pages where a real opt-in form (form_submit) lives. Login / password /
+// checkout forms sit on other paths and are intentionally excluded so the opt-in count
+// is not inflated.
+const ADS_OPT_IN_PATHS = "/ads-opt-in-masterclass,/ads-opt-in-masterclass-non-us";
+const ORGANIC_OPT_IN_PATHS =
+  "/,/pro,/opt-in-demo,/100-frases,/10-errores-opt-in,/50-respuestas-opt-in";
+const ALL_OPT_IN_PATHS = `${ADS_OPT_IN_PATHS},${ORGANIC_OPT_IN_PATHS}`;
+const FUNNEL_LANDING_PATHS = [
+  ADS_VSL_PATH,
+  ORGANIC_VSL_PATH,
+  ...ADS_OPT_IN_PATHS.split(","),
+  ...ORGANIC_OPT_IN_PATHS.split(","),
+];
+// The real opt-in signal in GA4.
+const OPT_IN_EVENT = "form_submit";
+// Paid/organic split rule (per the business): any page path CONTAINING "masterclass" is
+// paid/ads traffic; every other page is organic.
+const PAID_PATH_TOKEN = "masterclass";
 
 const COUNTRY_NAME_BY_CODE = {
   AR: "Argentina",
@@ -111,7 +127,7 @@ function mapCountryMetrics(row, hasGaCountryOptIns) {
   return {
     ...row,
     optIns,
-    optInSource: hasGaCountryOptIns ? "GA call_booked by country" : "CRM bookings by phone country",
+    optInSource: hasGaCountryOptIns ? "GA form_submit by country" : "CRM bookings by phone country",
     viewsToOptIn: funnelPct(optIns, row.views),
     optInToBook: funnelPct(row.bookings, optIns),
     bookToShow: funnelPct(row.shows, row.bookings),
@@ -288,7 +304,7 @@ function isAdsSource(row) {
 }
 
 function matchesArmFilter(row, armFilter) {
-  if (armFilter === "all") return true;
+  if (armFilter === "all" || armFilter === "split") return true;
   const isAd = isAdsSource(row);
   return armFilter === "ads" ? isAd : !isAd;
 }
@@ -301,14 +317,15 @@ function pickArmMetric(organicVal, adsVal, armFilter) {
 
 /**
  * Maps an arm filter to GA page-path filter params so country / device / event
- * breakdowns are restricted to that arm's funnel pages.
- *   ads     → pagePath=/ads        (CONTAINS — matches /ads, /ads-*, etc.)
- *   organic → excludePagePath=/ads (CONTAINS — everything outside the ads funnel)
+ * breakdowns are restricted to that arm's pages, using the business rule that any
+ * page path containing "masterclass" is paid/ads.
+ *   ads     → pagePath=masterclass        (CONTAINS)
+ *   organic → excludePagePath=masterclass (everything else)
  *   all     → {} (whole property)
  */
 function getArmPagePathParams(armFilter) {
-  if (armFilter === "ads") return { pagePath: ADS_PAGE_PREFIX };
-  if (armFilter === "organic") return { excludePagePath: ADS_PAGE_PREFIX };
+  if (armFilter === "ads") return { pagePath: PAID_PATH_TOKEN };
+  if (armFilter === "organic") return { excludePagePath: PAID_PATH_TOKEN };
   return {};
 }
 
@@ -360,12 +377,6 @@ function sumGaRows(payload, field) {
   return gaRows(payload).reduce((sum, row) => sum + Number(row?.[field] || 0), 0);
 }
 
-function sumGaByPath(payload, paths) {
-  return gaRows(payload).reduce((total, row) => {
-    const byPath = row?.byPath || {};
-    return total + paths.reduce((sum, path) => sum + Number(byPath[path] || 0), 0);
-  }, 0);
-}
 
 function sumGaMetricRows(payload) {
   return gaRows(payload).reduce((sum, row) => sum + Number(row?.metric || 0), 0);
@@ -465,7 +476,7 @@ function isAdsTrafficSource(name) {
 }
 
 function matchesTrafficArm(name, armFilter) {
-  if (armFilter === "all") return true;
+  if (armFilter === "all" || armFilter === "split") return true;
   const isAd = isAdsTrafficSource(name);
   return armFilter === "ads" ? isAd : !isAd;
 }
@@ -535,12 +546,11 @@ function computeTopCountryFilterChoices(gaCountryViewsPayload) {
     .map(([value, views]) => ({ value, label: `${value} (${formatInt(views)})` }));
 }
 
+const OPT_IN_PATH_SET = new Set(ALL_OPT_IN_PATHS.split(",").map((p) => p.trim()));
 function isOptInPagePathForViews(p) {
   const path = String(p || "").trim();
   if (!path) return false;
-  if (path === ADS_OPT_IN_PATH) return true;
-  if (path === "/pro" || path === "/") return true;
-  return false;
+  return OPT_IN_PATH_SET.has(path);
 }
 
 function sumOptInPathViewsFromPageCountry(payload, countryFilterGa) {
@@ -583,6 +593,11 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     armFilter === "organic" ? ORGANIC_VSL_PATH
     : armFilter === "ads" ? ADS_VSL_PATH
     : vslPathsParam;
+  // Arm-specific opt-in landing pages for the real opt-in signal (form_submit).
+  const armOptInPathsParam =
+    armFilter === "organic" ? ORGANIC_OPT_IN_PATHS
+    : armFilter === "ads" ? ADS_OPT_IN_PATHS
+    : ALL_OPT_IN_PATHS;
 
   let [rawCallsByDate, rawBookings, rawPurchases] = await Promise.all([
     runSupabaseQuery(
@@ -666,18 +681,20 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     gaAvgDuration,
     gaSessionsByDate,
     gaPagePathCountryViews,
+    gaAdsCallBooked,
+    gaOrganicCallBooked,
   ] = await Promise.all([
-    fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ADS_PAGE_PREFIX })),
-    fetchGaJson(gaApiUrl(startDate, endDate, { excludePagePath: ADS_PAGE_PREFIX })),
-    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ADS_PAGE_PREFIX })),
-    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, excludePagePath: ADS_PAGE_PREFIX })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: PAID_PATH_TOKEN })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { excludePagePath: PAID_PATH_TOKEN })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: PAID_PATH_TOKEN })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, excludePagePath: PAID_PATH_TOKEN })),
     fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ADS_VSL_PATH })),
     fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ORGANIC_VSL_PATH })),
-    fetchGaJson(gaApiUrl(startDate, endDate, { pagePath: ADS_OPT_IN_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { pagePaths: ADS_OPT_IN_PATHS })),
     fetchGaJson(gaApiUrl(startDate, endDate, { pagePaths: ORGANIC_OPT_IN_PATHS })),
     fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ADS_VSL_PATH })),
     fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ORGANIC_VSL_PATH })),
-    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePath: ADS_OPT_IN_PATH })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePaths: ADS_OPT_IN_PATHS })),
     fetchGaJson(gaApiUrl(startDate, endDate, { ...sessionsParams, pagePaths: ORGANIC_OPT_IN_PATHS })),
     // Country views: arm-aware via pagePath/excludePagePath
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "country", metricName: "screenPageViews", ...armPathParams })),
@@ -686,13 +703,13 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "deviceCategory,country", metricName: "sessions", ...armPathParams })),
     // Source views: sessionSource + country (aggregated client-side)
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "sessionSource,country", metricName: "screenPageViews" })),
-    // Source opt-ins (call_booked); whole-site; sessionSource + country
-    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "sessionSource,country", metricName: "eventCount" })),
-    // Country opt-ins (call_booked): arm-aware
-    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "country", metricName: "eventCount", ...armPathParams })),
-    // Device opt-ins (call_booked): arm-aware + country
+    // Source OPT-INS (form_submit on opt-in pages); sessionSource + country
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: OPT_IN_EVENT, dimensions: "sessionSource,country", metricName: "eventCount", pagePaths: ALL_OPT_IN_PATHS })),
+    // Country OPT-INS (form_submit on opt-in pages): arm-aware
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: OPT_IN_EVENT, dimensions: "country", metricName: "eventCount", pagePaths: armOptInPathsParam })),
+    // Device BOOKINGS (call_booked): arm-aware + country
     fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "deviceCategory,country", metricName: "eventCount", ...armPathParams })),
-    // Whole-site call_booked totals (for "all" arm in TopLine "Call booked" card)
+    // Whole-site call_booked (bookings) totals for the TopLine "Call booked" card
     fetchGaJson(gaApiUrl(startDate, endDate, { wholeSite: "1" })),
     // VSL video aggregates only (no video_percent breakdown — GA4 often rejects that dimension in Data API).
     fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "video_start", metricName: "eventCount", pagePaths: armVslPathsParam })),
@@ -704,6 +721,9 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "date", metricName: "sessions", ...armPathParams })),
     // Page path × country views (arm-aware) for detailed "Page views by path" table
     fetchGaJson(gaApiUrl(startDate, endDate, { dimensions: "pagePath,country", metricName: "screenPageViews", ...armPathParams })),
+    // Bookings (call_booked) split by the masterclass rule, for the Org-vs-Ads split view.
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "date", metricName: "eventCount", pagePath: PAID_PATH_TOKEN })),
+    fetchGaJson(gaApiUrl(startDate, endDate, { eventName: "call_booked", dimensions: "date", metricName: "eventCount", excludePagePath: PAID_PATH_TOKEN })),
   ]);
 
   [
@@ -733,6 +753,8 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     gaAvgDuration,
     gaSessionsByDate,
     gaPagePathCountryViews,
+    gaAdsCallBooked,
+    gaOrganicCallBooked,
   ].forEach((payload) => {
     if (payload?.failed && payload?.error) gaErrors.push(payload.error);
   });
@@ -779,13 +801,13 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
   const adsVslViews = sumGaDailyMetric(gaAdsVslViews, "views");
   const organicVslViews = sumGaDailyMetric(gaOrganicVslViews, "views");
   const adsOptInViews = sumGaDailyMetric(gaAdsOptInViews, "views");
-  const organicOptInViews = sumGaByPath(gaOrganicOptInViews, ["/pro", "/"]) || sumGaDailyMetric(gaOrganicOptInViews, "views");
+  const organicOptInViews = sumGaDailyMetric(gaOrganicOptInViews, "views");
   const optInPageViews = pickArmMetric(organicOptInViews, adsOptInViews, armFilter);
 
   const adsVslSessions = sumGaDailyMetric(gaAdsVslSessions, "sessions");
   const organicVslSessions = sumGaDailyMetric(gaOrganicVslSessions, "sessions");
   const adsOptInSessions = sumGaDailyMetric(gaAdsOptInSessions, "sessions");
-  const organicOptInSessions = sumGaByPath(gaOrganicOptInSessions, ["/pro", "/"]) || sumGaDailyMetric(gaOrganicOptInSessions, "sessions");
+  const organicOptInSessions = sumGaDailyMetric(gaOrganicOptInSessions, "sessions");
   const vslWatched = pickArmMetric(organicVslSessions, adsVslSessions, armFilter);
   const optInsSessions = pickArmMetric(organicOptInSessions, adsOptInSessions, armFilter);
 
@@ -796,19 +818,36 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
   const adsVslConversion = adsOptInSessions > 0 ? (adsVslSessions / adsOptInSessions) * 100 : null;
   const organicVslConversion = organicOptInSessions > 0 ? (organicVslSessions / organicOptInSessions) * 100 : null;
 
-  const optInsEvents = sumGaRows(gaOptInEvents, "eventCount");
+  // BOOKINGS (call_booked). wholeSiteCallBooked = whole-site total; armGaCallBooked is the
+  // arm/country-aware total (call_booked by device, filtered). These drive the "Call booked" card.
+  const wholeSiteCallBooked = sumGaRows(gaOptInEvents, "eventCount");
   const armGaCallBooked = countryFilterGa
     ? gaRows(gaDeviceOptIns).reduce(
         (s, r) => (gaRowMatchesCountryFilter(r, countryFilterGa) ? s + (Number(r.metric || 0) || 0) : s),
         0,
       )
     : sumGaMetricRows(gaDeviceOptIns);
-  const armCallBooked = pickArmMetric(organicVslCallBooked, adsVslCallBooked, armFilter);
+  const callBookedForTop = countryFilterGa
+    ? armGaCallBooked
+    : armFilter === "all" || armFilter === "split"
+      ? wholeSiteCallBooked
+      : armGaCallBooked;
+  // Bookings split by the masterclass rule (for the Org-vs-Ads split view).
+  const adsCallBooked = sumGaMetricRows(gaAdsCallBooked);
+  const organicCallBooked = sumGaMetricRows(gaOrganicCallBooked);
+
+  // OPT-INS (form_submit on opt-in pages). gaCountryOptIns is arm-scoped, so its sum is the
+  // arm's opt-in total; for a country filter we sum only the matching country.
+  const gaOptInsTotal = countryFilterGa
+    ? sumGaCountryMetric(gaCountryOptIns, countryFilterGa)
+    : sumGaMetricRows(gaCountryOptIns);
   const optIns = gaUnavailable
     ? bookings.length
-    : (armFilter === "all" && optInsEvents > 0
-      ? optInsEvents
-      : (armCallBooked > 0 ? armCallBooked : (optInsSessions > 0 ? optInsSessions : bookings.length)));
+    : gaOptInsTotal > 0
+      ? gaOptInsTotal
+      : optInsSessions > 0
+        ? optInsSessions
+        : bookings.length;
 
   let websiteViewsForTop = websiteViews;
   let websiteSessionsForTop = websiteSessions;
@@ -821,15 +860,15 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
     if (cs > 0) websiteSessionsForTop = cs;
     const ov = sumOptInPathViewsFromPageCountry(gaPagePathCountryViews, countryFilterGa);
     if (ov > 0) optInPageViewsForTop = ov;
-    const co = sumGaCountryMetric(gaCountryOptIns, countryFilterGa);
-    optInsForTop = co > 0 ? co : bookings.length;
   }
 
   const optInSource = gaUnavailable
     ? "CRM bookings (GA unavailable)"
-    : (armFilter === "all" && optInsEvents > 0
-      ? "GA call_booked (whole site)"
-      : (armCallBooked > 0 ? `GA call_booked on ${armFilter === "ads" ? ADS_VSL_PATH : ORGANIC_VSL_PATH}` : (optInsSessions > 0 ? "GA opt-in page sessions" : "CRM bookings")));
+    : gaOptInsTotal > 0
+      ? "GA form_submit (opt-in pages)"
+      : optInsSessions > 0
+        ? "GA opt-in page sessions"
+        : "CRM bookings";
   // Percent-watched buckets from GA (video_percent dim) removed — Data API often errors; ratio uses complete/start below.
   const vslProgressRanges = [];
   const videoStartEvents = sumGaEventRows(gaVideoStart);
@@ -941,7 +980,7 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
       return {
         ...r,
         optIns,
-        optInSource: r.gaOptIns > 0 ? "GA call_booked" : "CRM bookings",
+        optInSource: r.gaOptIns > 0 ? "GA form_submit (opt-in pages)" : "CRM bookings",
         optInRate: r.views > 0 ? (optIns / r.views) * 100 : 0,
         closeRate: r.shows > 0 ? (r.closes / r.shows) * 100 : 0,
         conversion: r.views > 0 ? (optIns / r.views) * 100 : 0,
@@ -1039,8 +1078,9 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
         ads: buildArmSnapshot(adsVslViews, adsOptInViews, adsVslSessions, adsOptInSessions, adsBookingRate, adsVslConversion, adsVslCallBooked),
         organic: buildArmSnapshot(organicVslViews, organicOptInViews, organicVslSessions, organicOptInSessions, organicBookingRate, organicVslConversion, organicVslCallBooked),
       },
-      wholeSiteCallBooked:
-        countryFilterGa && !gaUnavailable ? optInsForTop : armFilter === "all" ? optInsEvents : armGaCallBooked,
+      wholeSiteCallBooked: callBookedForTop,
+      adsCallBooked,
+      organicCallBooked,
       armFilter,
       websiteViews: websiteViewsForTop,
       websiteSessions: websiteSessionsForTop,
@@ -1120,28 +1160,64 @@ async function buildPerformanceData(range, timezone, customStart = null, customE
 
 /** Single page-wide data hook. All sections subscribe to the same payload. */
 function usePerformanceData(range, customStart, customEnd, armFilter, countryFilterGa) {
-  const [state, setState] = useState({ loading: true, data: null, error: null, meta: null });
+  const [state, setState] = useState({
+    loading: true,
+    data: null,
+    error: null,
+    meta: null,
+    dataOrganic: null,
+    dataAds: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     setState((prev) => ({ ...prev, loading: true, error: null }));
+    const cs = range === "custom" ? customStart : null;
+    const ce = range === "custom" ? customEnd : null;
 
-    fetchPerformanceData(
-      range,
-      timezone,
-      range === "custom" ? customStart : null,
-      range === "custom" ? customEnd : null,
-      armFilter,
-      countryFilterGa || "",
-    )
-      .then((json) => {
-        if (cancelled) return;
-        setState({ loading: false, data: json, error: null, meta: json?.meta || null });
+    // Split mode builds both arms so the country / page / device / time sections can show
+    // an inline ads-vs-organic comparison. Each build also carries both arms' TopLine
+    // components, so the inline TopLine split reads from either dataset.
+    const run =
+      armFilter === "split"
+        ? Promise.all([
+            fetchPerformanceData(range, timezone, cs, ce, "organic", countryFilterGa || ""),
+            fetchPerformanceData(range, timezone, cs, ce, "ads", countryFilterGa || ""),
+          ]).then(([org, ads]) => ({
+            data: org,
+            dataOrganic: org,
+            dataAds: ads,
+            meta: org?.meta || null,
+          }))
+        : fetchPerformanceData(
+            range,
+            timezone,
+            cs,
+            ce,
+            armFilter,
+            countryFilterGa || "",
+          ).then((json) => ({
+            data: json,
+            dataOrganic: null,
+            dataAds: null,
+            meta: json?.meta || null,
+          }));
+
+    run
+      .then((res) => {
+        if (!cancelled) setState({ loading: false, error: null, ...res });
       })
       .catch((error) => {
         if (cancelled) return;
-        setState({ loading: false, data: null, error: error?.message || "Failed to load", meta: null });
+        setState({
+          loading: false,
+          data: null,
+          error: error?.message || "Failed to load",
+          meta: null,
+          dataOrganic: null,
+          dataAds: null,
+        });
       });
 
     return () => {
@@ -1231,14 +1307,31 @@ function TopLineCard({ card, loading }) {
         {card.infoBody ? <MetricInfo title={card.infoTitle || card.label} body={card.infoBody} /> : <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
       </div>
       <div className="mt-auto flex flex-1 flex-col justify-end pt-2">
-        <p className="text-[16px] font-semibold leading-none tracking-normal text-slate-900 tabular-nums">
-          {loading ? <ShimmerText className="h-5 w-16" /> : card.value}
-        </p>
-        <div className="mt-1.5 min-h-[18px]">
-          <span className="inline-flex max-w-full truncate rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-emerald-700" title={typeof card.badge === "string" ? card.badge : undefined}>
-            {loading ? <ShimmerText className="h-2.5 w-14" /> : card.badge}
-          </span>
-        </div>
+        {card.split ? (
+          loading ? (
+            <ShimmerText className="h-5 w-16" />
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              <p className="text-[13px] font-semibold leading-tight tabular-nums text-[#f59e0b]">
+                Org <span className="text-slate-900">{card.split.organic}</span>
+              </p>
+              <p className="text-[13px] font-semibold leading-tight tabular-nums text-[#3b82f6]">
+                Ads <span className="text-slate-900">{card.split.ads}</span>
+              </p>
+            </div>
+          )
+        ) : (
+          <>
+            <p className="text-[16px] font-semibold leading-none tracking-normal text-slate-900 tabular-nums">
+              {loading ? <ShimmerText className="h-5 w-16" /> : card.value}
+            </p>
+            <div className="mt-1.5 min-h-[18px]">
+              <span className="inline-flex max-w-full truncate rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-emerald-700" title={typeof card.badge === "string" ? card.badge : undefined}>
+                {loading ? <ShimmerText className="h-2.5 w-14" /> : card.badge}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </article>
   );
@@ -1360,30 +1453,42 @@ function TopLineSection({ data, loading, meta, armFilter }) {
     const optInViews =
       source.optInPageViews != null ? Number(source.optInPageViews) : pickArmMetric(organicOptInViews, adsOptInViews, armFilter);
     const optInSessions = pickArmMetric(organicOptInSessions, adsOptInSessions, armFilter);
+    const isSplit = armFilter === "split";
+    const adsCallBooked = source.adsCallBooked ?? 0;
+    const organicCallBooked = source.organicCallBooked ?? 0;
+    const splitOf = (organicVal, adsVal) =>
+      gaUnavailable
+        ? undefined
+        : { organic: formatInt(organicVal), ads: formatInt(adsVal) };
 
     return [
       {
         label: "Website views",
         value: formatMetricValue(websiteViews, gaUnavailable),
+        split: isSplit ? splitOf(organicSiteViews, adsSiteViews) : undefined,
         badge: gaUnavailable ? "—" : `${formatInt(websiteSessions)} sessions`,
         infoTitle: "Website views",
-        infoBody: "GA page views for All, Ads, or Organic (top filter).",
+        infoBody: "GA page views. Paid = pages containing “masterclass”; organic = all others.",
       },
       {
         label: "Opt-in views",
         value: formatMetricValue(optInViews, gaUnavailable),
+        split: isSplit ? splitOf(organicOptInViews, adsOptInViews) : undefined,
         badge: gaUnavailable ? "—" : `${formatInt(optInSessions)} sessions`,
         infoTitle: "Opt-in views",
-        infoBody: "GA views on opt-in pages for All, Ads, or Organic.",
+        infoBody: "GA views on the opt-in landing pages, paid vs organic.",
       },
       {
         label: "Call booked",
         value: formatMetricValue(callBooked, gaUnavailable),
+        split: isSplit ? splitOf(organicCallBooked, adsCallBooked) : undefined,
         badge: gaUnavailable ? "—" : armFilter === "all" ? "whole site" : armFilter,
         infoTitle: "Call booked",
-        infoBody: armFilter === "all"
-          ? "GA call_booked events site-wide."
-          : "GA call_booked events for Ads or Organic pages only.",
+        infoBody: isSplit
+          ? "GA call_booked events, split paid vs organic by the masterclass page rule."
+          : armFilter === "all"
+            ? "GA call_booked events site-wide."
+            : "GA call_booked events for Ads or Organic pages only.",
       },
     ];
   }, [data, gaUnavailable, armFilter]);
@@ -1436,7 +1541,7 @@ function countryMapStyle({ countryValue }, maxViews = 0) {
   };
 }
 
-function CountryTable({ data, loading, meta }) {
+function CountryTable({ data, loading, meta, split }) {
   const gaUnavailable = Boolean(meta?.gaUnavailable ?? meta?.gaMock);
   const [mapTooltip, setMapTooltip] = useState(null);
   const [mapZoom, setMapZoom] = useState(1);
@@ -1445,6 +1550,24 @@ function CountryTable({ data, loading, meta }) {
   const mapDragRef = useRef(null);
 
   const countryRows = data?.rows || [];
+  // In split mode, merge organic + ads country views by country code for an inline comparison.
+  const splitRows = useMemo(() => {
+    if (!split) return null;
+    const m = {};
+    const add = (rows, key) =>
+      (rows || []).forEach((r) => {
+        const code = r.code || r.country;
+        if (!m[code]) m[code] = { country: r.country, code: r.code, organic: 0, ads: 0 };
+        m[code][key] = Number(r.views || 0);
+      });
+    add(split.organic?.country?.rows, "organic");
+    add(split.ads?.country?.rows, "ads");
+    return Object.values(m)
+      .map((r) => ({ ...r, views: r.organic + r.ads }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 8);
+  }, [split]);
+  const displayRows = splitRows || countryRows;
   const worldMapData = useMemo(
     () => countryRows.filter((row) => row.code !== "OTHER").map((row) => ({ country: String(row.code || "").toLowerCase(), value: Number(row.views || 0) })),
     [countryRows],
@@ -1594,12 +1717,18 @@ function CountryTable({ data, loading, meta }) {
               <div>Country</div><div className="text-right">Views</div>
             </div>
 
+            {split ? (
+              <div className="mb-1 flex justify-end gap-3 text-[9px] font-bold uppercase tracking-wide">
+                <span style={{ color: SPLIT_ORG_COLOR }}>Organic</span>
+                <span style={{ color: SPLIT_ADS_COLOR }}>Ads</span>
+              </div>
+            ) : null}
             <div className="divide-y divide-dashed divide-slate-100">
-              {(countryRows.length ? countryRows : Array.from({ length: 6 }).map((_, i) => ({ country: `row-${i}`, code: "OTHER", views: 0 }))).map((row) => {
-                const maxViews = Math.max(...countryRows.map((r) => Number(r.views || 0)), 1);
+              {(displayRows.length ? displayRows : Array.from({ length: 6 }).map((_, i) => ({ country: `row-${i}`, code: "OTHER", views: 0 }))).map((row) => {
+                const maxViews = Math.max(...displayRows.map((r) => Number(r.views || 0)), 1);
                 const width = Math.min(100, Math.round((Number(row.views || 0) / maxViews) * 100));
                 return (
-                  <div key={row.country} className="grid grid-cols-[minmax(0,1fr)_92px] items-center gap-3 py-1.5">
+                  <div key={row.country} className="grid grid-cols-[minmax(0,1fr)_110px] items-center gap-3 py-1.5">
                     <div className="min-w-0">
                       <div className="flex items-center justify-between gap-3">
                         <span className="truncate text-[13px] font-medium text-slate-700" title={row.country}>
@@ -1611,7 +1740,14 @@ function CountryTable({ data, loading, meta }) {
                         <div className="h-full rounded-full bg-blue-500" style={{ width: `${loading ? 30 : width}%` }} />
                       </div>
                     </div>
-                    <div className="text-right text-[13px] font-semibold text-slate-950">{loading ? <ShimmerText className="h-3 w-10" /> : (gaUnavailable ? "—" : formatInt(row.views))}</div>
+                    {split ? (
+                      <div className="flex justify-end gap-3 text-right text-[12px] font-semibold tabular-nums">
+                        <span style={{ color: SPLIT_ORG_COLOR }}>{gaUnavailable ? "—" : formatInt(row.organic)}</span>
+                        <span style={{ color: SPLIT_ADS_COLOR }}>{gaUnavailable ? "—" : formatInt(row.ads)}</span>
+                      </div>
+                    ) : (
+                      <div className="text-right text-[13px] font-semibold text-slate-950">{loading ? <ShimmerText className="h-3 w-10" /> : (gaUnavailable ? "—" : formatInt(row.views))}</div>
+                    )}
                   </div>
                 );
               })}
@@ -1837,7 +1973,18 @@ function FunnelDrilldown({ rows, loading }) {
   );
 }
 
-function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, meta }) {
+function deviceSegmentsFrom(deviceData = {}) {
+  return [
+    { label: "Mobile", pct: Number(deviceData.mobilePct || 0), className: "bg-blue-600", dotClassName: "bg-blue-600" },
+    { label: "Desktop", pct: Number(deviceData.desktopPct || 0), className: "bg-violet-600", dotClassName: "bg-violet-600" },
+    { label: "Other", pct: Number(deviceData.otherPct || 0), className: "bg-slate-400", dotClassName: "bg-slate-400" },
+  ];
+}
+
+const SPLIT_ORG_COLOR = "#f59e0b";
+const SPLIT_ADS_COLOR = "#3b82f6";
+
+function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, meta, split }) {
   const gaUnavailable = Boolean(meta?.gaUnavailable ?? meta?.gaMock);
   /** Set true to show the funnel landing URLs card (/ and /pro). */
   const showTopLandingPages = false;
@@ -1884,6 +2031,34 @@ function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, m
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Device Split</h3>
             <MetricInfo title="Device split" body="GA sessions by device. Book rate lines use GA call_booked splits." />
           </div>
+          {split ? (
+            <div className="mt-3 space-y-2.5">
+              {[["Organic", split.organic?.device, SPLIT_ORG_COLOR], ["Ads", split.ads?.device, SPLIT_ADS_COLOR]].map(([armLabel, armDevice, armColor]) => {
+                const segs = deviceSegmentsFrom(armDevice || {});
+                return (
+                  <div key={armLabel}>
+                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: armColor }}>{armLabel}</div>
+                    <div className="flex h-6 overflow-hidden rounded-md bg-slate-100">
+                      {segs.map((s) => (
+                        <div key={s.label} className={cx("flex h-full min-w-0 items-center justify-center text-[9px] font-bold text-white", s.className)} style={{ width: `${Math.max(s.pct, s.pct > 0 ? 3 : 0)}%` }}>
+                          {gaUnavailable ? "" : formatPct(s.pct, 0)}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-medium text-slate-500">
+                      {segs.map((s) => (
+                        <span key={s.label} className="inline-flex items-center gap-1">
+                          <span className={cx("h-2 w-2 rounded-full", s.dotClassName)} />
+                          {s.label} {gaUnavailable ? "—" : formatPct(s.pct, 1)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+          <>
           <div className="mt-3 flex h-8 overflow-visible rounded-md bg-slate-100">
             {deviceSegments.map((segment) => {
               const width = Math.max(segment.pct, segment.pct > 0 ? 3 : 0);
@@ -1920,6 +2095,8 @@ function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, m
               </span>
             ))}
           </div>
+          </>
+          )}
         </section>
 
         {showTopLandingPages ? (
@@ -1954,6 +2131,24 @@ function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, m
               body="Top paths by GA screenPageViews for the selected period, traffic arm, and country filter."
             />
           </div>
+          {split ? (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              {[["Organic", split.organic?.pageViewsDetail, SPLIT_ORG_COLOR], ["Ads", split.ads?.pageViewsDetail, SPLIT_ADS_COLOR]].map(([armLabel, pv, armColor]) => (
+                <div key={armLabel} className="min-w-0">
+                  <div className="mb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: armColor }}>{armLabel}</div>
+                  <div className="divide-y divide-dashed divide-slate-100">
+                    {(pv?.topPaths?.length ? pv.topPaths : []).map((row) => (
+                      <div key={row.path} className="flex items-center justify-between gap-2 py-1.5">
+                        <span className="truncate text-[11px] font-medium text-slate-700">{row.path}</span>
+                        <span className="shrink-0 text-[11px] font-semibold text-slate-950">{gaUnavailable ? "—" : formatInt(row.views)}</span>
+                      </div>
+                    ))}
+                    {!(pv?.topPaths?.length) ? <div className="py-1.5 text-[10px] font-medium text-slate-400">—</div> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="mt-3 divide-y divide-dashed divide-slate-100">
             {(pageViewsDetail?.topPaths?.length
               ? pageViewsDetail.topPaths
@@ -1974,6 +2169,7 @@ function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, m
               </div>
             ))}
           </div>
+          )}
           {!gaUnavailable && pageViewsDetail?.error ? (
             <p className="mt-2 text-[10px] font-medium text-amber-700">{pageViewsDetail.error}</p>
           ) : null}
@@ -1984,10 +2180,26 @@ function DevicePagePerformance({ device, engagement, pageViewsDetail, loading, m
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Avg Time on Page</h3>
             <MetricInfo title="Time on site" body="GA average time on page for All, Ads, or Organic. Completion = video_complete ÷ video_start." />
           </div>
+          {split ? (
+            <div className="mt-3 flex gap-6">
+              {[["Organic", split.organic?.engagement, SPLIT_ORG_COLOR], ["Ads", split.ads?.engagement, SPLIT_ADS_COLOR]].map(([armLabel, eng, armColor]) => (
+                <div key={armLabel}>
+                  <div className="text-[10px] font-bold uppercase tracking-wide" style={{ color: armColor }}>{armLabel}</div>
+                  <div className="text-[22px] font-semibold leading-none text-slate-900">{gaUnavailable ? "—" : secondsToClock(eng?.avgTimeSec)}</div>
+                  <p className="mt-1 text-[10px] font-medium text-slate-500">
+                    VSL: {gaUnavailable || eng?.vslCompletionPct == null ? "—" : formatPct(eng.vslCompletionPct, 0)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+          <>
           <div className="mt-3 text-[28px] font-semibold leading-none text-blue-600">{loading ? <ShimmerText className="h-8 w-16" /> : (gaUnavailable ? "—" : secondsToClock(engagementData.avgTimeSec))}</div>
           <p className="mt-2 text-[12px] font-medium text-slate-500" title="video_complete divided by video_start on the selected VSL page(s).">
             VSL completion: {loading ? <ShimmerText className="h-3 w-12" /> : (gaUnavailable || engagementData.vslCompletionPct == null ? "—" : formatPct(engagementData.vslCompletionPct, 0))}
           </p>
+          </>
+          )}
           <div className="mt-3 space-y-1.5">
             {loading ? (
               <>
@@ -2029,7 +2241,8 @@ export default function Performance() {
   const [armFilter, setArmFilter] = useState("all");
   const [countryFilter, setCountryFilter] = useState("");
 
-  const { loading, data, meta, error } = usePerformanceData(range, customStart, customEnd, armFilter, countryFilter);
+  const { loading, data, meta, error, dataOrganic, dataAds } = usePerformanceData(range, customStart, customEnd, armFilter, countryFilter);
+  const split = armFilter === "split" ? { organic: dataOrganic, ads: dataAds } : null;
 
   useEffect(() => {
     const choices = meta?.countryFilterChoices;
@@ -2080,11 +2293,13 @@ export default function Performance() {
             pageViewsDetail={data?.pageViewsDetail}
             loading={loading}
             meta={meta}
+            split={split}
           />
         </div>
 
         <div className="col-span-4 flex flex-col gap-3">
-          <CountryTable data={data?.country} loading={loading} meta={meta} />
+          <RateGraphs rangeBounds={rangeBounds} />
+          <CountryTable data={data?.country} loading={loading} meta={meta} split={split} />
           <div>
             <FunnelDrilldown rows={data?.country?.rows} loading={loading} />
           </div>

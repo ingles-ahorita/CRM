@@ -153,10 +153,22 @@ function MiniBarChart({
 
 export default function TopOfFunnelPanel() {
   const CHART_DAYS = 7;
-  const ADS_VSL_PATH = "/ads-new-masterclass-job";
-  const ADS_OPT_IN_PATH = "/ads-opt-in-masterclass";
-  const ORGANIC_VSL_PATH = "/masterclass-job";
-  const ORGANIC_OPT_IN_PATHS = "/pro,/";
+  // Opt-in conversion = opt-ins ÷ all traffic for that arm. The opt-in count is the number
+  // of sessions in which a form_submit (the real opt-in signal) fired on an opt-in landing
+  // page — login/password/checkout forms live on other paths and are excluded. The
+  // denominator is ALL sessions for the arm (ads vs organic), i.e. "of everyone who
+  // visited, what % opted in" — which is the figure the business tracks.
+  const OPT_IN_EVENT = "form_submit";
+  // Booking rate = call_booked events ÷ opt-ins. call_booked fires on the booking
+  // confirmation page (not the funnel pages), so it is split into ads vs organic by the
+  // session's landing page using the paid/organic rule below.
+  const BOOKING_EVENT = "call_booked";
+  // Paid/organic split rule (per the business): any page path CONTAINING "masterclass" is
+  // paid/ads traffic; every other page is organic.
+  const PAID_PATH_TOKEN = "masterclass";
+  const ADS_OPT_IN_PATHS = "/ads-opt-in-masterclass,/ads-opt-in-masterclass-non-us";
+  const ORGANIC_OPT_IN_PATHS =
+    "/,/pro,/opt-in-demo,/100-frases,/10-errores-opt-in,/50-respuestas-opt-in";
 
   const [gaState, setGaState] = useState({
     loading: true,
@@ -213,30 +225,37 @@ export default function TopOfFunnelPanel() {
       setGaState((p) => ({ ...p, loading: true }));
       try {
         const [
-          resAdsVsl,
-          resAdsOptIn,
-          resOrgVsl,
-          resOrgOptIn,
-          resAdsViews,
-          resOrgViews,
+          resAdsTotalSessions,
+          resAdsOptSubmits,
+          resOrgTotalSessions,
+          resOrgOptSubmits,
+          resCallBookedByLanding,
+          resCallBookedByDay,
         ] = await Promise.all([
+          // Denominator: ALL paid sessions (any page containing "masterclass").
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_VSL_PATH }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: PAID_PATH_TOKEN }).toString()}`,
           ),
+          // Numerator: ads opt-ins = sessions where a form_submit fired on an ads opt-in page.
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ADS_OPT_IN_PATH }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, eventName: OPT_IN_EVENT, pagePaths: ADS_OPT_IN_PATHS }).toString()}`,
           ),
+          // Denominator: ALL organic sessions (every page NOT containing "masterclass").
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: ORGANIC_VSL_PATH }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, excludePagePath: PAID_PATH_TOKEN }).toString()}`,
           ),
+          // Numerator: organic opt-ins = sessions where a form_submit fired on an organic opt-in page.
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePaths: ORGANIC_OPT_IN_PATHS }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, eventName: OPT_IN_EVENT, pagePaths: ORGANIC_OPT_IN_PATHS }).toString()}`,
           ),
+          // Bookings: call_booked events grouped by the session's landing page, so they can
+          // be split into ads vs organic by entry page.
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ADS_VSL_PATH }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...params, eventName: BOOKING_EVENT, dimensions: "landingPage", metricName: "eventCount" }).toString()}`,
           ),
+          // Daily booking trend: call_booked per day (whole site).
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...params, pagePath: ORGANIC_VSL_PATH }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...params, eventName: BOOKING_EVENT, dimensions: "date", metricName: "eventCount" }).toString()}`,
           ),
         ]);
 
@@ -244,56 +263,76 @@ export default function TopOfFunnelPanel() {
           const json = await res.json().catch(() => ({}));
           return res.ok ? json : null;
         };
-        const [adsVsl, adsOptIn, orgVsl, orgOptIn, adsViews, orgViews] =
-          await Promise.all([
-            parse(resAdsVsl),
-            parse(resAdsOptIn),
-            parse(resOrgVsl),
-            parse(resOrgOptIn),
-            parse(resAdsViews),
-            parse(resOrgViews),
-          ]);
+        const [
+          adsTotalSessions,
+          adsOptSubmits,
+          orgTotalSessions,
+          orgOptSubmits,
+          callBookedByLanding,
+          callBookedByDay,
+        ] = await Promise.all([
+          parse(resAdsTotalSessions),
+          parse(resAdsOptSubmits),
+          parse(resOrgTotalSessions),
+          parse(resOrgOptSubmits),
+          parse(resCallBookedByLanding),
+          parse(resCallBookedByDay),
+        ]);
 
         if (cancelled) return;
         const sum = (rows, field) =>
           (rows || []).reduce((a, r) => a + (Number(r?.[field]) || 0), 0);
 
-        const sessAdsVsl = sum(adsVsl?.rows, "sessions");
-        const sessAdsOptIn = sum(adsOptIn?.rows, "sessions");
-        const sessOrgVsl = sum(orgVsl?.rows, "sessions");
-        const sessOrgOptIn = sum(orgOptIn?.rows, "sessions");
-        const adsViewsTotal = sum(adsViews?.rows, "views");
-        const adsEventsTotal = sum(adsViews?.rows, "eventCount");
-        const orgViewsTotal = sum(orgViews?.rows, "views");
-        const orgEventsTotal = sum(orgViews?.rows, "eventCount");
+        const sessAdsTotal = sum(adsTotalSessions?.rows, "sessions");
+        const submAdsOptIn = sum(adsOptSubmits?.rows, "sessions");
+        const sessOrgTotal = sum(orgTotalSessions?.rows, "sessions");
+        const submOrgOptIn = sum(orgOptSubmits?.rows, "sessions");
+        // Bookings (call_booked) split by the session's landing page.
+        const landingRows = callBookedByLanding?.rows || [];
+        const isAdsLanding = (lp) =>
+          String(lp || "").includes(PAID_PATH_TOKEN);
+        const adsBookings = landingRows.reduce(
+          (a, r) =>
+            a + (isAdsLanding(r?.dimensions?.landingPage) ? Number(r?.metric) || 0 : 0),
+          0,
+        );
+        const totalBookings = landingRows.reduce(
+          (a, r) => a + (Number(r?.metric) || 0),
+          0,
+        );
+        const orgBookings = totalBookings - adsBookings;
 
+        // Opt-in rate = opt-ins (form submits) ÷ all sessions for the arm.
         const optInAds =
-          sessAdsOptIn > 0 ? (sessAdsVsl / sessAdsOptIn) * 100 : null;
+          sessAdsTotal > 0 ? (submAdsOptIn / sessAdsTotal) * 100 : null;
         const optInOrganic =
-          sessOrgOptIn > 0 ? (sessOrgVsl / sessOrgOptIn) * 100 : null;
+          sessOrgTotal > 0 ? (submOrgOptIn / sessOrgTotal) * 100 : null;
+        // Booking rate = bookings (call_booked) ÷ opt-ins (form submits), per arm.
         const bookingAds =
-          adsViewsTotal > 0 ? (adsEventsTotal / adsViewsTotal) * 100 : null;
+          submAdsOptIn > 0 ? (adsBookings / submAdsOptIn) * 100 : null;
         const bookingOrganic =
-          orgViewsTotal > 0 ? (orgEventsTotal / orgViewsTotal) * 100 : null;
+          submOrgOptIn > 0 ? (orgBookings / submOrgOptIn) * 100 : null;
 
-        const adsVslByDay = mergeSeriesByDate(adsVsl?.rows, "sessions");
-        const adsOptByDay = mergeSeriesByDate(adsOptIn?.rows, "sessions");
-        const orgVslByDay = mergeSeriesByDate(orgVsl?.rows, "sessions");
-        const orgOptByDay = mergeSeriesByDate(orgOptIn?.rows, "sessions");
-        const adsViewsByDay = mergeSeriesByDate(adsViews?.rows, "views");
-        const adsEventsByDay = mergeSeriesByDate(adsViews?.rows, "eventCount");
-        const orgViewsByDay = mergeSeriesByDate(orgViews?.rows, "views");
-        const orgEventsByDay = mergeSeriesByDate(orgViews?.rows, "eventCount");
+        const adsSubByDay = mergeSeriesByDate(adsOptSubmits?.rows, "sessions");
+        const adsTotalByDay = mergeSeriesByDate(adsTotalSessions?.rows, "sessions");
+        const orgSubByDay = mergeSeriesByDate(orgOptSubmits?.rows, "sessions");
+        const orgTotalByDay = mergeSeriesByDate(orgTotalSessions?.rows, "sessions");
+        // call_booked by day arrives as custom-dimension rows ({ dimensions:{date}, metric }).
+        const bookingsByDay = (callBookedByDay?.rows || []).reduce((m, r) => {
+          const iso = gaDateToISO(r?.dimensions?.date);
+          if (iso) m[iso] = (m[iso] || 0) + (Number(r?.metric) || 0);
+          return m;
+        }, {});
 
         const optInBars = dayKeys.map((k) => {
-          const vsl = (adsVslByDay[k] || 0) + (orgVslByDay[k] || 0);
-          const opt = (adsOptByDay[k] || 0) + (orgOptByDay[k] || 0);
-          return clampPct(opt > 0 ? (vsl / opt) * 100 : 0);
+          const subs = (adsSubByDay[k] || 0) + (orgSubByDay[k] || 0);
+          const total = (adsTotalByDay[k] || 0) + (orgTotalByDay[k] || 0);
+          return clampPct(total > 0 ? (subs / total) * 100 : 0);
         });
         const bookingBars = dayKeys.map((k) => {
-          const views = (adsViewsByDay[k] || 0) + (orgViewsByDay[k] || 0);
-          const events = (adsEventsByDay[k] || 0) + (orgEventsByDay[k] || 0);
-          return clampPct(views > 0 ? (events / views) * 100 : 0);
+          const bookings = bookingsByDay[k] || 0;
+          const optIns = (adsSubByDay[k] || 0) + (orgSubByDay[k] || 0);
+          return clampPct(optIns > 0 ? (bookings / optIns) * 100 : 0);
         });
 
         setGaState({
@@ -533,8 +572,11 @@ export default function TopOfFunnelPanel() {
       <div className="grid grid-cols-2 gap-2">
         {/* Card 1 */}
         <div className="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm">
-          <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
-            OPT-IN CONVERSION
+          <div className="flex items-start justify-between gap-1">
+            <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
+              OPT-IN CONVERSION
+            </div>
+            <SectionInfoHint text="Last 7 days. Opt-ins ÷ all sessions for the arm. Opt-ins = sessions with a form submit on an opt-in page. Paid = pages containing “masterclass”; organic = all other pages." />
           </div>
           {gaState.loading ? (
             <>
@@ -562,14 +604,17 @@ export default function TopOfFunnelPanel() {
             </>
           )}
           <p className="mt-0.5 text-[9px] font-medium leading-snug text-[#9ca3af]">
-            VSL sessions → opt-ins
+            Opt-ins ÷ all sessions
           </p>
         </div>
 
         {/* Card 2 */}
         <div className="flex min-h-0 min-w-0 flex-col rounded-xl border border-slate-200/90 bg-white p-2 shadow-sm">
-          <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
-            BOOKING RATE
+          <div className="flex items-start justify-between gap-1">
+            <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
+              BOOKING RATE
+            </div>
+            <SectionInfoHint text="Last 7 days. Bookings ÷ opt-ins for the arm. Bookings = call_booked events, split by the session’s landing page. Paid = landing page contains “masterclass”; organic = all others." />
           </div>
           {gaState.loading ? (
             <>
