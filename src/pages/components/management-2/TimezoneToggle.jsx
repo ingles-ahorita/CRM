@@ -37,7 +37,7 @@ export default function TimezoneToggle() {
                 'px-2.5 py-1 text-[11px] font-semibold rounded transition !outline-none',
                 active
                   ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.10)]'
-                  : 'text-slate-500 hover:text-slate-700',
+                  : 'bg-transparent text-slate-500 hover:text-slate-700',
               )}
             >
               {o.label}
