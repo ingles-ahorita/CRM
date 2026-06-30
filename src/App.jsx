@@ -30,6 +30,7 @@ import MultipayCompletionPage from "./pages/MultipayCompletionPage";
 import CloserAvailabilityPage from "./pages/CloserAvailabilityPage";
 import CommissionOverviewPage from "./pages/CommissionOverviewPage";
 import RevenueOverviewPage from "./pages/RevenueOverviewPage";
+import OfferEconomicsPage from "./pages/OfferEconomicsPage";
 import AIChatPage from "./pages/AIChatPage";
 import AdminSidebar from "./components/AdminSidebar";
 import "./App.css";
@@ -193,6 +194,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <RevenueOverviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/offer-economics"
+        element={
+          <ProtectedRoute>
+            <OfferEconomicsPage />
           </ProtectedRoute>
         }
       />
