@@ -111,6 +111,16 @@ function isoDay ( date ) {
   return date.toISOString().slice( 0, 10 );
 }
 
+// DB timestamps are stored naive (no 'Z' / offset); force UTC parsing so
+// client-side day/hour/month bucketing matches /metrics for every viewer
+// regardless of their browser timezone.
+function parseUTC ( value ) {
+  if ( value == null ) return new Date( NaN );
+  const s = String( value );
+  const hasTz = s.includes( "Z" ) || /[+-]\d{2}:?\d{2}$/.test( s );
+  return new Date( hasTz ? s : `${s}Z` );
+}
+
 function getRangeBounds ( range, customStart = null, customEnd = null ) {
   const now = new Date();
   const todayStart = startOfUTCDate( now );
@@ -614,7 +624,7 @@ async function buildCohortCards ( start90, now, cohortRange ) {
     const customerId = row?.kajabi_customer_id;
     if ( !customerId ) continue;
     const accountingDate = getCohortAccountingDate( row, startISO, endISO );
-    const d = new Date( accountingDate );
+    const d = parseUTC( accountingDate );
     if ( isNaN( d.getTime() ) ) continue;
     const mk = `${d.getUTCFullYear()}-${String( d.getUTCMonth() + 1 ).padStart( 2, "0" )}`;
     if ( !customerMonths.has( customerId ) ) customerMonths.set( customerId, new Set() );
@@ -699,7 +709,7 @@ async function buildSpeedCards ( recentStart, now ) {
     avgMinutes = called.length ? called.reduce( ( sum, row ) => sum + Number( row.responseTimeMinutes ), 0 ) / called.length : null;
     const oneHourAgo = now.getTime() - 60 * 60 * 1000;
     notContacted = recentCalls.filter( ( call ) => {
-      const bookedAt = new Date( call.book_date ).getTime();
+      const bookedAt = parseUTC( call.book_date ).getTime();
       const result = analysis?.[ String( call.id ) ];
       return bookedAt <= oneHourAgo && result?.called !== true;
     } ).length;
@@ -773,7 +783,7 @@ async function buildHeatmapDays ( start, end ) {
   const rowsByDate = new Map( rows.map( ( row ) => [ row.dateKey, row ] ) );
 
   for ( const call of calls ) {
-    const bookedAt = new Date( call.book_date );
+    const bookedAt = parseUTC( call.book_date );
     const row = rowsByDate.get( isoDay( bookedAt ) );
     if ( !row ) continue;
     const cell = row.cells[ bookedAt.getUTCHours() ];

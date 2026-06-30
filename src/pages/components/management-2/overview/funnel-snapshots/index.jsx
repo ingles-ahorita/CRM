@@ -312,6 +312,16 @@ export default function FunnelSnapshots({ compact = false }) {
             (a, d) => a + (Number(d?.totalConfirmed ?? 0) || 0),
             0,
           );
+          // Confirmation is a book_date cohort ("of bookings made this period,
+          // how many are confirmed"), matching the Weekly Comparison table.
+          const bookingsForConfirmation = rows.reduce(
+            (a, d) => a + (Number(d?.bookingsForConfirmation ?? 0) || 0),
+            0,
+          );
+          const confirmedFromBookings = rows.reduce(
+            (a, d) => a + (Number(d?.confirmedFromBookings ?? 0) || 0),
+            0,
+          );
           const calls = rows.reduce(
             (a, d) =>
               a +
@@ -326,7 +336,10 @@ export default function FunnelSnapshots({ compact = false }) {
           );
           const yesterdayShowUpRate = rows.length ? rows[0]?.showUpRate : null;
 
-          const confirmation = calls > 0 ? (confirmed / calls) * 100 : null;
+          const confirmation =
+            bookingsForConfirmation > 0
+              ? (confirmedFromBookings / bookingsForConfirmation) * 100
+              : null;
           const showup =
             type === "yesterday"
               ? yesterdayShowUpRate
@@ -344,7 +357,10 @@ export default function FunnelSnapshots({ compact = false }) {
               success: roundPct(clampPct(success)),
             },
             subtexts: {
-              confirmation: calls > 0 ? `${confirmed} / ${calls} calls` : "—",
+              confirmation:
+                bookingsForConfirmation > 0
+                  ? `${confirmedFromBookings} / ${bookingsForConfirmation} bookings`
+                  : "—",
               showup:
                 confirmed > 0 ? `${showed} / ${confirmed} confirmed` : "—",
               conversion:
