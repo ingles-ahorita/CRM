@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { supabase } from '../../../../lib/supabaseClient';
-import { ICLOSED_POTENTIAL_LEADS_TAB_STATUSES } from '../../../../../lib/iclosedLeadStatus.js';
+import {
+  ICLOSED_POTENTIAL_LEADS_TAB_STATUSES,
+  ICLOSED_BOOKED_STATUSES,
+} from '../../../../../lib/iclosedLeadStatus.js';
 import {
   computePotentialLeadLtStatus,
   fetchCrmConfirmedEmails,
@@ -28,6 +31,10 @@ import { useManagementTimezone } from '../../../../contexts/managementTimezone';
 import TimezoneToggle from '../TimezoneToggle';
 
 const TAB_STATUS_LIST = [...ICLOSED_POTENTIAL_LEADS_TAB_STATUSES];
+// Booked iClosed statuses (strategy_call / discovery_call). These leave the
+// Potential/Qualified tab query, so they are fetched separately to feed the
+// "Converted" (LT4/LT5) KPI card only — the rest of the page is unaffected.
+const BOOKED_STATUS_LIST = [...ICLOSED_BOOKED_STATUSES];
 
 // Global date-range presets (drive the whole page: KPIs, chart, table).
 const DATE_RANGE_ITEMS = [
@@ -78,6 +85,7 @@ function formatDate(iso, timeZone) {
 export default function PotentialLeads() {
   const { timeZone } = useManagementTimezone();
   const [rows, setRows] = useState([]);
+  const [bookedRows, setBookedRows] = useState([]);
   const [setters, setSetters] = useState([]);
   const [crmConfirmedEmails, setCrmConfirmedEmails] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
@@ -94,11 +102,17 @@ export default function PotentialLeads() {
     setLoading(true);
     setError(null);
 
-    const [leadsRes, settersRes] = await Promise.all([
+    const [leadsRes, bookedRes, settersRes] = await Promise.all([
       supabase
         .from('potential_leads')
         .select('*, assigned_setter:assigned_setter_id(id, name)')
         .in('iclosed_status', TAB_STATUS_LIST)
+        .order('created_at', { ascending: false })
+        .limit(500),
+      supabase
+        .from('potential_leads')
+        .select('*, assigned_setter:assigned_setter_id(id, name)')
+        .in('iclosed_status', BOOKED_STATUS_LIST)
         .order('created_at', { ascending: false })
         .limit(500),
       supabase.from('setters').select('id, name').eq('active', true).order('name'),
@@ -107,11 +121,16 @@ export default function PotentialLeads() {
     if (leadsRes.error) {
       setError(leadsRes.error.message);
       setRows([]);
+      setBookedRows([]);
       setCrmConfirmedEmails(new Set());
     } else {
       const leadRows = leadsRes.data || [];
+      const bookedLeadRows = bookedRes.error ? [] : (bookedRes.data || []);
       setRows(leadRows);
-      const crmEmails = await fetchCrmConfirmedEmails(supabase, leadRows);
+      setBookedRows(bookedLeadRows);
+      // LT5 needs a CRM-confirmed calls row; resolve over both cohorts so booked
+      // leads can be classified LT4 vs LT5.
+      const crmEmails = await fetchCrmConfirmedEmails(supabase, [...leadRows, ...bookedLeadRows]);
       setCrmConfirmedEmails(crmEmails);
     }
     setSetters(settersRes.data || []);
@@ -205,6 +224,36 @@ export default function PotentialLeads() {
         .some((s) => String(s).toLowerCase().includes(q)),
     );
   }, [scopedRows, search]);
+
+  // Booked (LT4/LT5) leads for the "Converted" KPI, scoped to the same global
+  // date range / setter / search as the rest of the page. Two disjoint sources:
+  //  • the separate booked-status fetch (strategy_call / discovery_call), and
+  //  • manual-CRM bookings still tagged Potential/Qualified (already in searchedRows).
+  const convertedRows = useMemo(() => {
+    const start = dateBounds?.start?.getTime();
+    const end = dateBounds?.end?.getTime();
+    const q = search.trim().toLowerCase();
+    const setterSet = selectedSetters.length ? new Set(selectedSetters) : null;
+    const inScope = (r) => {
+      if (start != null && end != null) {
+        const t = r.created_at ? new Date(r.created_at).getTime() : NaN;
+        if (Number.isNaN(t) || t < start || t > end) return false;
+      }
+      if (setterSet && !setterSet.has(r.assigned_setter_id)) return false;
+      if (
+        q &&
+        ![r.name, r.email, r.phone, r.assigned_setter?.name]
+          .filter(Boolean)
+          .some((s) => String(s).toLowerCase().includes(q))
+      ) {
+        return false;
+      }
+      return true;
+    };
+    const booked = bookedRows.filter(inScope);
+    const manualBooked = searchedRows.filter((r) => HIDDEN_LT_STATUSES.has(ltForRow(r)));
+    return [...booked, ...manualBooked];
+  }, [bookedRows, searchedRows, dateBounds, selectedSetters, search, ltForRow]);
 
   // A lead is "unassigned" when it has no setter OR its setter is no longer
   // active — the assignment dropdown only lists active setters, so a row pointing
@@ -384,6 +433,7 @@ export default function PotentialLeads() {
 
       <PotentialLeadsInsights
         rows={statusFilteredRows}
+        convertedRows={convertedRows}
         ltForRow={ltForRow}
         isUnassigned={isUnassigned}
         loading={loading}

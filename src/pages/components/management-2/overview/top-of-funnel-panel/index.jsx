@@ -44,14 +44,48 @@ function getLastNDaysISO(days) {
   return out;
 }
 
-function mergeSeriesByDate(rows, field) {
-  const m = {};
-  for (const r of rows || []) {
-    const iso = gaDateToISO(r?.date);
+// A GA4 default channel group is "paid" if it's a Paid* channel or Cross-network.
+function isPaidChannel(ch) {
+  return /paid|cross-network/i.test(String(ch || ""));
+}
+
+// Custom-dimension rows ({ dimensions: { date, sessionDefaultChannelGroup }, metric }).
+// Returns per-day paid/organic maps plus paid/organic totals.
+function splitByDayChannel(payload) {
+  const paid = {};
+  const org = {};
+  let paidTotal = 0;
+  let orgTotal = 0;
+  for (const r of payload?.rows || []) {
+    const iso = gaDateToISO(r?.dimensions?.date);
+    const v = Number(r?.metric) || 0;
+    const paidRow = isPaidChannel(r?.dimensions?.sessionDefaultChannelGroup);
+    if (paidRow) paidTotal += v;
+    else orgTotal += v;
     if (!iso) continue;
-    m[iso] = (m[iso] || 0) + (Number(r?.[field]) || 0);
+    const bucket = paidRow ? paid : org;
+    bucket[iso] = (bucket[iso] || 0) + v;
   }
-  return m;
+  return { paid, org, paidTotal, orgTotal };
+}
+
+// Compact arm block: colored dot + label with the % on the first row, and the raw
+// count on its own row beneath so nothing overflows the narrow card.
+function RateRow({ color, label, pct, count }) {
+  return (
+    <div className="leading-tight">
+      <div className="flex items-center justify-between gap-1">
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold" style={{ color }}>
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+          {label}
+        </span>
+        <span className="text-[12px] font-bold tabular-nums" style={{ color }}>{pct}</span>
+      </div>
+      {count ? (
+        <div className="text-right text-[9px] font-medium tabular-nums text-slate-400">{count}</div>
+      ) : null}
+    </div>
+  );
 }
 
 function shimmer(className = "") {
@@ -153,22 +187,19 @@ function MiniBarChart({
 
 export default function TopOfFunnelPanel() {
   const CHART_DAYS = 7;
-  // Opt-in conversion = opt-ins ÷ all traffic for that arm. The opt-in count is the number
-  // of sessions in which a form_submit (the real opt-in signal) fired on an opt-in landing
-  // page — login/password/checkout forms live on other paths and are excluded. The
-  // denominator is ALL sessions for the arm (ads vs organic), i.e. "of everyone who
-  // visited, what % opted in" — which is the figure the business tracks.
+  // Ads vs organic is decided by GA traffic channel (sessionDefaultChannelGroup): a session
+  // is "ads" if it arrived via a paid/cross-network channel, "organic" otherwise. This is a
+  // property of where the visitor came from — consistent across both cards and mutually
+  // exclusive (a session has exactly one channel).
+  //   Opt-in rate  = opt-ins (form_submit on opt-in pages) ÷ all sessions, per channel.
+  //   Booking rate = bookings (call_booked) ÷ opt-ins, per channel.
   const OPT_IN_EVENT = "form_submit";
-  // Booking rate = call_booked events ÷ opt-ins. call_booked fires on the booking
-  // confirmation page (not the funnel pages), so it is split into ads vs organic by the
-  // session's landing page using the paid/organic rule below.
   const BOOKING_EVENT = "call_booked";
-  // Paid/organic split rule (per the business): any page path CONTAINING "masterclass" is
-  // paid/ads traffic; every other page is organic.
-  const PAID_PATH_TOKEN = "masterclass";
-  const ADS_OPT_IN_PATHS = "/ads-opt-in-masterclass,/ads-opt-in-masterclass-non-us";
-  const ORGANIC_OPT_IN_PATHS =
-    "/,/pro,/opt-in-demo,/100-frases,/10-errores-opt-in,/50-respuestas-opt-in";
+  const CHANNEL_DIM = "sessionDefaultChannelGroup";
+  // Opt-in landing pages where a real opt-in form fires. Login/password/checkout forms live
+  // on other paths and are excluded so the opt-in count is not inflated.
+  const OPT_IN_PATHS =
+    "/ads-opt-in-masterclass,/ads-opt-in-masterclass-non-us,/,/pro,/opt-in-demo,/100-frases,/10-errores-opt-in,/50-respuestas-opt-in";
 
   const [gaState, setGaState] = useState({
     loading: true,
@@ -178,6 +209,8 @@ export default function TopOfFunnelPanel() {
     bookingOrganic: null,
     optInBars: [],
     bookingBars: [],
+    // Raw counts (numerator / denominator) for display next to each %.
+    counts: null,
   });
   const [attendanceState, setAttendanceState] = useState({
     loading: true,
@@ -219,43 +252,25 @@ export default function TopOfFunnelPanel() {
     const startStr = startDate.toISOString().slice(0, 10);
     const endStr = endDate.toISOString().slice(0, 10);
     const params = { startDate: startStr, endDate: endStr };
-    const sessionParams = { ...params, metric: "sessions" };
 
     async function loadGaRates() {
       setGaState((p) => ({ ...p, loading: true }));
       try {
-        const [
-          resAdsTotalSessions,
-          resAdsOptSubmits,
-          resOrgTotalSessions,
-          resOrgOptSubmits,
-          resCallBookedByLanding,
-          resCallBookedByDay,
-        ] = await Promise.all([
-          // Denominator: ALL paid sessions (any page containing "masterclass").
+        const byChannelDay = { ...params, dimensions: `date,${CHANNEL_DIM}` };
+        const [resSessions, resOptIns, resBookings] = await Promise.all([
+          // Denominator: ALL sessions, per day and per traffic channel.
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, pagePath: PAID_PATH_TOKEN }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...byChannelDay, metric: "sessions" }).toString()}`,
           ),
-          // Numerator: ads opt-ins = sessions where a form_submit fired on an ads opt-in page.
+          // Opt-ins: SESSIONS in which a form_submit fired on an opt-in page, per day and
+          // channel. Counted as sessions (not raw events) so it matches the sessions-based
+          // denominator — a session that submits twice still counts once.
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, eventName: OPT_IN_EVENT, pagePaths: ADS_OPT_IN_PATHS }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...byChannelDay, metric: "sessions", eventName: OPT_IN_EVENT, pagePaths: OPT_IN_PATHS }).toString()}`,
           ),
-          // Denominator: ALL organic sessions (every page NOT containing "masterclass").
+          // Bookings: call_booked events, per day and channel.
           fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, excludePagePath: PAID_PATH_TOKEN }).toString()}`,
-          ),
-          // Numerator: organic opt-ins = sessions where a form_submit fired on an organic opt-in page.
-          fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...sessionParams, eventName: OPT_IN_EVENT, pagePaths: ORGANIC_OPT_IN_PATHS }).toString()}`,
-          ),
-          // Bookings: call_booked events grouped by the session's landing page, so they can
-          // be split into ads vs organic by entry page.
-          fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...params, eventName: BOOKING_EVENT, dimensions: "landingPage", metricName: "eventCount" }).toString()}`,
-          ),
-          // Daily booking trend: call_booked per day (whole site).
-          fetch(
-            `/api/google-analytics?${new URLSearchParams({ ...params, eventName: BOOKING_EVENT, dimensions: "date", metricName: "eventCount" }).toString()}`,
+            `/api/google-analytics?${new URLSearchParams({ ...byChannelDay, metricName: "eventCount", eventName: BOOKING_EVENT }).toString()}`,
           ),
         ]);
 
@@ -263,76 +278,34 @@ export default function TopOfFunnelPanel() {
           const json = await res.json().catch(() => ({}));
           return res.ok ? json : null;
         };
-        const [
-          adsTotalSessions,
-          adsOptSubmits,
-          orgTotalSessions,
-          orgOptSubmits,
-          callBookedByLanding,
-          callBookedByDay,
-        ] = await Promise.all([
-          parse(resAdsTotalSessions),
-          parse(resAdsOptSubmits),
-          parse(resOrgTotalSessions),
-          parse(resOrgOptSubmits),
-          parse(resCallBookedByLanding),
-          parse(resCallBookedByDay),
+        const [sessions, optIns, bookings] = await Promise.all([
+          parse(resSessions),
+          parse(resOptIns),
+          parse(resBookings),
         ]);
 
         if (cancelled) return;
-        const sum = (rows, field) =>
-          (rows || []).reduce((a, r) => a + (Number(r?.[field]) || 0), 0);
+        const sess = splitByDayChannel(sessions);
+        const opt = splitByDayChannel(optIns);
+        const book = splitByDayChannel(bookings);
 
-        const sessAdsTotal = sum(adsTotalSessions?.rows, "sessions");
-        const submAdsOptIn = sum(adsOptSubmits?.rows, "sessions");
-        const sessOrgTotal = sum(orgTotalSessions?.rows, "sessions");
-        const submOrgOptIn = sum(orgOptSubmits?.rows, "sessions");
-        // Bookings (call_booked) split by the session's landing page.
-        const landingRows = callBookedByLanding?.rows || [];
-        const isAdsLanding = (lp) =>
-          String(lp || "").includes(PAID_PATH_TOKEN);
-        const adsBookings = landingRows.reduce(
-          (a, r) =>
-            a + (isAdsLanding(r?.dimensions?.landingPage) ? Number(r?.metric) || 0 : 0),
-          0,
-        );
-        const totalBookings = landingRows.reduce(
-          (a, r) => a + (Number(r?.metric) || 0),
-          0,
-        );
-        const orgBookings = totalBookings - adsBookings;
-
-        // Opt-in rate = opt-ins (form submits) ÷ all sessions for the arm.
-        const optInAds =
-          sessAdsTotal > 0 ? (submAdsOptIn / sessAdsTotal) * 100 : null;
-        const optInOrganic =
-          sessOrgTotal > 0 ? (submOrgOptIn / sessOrgTotal) * 100 : null;
-        // Booking rate = bookings (call_booked) ÷ opt-ins (form submits), per arm.
-        const bookingAds =
-          submAdsOptIn > 0 ? (adsBookings / submAdsOptIn) * 100 : null;
-        const bookingOrganic =
-          submOrgOptIn > 0 ? (orgBookings / submOrgOptIn) * 100 : null;
-
-        const adsSubByDay = mergeSeriesByDate(adsOptSubmits?.rows, "sessions");
-        const adsTotalByDay = mergeSeriesByDate(adsTotalSessions?.rows, "sessions");
-        const orgSubByDay = mergeSeriesByDate(orgOptSubmits?.rows, "sessions");
-        const orgTotalByDay = mergeSeriesByDate(orgTotalSessions?.rows, "sessions");
-        // call_booked by day arrives as custom-dimension rows ({ dimensions:{date}, metric }).
-        const bookingsByDay = (callBookedByDay?.rows || []).reduce((m, r) => {
-          const iso = gaDateToISO(r?.dimensions?.date);
-          if (iso) m[iso] = (m[iso] || 0) + (Number(r?.metric) || 0);
-          return m;
-        }, {});
+        const rate = (num, den) => (den > 0 ? (num / den) * 100 : null);
+        // Opt-in rate = opt-ins ÷ all sessions, per channel.
+        const optInAds = rate(opt.paidTotal, sess.paidTotal);
+        const optInOrganic = rate(opt.orgTotal, sess.orgTotal);
+        // Booking rate = bookings ÷ opt-ins, per channel.
+        const bookingAds = rate(book.paidTotal, opt.paidTotal);
+        const bookingOrganic = rate(book.orgTotal, opt.orgTotal);
 
         const optInBars = dayKeys.map((k) => {
-          const subs = (adsSubByDay[k] || 0) + (orgSubByDay[k] || 0);
-          const total = (adsTotalByDay[k] || 0) + (orgTotalByDay[k] || 0);
+          const subs = (opt.paid[k] || 0) + (opt.org[k] || 0);
+          const total = (sess.paid[k] || 0) + (sess.org[k] || 0);
           return clampPct(total > 0 ? (subs / total) * 100 : 0);
         });
         const bookingBars = dayKeys.map((k) => {
-          const bookings = bookingsByDay[k] || 0;
-          const optIns = (adsSubByDay[k] || 0) + (orgSubByDay[k] || 0);
-          return clampPct(optIns > 0 ? (bookings / optIns) * 100 : 0);
+          const bk = (book.paid[k] || 0) + (book.org[k] || 0);
+          const optK = (opt.paid[k] || 0) + (opt.org[k] || 0);
+          return clampPct(optK > 0 ? (bk / optK) * 100 : 0);
         });
 
         setGaState({
@@ -343,6 +316,12 @@ export default function TopOfFunnelPanel() {
           bookingOrganic,
           optInBars,
           bookingBars,
+          counts: {
+            optInAds: { n: opt.paidTotal, d: sess.paidTotal },
+            optInOrg: { n: opt.orgTotal, d: sess.orgTotal },
+            bookAds: { n: book.paidTotal, d: opt.paidTotal },
+            bookOrg: { n: book.orgTotal, d: opt.orgTotal },
+          },
         });
       } catch (e) {
         if (cancelled) return;
@@ -354,6 +333,7 @@ export default function TopOfFunnelPanel() {
           bookingOrganic: null,
           optInBars: Array(CHART_DAYS).fill(0),
           bookingBars: Array(CHART_DAYS).fill(0),
+          counts: null,
         });
       }
     }
@@ -576,7 +556,7 @@ export default function TopOfFunnelPanel() {
             <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
               OPT-IN CONVERSION
             </div>
-            <SectionInfoHint text="Last 7 days. Opt-ins ÷ all sessions for the arm. Opt-ins = sessions with a form submit on an opt-in page. Paid = pages containing “masterclass”; organic = all other pages." />
+            <SectionInfoHint text="Last 7 days. Opt-ins ÷ all sessions, per traffic channel. Opt-ins = sessions with a form submit on an opt-in page. Ads = paid/cross-network channels; organic = all other channels. Counts shown as opt-ins / sessions." />
           </div>
           {gaState.loading ? (
             <>
@@ -585,13 +565,19 @@ export default function TopOfFunnelPanel() {
             </>
           ) : (
             <>
-              <div className="mt-2 flex flex-col gap-0.5 text-[10px] font-bold leading-tight">
-                <span className="text-[#3b82f6]">
-                  Ads {formatPct(gaState.optInAds)}
-                </span>
-                <span className="text-[#f59e0b]">
-                  Organic {formatPct(gaState.optInOrganic)}
-                </span>
+              <div className="mt-2 flex flex-col gap-1.5">
+                <RateRow
+                  color="#3b82f6"
+                  label="Ads"
+                  pct={formatPct(gaState.optInAds)}
+                  count={gaState.counts && `${gaState.counts.optInAds.n.toLocaleString()} / ${gaState.counts.optInAds.d.toLocaleString()}`}
+                />
+                <RateRow
+                  color="#f59e0b"
+                  label="Organic"
+                  pct={formatPct(gaState.optInOrganic)}
+                  count={gaState.counts && `${gaState.counts.optInOrg.n.toLocaleString()} / ${gaState.counts.optInOrg.d.toLocaleString()}`}
+                />
               </div>
               <MiniBarChart
                 color="#3b82f6"
@@ -604,7 +590,7 @@ export default function TopOfFunnelPanel() {
             </>
           )}
           <p className="mt-0.5 text-[9px] font-medium leading-snug text-[#9ca3af]">
-            Opt-ins ÷ all sessions
+            Opt-ins ÷ sessions · by channel
           </p>
         </div>
 
@@ -614,7 +600,7 @@ export default function TopOfFunnelPanel() {
             <div className="text-[10px] font-bold uppercase leading-tight tracking-wide text-black">
               BOOKING RATE
             </div>
-            <SectionInfoHint text="Last 7 days. Bookings ÷ opt-ins for the arm. Bookings = call_booked events, split by the session’s landing page. Paid = landing page contains “masterclass”; organic = all others." />
+            <SectionInfoHint text="Last 7 days. Bookings ÷ opt-ins, per traffic channel. Bookings = call_booked events. Ads = paid/cross-network channels; organic = all other channels. Counts shown as bookings / opt-ins." />
           </div>
           {gaState.loading ? (
             <>
@@ -623,13 +609,19 @@ export default function TopOfFunnelPanel() {
             </>
           ) : (
             <>
-              <div className="mt-2 flex flex-col gap-0.5 text-[10px] font-bold leading-tight">
-                <span className="text-[#3b82f6]">
-                  Ads {formatPct(gaState.bookingAds)}
-                </span>
-                <span className="text-[#f59e0b]">
-                  Organic {formatPct(gaState.bookingOrganic)}
-                </span>
+              <div className="mt-2 flex flex-col gap-1.5">
+                <RateRow
+                  color="#3b82f6"
+                  label="Ads"
+                  pct={formatPct(gaState.bookingAds)}
+                  count={gaState.counts && `${gaState.counts.bookAds.n.toLocaleString()} / ${gaState.counts.bookAds.d.toLocaleString()}`}
+                />
+                <RateRow
+                  color="#f59e0b"
+                  label="Organic"
+                  pct={formatPct(gaState.bookingOrganic)}
+                  count={gaState.counts && `${gaState.counts.bookOrg.n.toLocaleString()} / ${gaState.counts.bookOrg.d.toLocaleString()}`}
+                />
               </div>
               <MiniBarChart
                 color="#f59e0b"

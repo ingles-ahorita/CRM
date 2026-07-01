@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import SectionInfoHint from "../section-info-hint";
 import { Chart as ChartJS, ArcElement } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
-import { getWeekBoundsUTC } from "../../../../../utils/dateHelpers";
 
 ChartJS.register(ArcElement);
 
@@ -291,11 +290,17 @@ export default function FunnelSnapshots({ compact = false }) {
         const yesterday = series.length >= 2 ? series[series.length - 2] : last;
 
         const now = new Date();
-        const { weekStart } = getWeekBoundsUTC(now);
-        const mondayStr = weekStart.toISOString().slice(0, 10);
-        const todayStr = now.toISOString().slice(0, 10);
-        const thisWeek = series.filter(
-          (d) => d?.date && d.date >= mondayStr && d.date <= todayStr,
+        // Last 7 days excluding today: window ends yesterday (today − 1) and
+        // starts 7 days back (today − 7).
+        const endD = new Date(now);
+        endD.setUTCDate(endD.getUTCDate() - 1);
+        const startD = new Date(now);
+        startD.setUTCDate(startD.getUTCDate() - 7);
+        const lastWeekStartStr = startD.toISOString().slice(0, 10);
+        const lastWeekEndStr = endD.toISOString().slice(0, 10);
+        const lastWeek = series.filter(
+          (d) =>
+            d?.date && d.date >= lastWeekStartStr && d.date <= lastWeekEndStr,
         );
 
         const compute = (srcRows, type) => {
@@ -371,7 +376,7 @@ export default function FunnelSnapshots({ compact = false }) {
         };
 
         const y = compute(yesterday, "yesterday");
-        const w = compute(thisWeek, "week");
+        const w = compute(lastWeek, "week");
         const nextPanels = [
           {
             id: "yesterday",
@@ -382,8 +387,8 @@ export default function FunnelSnapshots({ compact = false }) {
           },
           {
             id: "week",
-            title: "THIS WEEK",
-            dateBadge: `${toBadgeDate(mondayStr)}–${toBadgeDate(todayStr)}`,
+            title: "LAST WEEK",
+            dateBadge: `${toBadgeDate(lastWeekStartStr)}–${toBadgeDate(lastWeekEndStr)}`,
             values: w.values,
             subtexts: w.subtexts,
           },
@@ -408,7 +413,7 @@ export default function FunnelSnapshots({ compact = false }) {
           },
           {
             id: "week",
-            title: "THIS WEEK",
+            title: "LAST WEEK",
             dateBadge: "—",
             values: { confirmation: 0, showup: 0, conversion: 0, success: 0 },
             subtexts: {
@@ -441,7 +446,7 @@ export default function FunnelSnapshots({ compact = false }) {
           >
             Funnel snapshots
           </h2>
-          <SectionInfoHint text="Yesterday and this week: how leads move from booked calls to show-ups and closed sales." />
+          <SectionInfoHint text="Yesterday and last week: how leads move from booked calls to show-ups and closed sales." />
           {/* <span className="inline-flex rounded-full bg-violet-600 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white ring-1 ring-violet-700/30">
             CURRENT
           </span> */}

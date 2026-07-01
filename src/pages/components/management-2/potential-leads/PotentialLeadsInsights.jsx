@@ -14,15 +14,23 @@ import {
   buildLtTrend,
   buildInsights,
 } from './potentialLeadSegments.js';
+import { LT_STATUS } from '../../../../../lib/potentialLeadLtStatus.js';
 
 // LT1 is hidden completely on this page, so it gets no chart series / toggle.
 const TREND_KEYS = LT_TREND_KEYS.filter((k) => k.key !== 'lt1');
+
+// In-card filter for the Converted KPI — split the LT4/LT5 "booked" bucket.
+const CONVERTED_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'lt4', label: 'LT4' },
+  { key: 'lt5', label: 'LT5' },
+];
 
 function shimmer(className = '') {
   return <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />;
 }
 
-function KpiCard({ label, value, sub, tooltip, valueClass = 'text-slate-900' }) {
+function KpiCard({ label, value, sub, tooltip, valueClass = 'text-slate-900', children }) {
   return (
     <div className="relative flex flex-col justify-center rounded-lg border border-slate-200 bg-white px-3 py-2">
       {tooltip && (
@@ -36,6 +44,7 @@ function KpiCard({ label, value, sub, tooltip, valueClass = 'text-slate-900' }) 
       <div className={`text-[20px] font-bold leading-none ${valueClass}`}>{value}</div>
       <div className="mt-0.5 text-[12px] font-medium text-slate-700">{label}</div>
       <div className="text-[11px] leading-tight text-slate-400">{sub}</div>
+      {children}
     </div>
   );
 }
@@ -94,7 +103,7 @@ export function PotentialLeadsInsightsShimmer() {
   );
 }
 
-export default function PotentialLeadsInsights({ rows, ltForRow, isUnassigned, loading, dateBounds }) {
+export default function PotentialLeadsInsights({ rows, convertedRows, ltForRow, isUnassigned, loading, dateBounds }) {
   const unassignedFn = useMemo(
     () => isUnassigned || ((r) => !r.assigned_setter_id),
     [isUnassigned],
@@ -109,7 +118,22 @@ export default function PotentialLeadsInsights({ rows, ltForRow, isUnassigned, l
     [rows, unassignedFn],
   );
   const received = rows?.length ?? 0;
-  const convertedRate = received > 0 ? Math.round(((insights.counts.booked || 0) / received) * 100) : 0;
+  // Split the booked (LT4/LT5) bucket so the Converted card can filter by stage.
+  // Sourced from convertedRows (booked leads live outside the Potential/Qualified
+  // set that feeds `rows`); fall back to `rows` if the prop is absent.
+  const convertedCounts = useMemo(() => {
+    let lt4 = 0;
+    let lt5 = 0;
+    (convertedRows || rows || []).forEach((r) => {
+      const lt = ltForRow(r);
+      if (lt === LT_STATUS.LT4) lt4 += 1;
+      else if (lt === LT_STATUS.LT5) lt5 += 1;
+    });
+    return { lt4, lt5, all: lt4 + lt5 };
+  }, [convertedRows, rows, ltForRow]);
+  const [convertedFilter, setConvertedFilter] = useState('all');
+  const convertedValue = convertedCounts[convertedFilter] ?? convertedCounts.all;
+  const convertedRate = received > 0 ? Math.round((convertedValue / received) * 100) : 0;
   const [hiddenKeys, setHiddenKeys] = useState(() => new Set());
 
   const visibleTrendKeys = TREND_KEYS.filter((k) => !hiddenKeys.has(k.key));
@@ -142,11 +166,31 @@ export default function PotentialLeadsInsights({ rows, ltForRow, isUnassigned, l
         />
         <KpiCard
           label="Converted"
-          value={insights.counts.booked ?? 0}
+          value={convertedValue}
           sub={`${convertedRate}% of received`}
           valueClass="text-emerald-600"
-          tooltip="Potential leads that became leads — i.e. booked a call (pipeline stage LT4 'Call booked' or LT5 'Booked & confirmed'). Rate = Converted ÷ Received within the current scope."
-        />
+          tooltip={`Potential leads that became leads — i.e. booked a call (pipeline stage LT4 'Call booked' or LT5 'Booked & confirmed'). Filter by stage below. LT4: ${convertedCounts.lt4} · LT5: ${convertedCounts.lt5}. Rate = Converted ÷ Received within the current scope.`}
+        >
+          <div className="mt-1.5 flex gap-1">
+            {CONVERTED_FILTERS.map((f) => {
+              const active = convertedFilter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setConvertedFilter(f.key)}
+                  className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ring-1 ring-inset transition ${
+                    active
+                      ? 'bg-emerald-600 text-white ring-emerald-600'
+                      : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        </KpiCard>
         <KpiCard
           label="Uncontacted"
           value={insights.uncontacted}
