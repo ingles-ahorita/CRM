@@ -30,7 +30,7 @@ app.use(cors());
 app.use(express.json());
 
 // Lazy import handlers to avoid loading issues with missing env vars
-let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, paymentPlanForecastHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler, iclosedHandler, iclosedWebhookHandler, iclosedPotentialLeadSlaCronHandler, googleEventHandler;
+let manychatHandler, cancelCalendlyHandler, cancelIclosedHandler, currentSetterHandler, calendlyWebhookHandler, kajabiWebhookHandler, kajabiTokenHandler, syncKajabiHandler, paymentPlanForecastHandler, rubenShiftToggleHandler, aiSetterHandler, storeFbclidHandler, metaConversionHandler, googleAnalyticsHandler, academicStatsHandler, managementSeriesHandler, zoomWebhookHandler, closerAvailabilityHandler, createCalendarEventHandler, crmAiQueryHandler, iclosedHandler, iclosedWebhookHandler, iclosedPotentialLeadSlaCronHandler, googleEventHandler, crmBookingConfirmHandler;
 
 async function loadHandler(handlerPath, handlerName) {
   try {
@@ -73,6 +73,7 @@ async function loadHandlers() {
   iclosedHandler = await loadHandler('./lib/api-handlers/iclosed.js', 'iclosed');
   iclosedWebhookHandler = await loadHandler('./lib/api-handlers/iclosed-webhook.js', 'iclosed-webhook');
   iclosedPotentialLeadSlaCronHandler = await loadHandler('./lib/api-handlers/iclosed-potential-lead-sla-cron.js', 'iclosed-potential-lead-sla-cron');
+  crmBookingConfirmHandler = await loadHandler('./lib/api-handlers/crm-booking-confirm.js', 'crm-booking-confirm');
 }
 
 // Convert Vercel-style handler to Express middleware
@@ -125,6 +126,12 @@ app.use('/api', (req, res, next) => {
 app.post('/api/manychat', async (req, res) => {
   if (!manychatHandler) await loadHandlers();
   return adaptVercelHandler(manychatHandler)(req, res);
+});
+
+// Supabase DB webhook → auto-confirm CRM-booked calls + ManyChat (server-side).
+app.post('/api/crm-booking-confirm', async (req, res) => {
+  if (!crmBookingConfirmHandler) await loadHandlers();
+  return adaptVercelHandler(crmBookingConfirmHandler)(req, res);
 });
 
 app.post('/api/cancel-calendly', async (req, res) => {
