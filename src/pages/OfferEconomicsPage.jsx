@@ -1,30 +1,36 @@
 /**
- * Offer Economics — per-offer unit economics, real-time from the Kajabi mirror.
+ * Offer Economics — per-offer unit economics from the local Kajabi mirror.
  *
  * For every offer sold in the selected window (default: since 2025-07-01) this page
  * shows units sold, gross/net revenue, refund %, average payments made (payment plans),
- * installment-completion %, and a collection rate vs. the offer's full price.
+ * installment-completion %, and a collection rate.
  *
  * DATA SOURCES
  *  - kajabi_purchases    → units, payment_type, multipay_payments_made, cancellations
- *  - kajabi_transactions → gross/refund cash (the same numbers as Kajabi's dashboard)
- *  - offers              → name, price, installments (the expected payment count)
- *  - Kajabi Contacts API → country (Phase 2; fetched live & cached per session — no table)
+ *  - kajabi_transactions → gross/refund cash. Filtered by effective_date + resolved-in-window,
+ *                          identical to RevenueOverviewPage, so totals tie out with Kajabi.
+ *  - offers              → name, price, installments (expected payment count)
  *
- * Revenue/units read the local mirror (fast). Country is fetched live from the
- * Kajabi Contacts API once per session and cached. "Sync from Kajabi" pulls the
- * window into the mirror; "Refresh countries" re-pulls the contact→country map.
+ * PLAN DETECTION: an offer is treated as a payment plan if offers.installments > 0,
+ * OR any of its purchases has a multipay payment_type, OR >1 payment was observed.
+ * This means plans still work even when the offer is missing from the `offers` table
+ * (a real gap — see the coverage banner). "Collected" is only shown when the true
+ * installment count is known (from `offers`), never guessed.
+ *
+ * NOTE: no country filter — Kajabi exposes no usable country (address fields are
+ * empty account-wide and transactions carry no location). Revisit only if country
+ * gets captured at checkout.
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { fetchContactCountryMap } from '../lib/kajabiApi';
+import * as DateHelpers from '../utils/dateHelpers';
 
 const SUCCESS_STATES = new Set(['paid', 'successful', 'success', 'complete', 'completed', 'succeeded']);
 const DAYS_BETWEEN_INSTALLMENTS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const GRACE_DAYS_MS = 2 * MS_PER_DAY;
 const PAGE_SIZE = 1000;
-const MAX_ROWS = 50000;
+const MAX_ROWS = 100000;
 
 function formatMoney(cents) {
   if (cents == null || !Number.isFinite(cents)) return '—';
@@ -48,17 +54,26 @@ function SummaryCard({ label, value, sub, colorClass = 'text-gray-900' }) {
   );
 }
 
-// Classify a transaction row into charge / refund / failed (mirrors RevenueOverviewPage).
-function classifyTx(t) {
-  const isRefund = t.action === 'refund' || (t.amount_in_cents ?? 0) < 0;
-  const resolved = t.payment_resolved_at != null;
-  const isFailed = !isRefund && !resolved && t.state != null
-    && !SUCCESS_STATES.has(String(t.state).toLowerCase());
+// Classify a transaction into charge / refund / failed — matches RevenueOverviewPage.
+// A payment that failed earlier but resolved inside the window counts as a charge.
+function classifyTx(t, fromISO, toISO) {
+  const resolvedInWindow = t.payment_resolved_at != null
+    && t.payment_resolved_at >= fromISO && t.payment_resolved_at <= toISO
+    && (t.effective_date == null || t.effective_date < fromISO || t.effective_date > toISO);
+  const action = resolvedInWindow
+    ? 'charge'
+    : (t.action ?? ((t.amount_in_cents ?? 0) >= 0 ? 'charge' : 'refund'));
+  const isRefund = action === 'refund' || (t.amount_in_cents ?? 0) < 0;
+  const isDispute = action === 'dispute';
+  const isFailed = !resolvedInWindow && !isRefund && (
+    isDispute || (t.state != null && !SUCCESS_STATES.has(String(t.state).toLowerCase()))
+  );
   return { isRefund, isFailed, isCharge: !isRefund && !isFailed };
 }
 
-// Installment-completion stats for one offer's purchases.
-// Logic matches /multipay-completion so numbers stay consistent across the app.
+// Per-installment completion for one offer's purchases (matches /multipay-completion).
+// NOTE: assumes 30-day spacing + 2-day grace — Kajabi does not expose actual due dates,
+// so "Due (eligible)" and the %s are approximations near cohort boundaries.
 function computeInstallmentStats(purchases, installments) {
   if (!installments || installments < 2 || purchases.length === 0) return [];
   const now = Date.now();
@@ -94,7 +109,7 @@ function computeInstallmentStats(purchases, installments) {
   return rows;
 }
 
-// Page through a supabase select that may exceed 1000 rows.
+// Page through a supabase select that may exceed 1000 rows. Flags if the hard cap is hit.
 async function fetchAll(buildQuery) {
   const all = [];
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
@@ -102,9 +117,9 @@ async function fetchAll(buildQuery) {
     if (error) throw error;
     const batch = data || [];
     all.push(...batch);
-    if (batch.length < PAGE_SIZE) break;
+    if (batch.length < PAGE_SIZE) return { rows: all, truncated: false };
   }
-  return all;
+  return { rows: all, truncated: true };
 }
 
 export default function OfferEconomicsPage() {
@@ -115,21 +130,17 @@ export default function OfferEconomicsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hasData, setHasData] = useState(null);
+  const [truncated, setTruncated] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
 
-  // Raw, unfiltered data (filtering by country happens in useMemo).
   const [purchases, setPurchases] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [offerById, setOfferById] = useState({});
-  const [countryByCustomer, setCountryByCustomer] = useState(new Map());
+  const [window_, setWindow] = useState({ fromISO: '', toISO: '' });
 
-  const [country, setCountry] = useState('ALL');
   const [sortKey, setSortKey] = useState('grossCents');
   const [sortDir, setSortDir] = useState('desc');
   const [expanded, setExpanded] = useState(null);
-
-  // Country map is fetched live from Kajabi (no table); cached per session.
-  const [countryLoading, setCountryLoading] = useState(false);
-  const [countryErr, setCountryErr] = useState(null);
 
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState(null);
@@ -138,9 +149,17 @@ export default function OfferEconomicsPage() {
   const loadData = useCallback(async (from, to) => {
     setLoading(true);
     setError(null);
+    setTruncated(false);
     try {
+      if (from > to) {
+        setError('“From” date must be on or before “To” date.');
+        setPurchases([]); setTransactions([]);
+        setLoading(false);
+        return;
+      }
       const fromISO = `${from}T00:00:00.000Z`;
       const toISO = `${to}T23:59:59.999Z`;
+      setWindow({ fromISO, toISO });
 
       const { count } = await supabase
         .from('kajabi_purchases')
@@ -154,18 +173,18 @@ export default function OfferEconomicsPage() {
       setHasData(true);
 
       // Purchases created in window
-      const purchaseRows = await fetchAll(() => supabase
+      const { rows: purchaseRows, truncated: pTrunc } = await fetchAll(() => supabase
         .from('kajabi_purchases')
-        .select('kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, payment_type, amount_in_cents, multipay_payments_made, deactivated_at, status, created_at_kajabi')
+        .select('kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, payment_type, amount_in_cents, multipay_payments_made, deactivated_at, status, created_at_kajabi, synced_at')
         .gte('created_at_kajabi', fromISO)
         .lte('created_at_kajabi', toISO));
 
-      // Transactions created in window (cash events — gross/refunds)
-      const txRows = await fetchAll(() => supabase
+      // Transactions counted by effective_date, plus any that RESOLVED in the window
+      // (failed earlier, succeeded now) — identical rule to RevenueOverviewPage.
+      const { rows: txRows, truncated: tTrunc } = await fetchAll(() => supabase
         .from('kajabi_transactions')
-        .select('kajabi_transaction_id, kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, action, state, amount_in_cents, created_at_kajabi, payment_resolved_at')
-        .gte('created_at_kajabi', fromISO)
-        .lte('created_at_kajabi', toISO));
+        .select('kajabi_transaction_id, kajabi_purchase_id, kajabi_offer_id, kajabi_customer_id, action, state, amount_in_cents, created_at_kajabi, effective_date, payment_resolved_at, synced_at')
+        .or(`and(effective_date.gte.${fromISO},effective_date.lte.${toISO}),and(payment_resolved_at.gte.${fromISO},payment_resolved_at.lte.${toISO})`));
 
       // Offers (name / price / installments)
       const { data: offerData } = await supabase
@@ -176,9 +195,17 @@ export default function OfferEconomicsPage() {
         if (o.kajabi_id != null) offers[String(o.kajabi_id)] = o;
       }
 
+      // Most-recent sync timestamp across the loaded rows
+      let maxSynced = null;
+      for (const r of [...purchaseRows, ...txRows]) {
+        if (r.synced_at && (!maxSynced || r.synced_at > maxSynced)) maxSynced = r.synced_at;
+      }
+
       setPurchases(purchaseRows);
       setTransactions(txRows);
       setOfferById(offers);
+      setLastSynced(maxSynced);
+      setTruncated(pTrunc || tTrunc);
     } catch (e) {
       console.error(e);
       setError(e.message || 'Failed to load data');
@@ -189,50 +216,9 @@ export default function OfferEconomicsPage() {
 
   useEffect(() => { loadData(fromDate, toDate); }, [fromDate, toDate, loadData]);
 
-  // Load the contact → country map live from Kajabi (cached per session).
-  // Runs independently of the DB load so Phase 1 renders immediately.
-  const loadCountries = useCallback(async (force = false) => {
-    setCountryLoading(true);
-    setCountryErr(null);
-    try {
-      const map = await fetchContactCountryMap({ force });
-      setCountryByCustomer(new Map(map));
-    } catch (e) {
-      console.warn('[offer-economics] country fetch failed:', e?.message);
-      setCountryErr(e.message || 'Failed to fetch countries from Kajabi');
-    } finally {
-      setCountryLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadCountries(false); }, [loadCountries]);
-
-  // Countries available from the loaded data.
-  const availableCountries = useMemo(() => {
-    const set = new Set();
-    let hasUnknown = false;
-    const ids = new Set([
-      ...purchases.map((p) => p.kajabi_customer_id),
-      ...transactions.map((t) => t.kajabi_customer_id),
-    ].filter(Boolean).map(String));
-    for (const id of ids) {
-      const c = countryByCustomer.get(id);
-      if (c) set.add(c); else hasUnknown = true;
-    }
-    const list = [...set].sort();
-    if (hasUnknown) list.push('Unknown');
-    return list;
-  }, [purchases, transactions, countryByCustomer]);
-
-  const countryOf = useCallback(
-    (customerId) => (customerId && countryByCustomer.get(String(customerId))) || 'Unknown',
-    [countryByCustomer]
-  );
-
-  // Per-offer aggregation, recomputed instantly when the country filter changes.
-  const { offerRows, totals } = useMemo(() => {
-    const inCountry = (custId) => country === 'ALL' || countryOf(custId) === country;
-
+  // Per-offer aggregation.
+  const { offerRows, totals, missingOffers } = useMemo(() => {
+    const { fromISO, toISO } = window_;
     const agg = {}; // kajabi_offer_id → bucket
     const bucket = (oid) => {
       const key = oid != null ? String(oid) : 'unknown';
@@ -241,12 +227,11 @@ export default function OfferEconomicsPage() {
         agg[key] = {
           offerId: key,
           name: offer?.name || (oid ? `Offer ${oid}` : 'Unknown offer'),
+          inOffersTable: !!offer,
           priceCents: offer?.price != null ? Math.round(Number(offer.price) * 100) : null,
-          installments: offer?.installments != null ? Number(offer.installments) : null,
+          installmentsFromOffer: offer?.installments != null ? Number(offer.installments) : null,
           units: 0,
           cancelled: 0,
-          multipaySum: 0,
-          multipayCount: 0,
           grossCents: 0,
           refundCents: 0,
           chargeCount: 0,
@@ -258,22 +243,15 @@ export default function OfferEconomicsPage() {
     };
 
     for (const p of purchases) {
-      if (!inCountry(p.kajabi_customer_id)) continue;
       const b = bucket(p.kajabi_offer_id);
       b.units += 1;
       if (p.deactivated_at) b.cancelled += 1;
-      const made = Number(p.multipay_payments_made);
-      if (p.payment_type && p.payment_type !== 'one-time' && Number.isFinite(made)) {
-        b.multipaySum += made;
-        b.multipayCount += 1;
-      }
       b.purchases.push(p);
     }
 
     for (const t of transactions) {
-      if (!inCountry(t.kajabi_customer_id)) continue;
       const b = bucket(t.kajabi_offer_id);
-      const { isRefund, isFailed } = classifyTx(t);
+      const { isRefund, isFailed } = classifyTx(t, fromISO, toISO);
       if (isFailed) continue;
       const amt = Math.abs(t.amount_in_cents ?? 0);
       if (isRefund) { b.refundCents += amt; b.refundCount += 1; }
@@ -282,38 +260,63 @@ export default function OfferEconomicsPage() {
 
     const rows = Object.values(agg).map((b) => {
       const net = b.grossCents - b.refundCents;
-      const instStats = computeInstallmentStats(b.purchases, b.installments);
+
+      // Plan detection independent of the offers table.
+      const maxPayments = b.purchases.reduce((m, p) => Math.max(m, Number(p.multipay_payments_made) || 0), 0);
+      const anyPlanType = b.purchases.some((p) => p.payment_type && p.payment_type !== 'one-time');
+      const installmentsKnown = b.installmentsFromOffer != null && b.installmentsFromOffer > 0;
+      const isMultipay = installmentsKnown || anyPlanType || maxPayments > 1;
+      const installments = installmentsKnown ? b.installmentsFromOffer : (isMultipay ? Math.max(maxPayments, 2) : 0);
+
+      // Avg payments made per buyer (plans only), over ALL units of the offer.
+      const avgPayments = isMultipay && b.units > 0
+        ? b.purchases.reduce((s, p) => s + (Number(p.multipay_payments_made) || 0), 0) / b.units
+        : null;
+
+      const instStats = isMultipay ? computeInstallmentStats(b.purchases, installments) : [];
       const inst2 = instStats.find((r) => r.installment === 2) || null;
+
+      // Collected = avg payments ÷ scheduled installments. Only when the installment
+      // count is KNOWN from the offers table — never derived/guessed.
+      const collectionRate = (installmentsKnown && avgPayments != null)
+        ? avgPayments / b.installmentsFromOffer
+        : null;
+
       return {
         ...b,
         net,
         refundPct: b.grossCents > 0 ? b.refundCents / b.grossCents : null,
         aov: b.units > 0 ? b.grossCents / b.units : null,
-        avgPayments: b.multipayCount > 0 ? b.multipaySum / b.multipayCount : null,
-        collectionRate: (b.priceCents && b.units > 0) ? b.grossCents / (b.priceCents * b.units) : null,
+        avgPayments,
+        collectionRate,
         inst2Completion: inst2 ? inst2.completion : null,
         instStats,
-        isMultipay: !!(b.installments && b.installments > 0),
+        isMultipay,
+        installments,
+        installmentsKnown,
       };
     });
 
+    const shown = rows;
+
     const t = {
-      units: rows.reduce((s, r) => s + r.units, 0),
-      grossCents: rows.reduce((s, r) => s + r.grossCents, 0),
-      refundCents: rows.reduce((s, r) => s + r.refundCents, 0),
+      units: shown.reduce((s, r) => s + r.units, 0),
+      grossCents: shown.reduce((s, r) => s + r.grossCents, 0),
+      refundCents: shown.reduce((s, r) => s + r.refundCents, 0),
     };
     t.net = t.grossCents - t.refundCents;
     t.refundPct = t.grossCents > 0 ? t.refundCents / t.grossCents : null;
 
     const dir = sortDir === 'asc' ? 1 : -1;
-    rows.sort((a, b) => {
+    shown.sort((a, b) => {
       const av = a[sortKey]; const bv = b[sortKey];
       if (typeof av === 'string') return av.localeCompare(bv) * dir;
       return ((av ?? -Infinity) - (bv ?? -Infinity)) * dir;
     });
 
-    return { offerRows: rows, totals: t };
-  }, [purchases, transactions, offerById, country, countryOf, sortKey, sortDir]);
+    const missing = rows.filter((r) => !r.inOffersTable && r.units > 0);
+    return { offerRows: shown, totals: t, missingOffers: missing };
+  }, [purchases, transactions, offerById, sortKey, sortDir, window_]);
 
   const handleSync = async () => {
     setSyncing(true); setSyncMsg(null); setSyncErr(null);
@@ -339,8 +342,9 @@ export default function OfferEconomicsPage() {
     else { setSortKey(key); setSortDir('desc'); }
   };
 
-  const Th = ({ label, sortable, k, align = 'center' }) => (
+  const Th = ({ label, sortable, k, align = 'center', title }) => (
     <th
+      title={title}
       className={`px-4 py-3 text-xs font-bold text-gray-600 uppercase tracking-wider text-${align} ${sortable ? 'cursor-pointer select-none hover:text-gray-900' : ''}`}
       onClick={sortable ? () => toggleSort(k) : undefined}
     >
@@ -360,7 +364,7 @@ export default function OfferEconomicsPage() {
               average payments made, and installment completion.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3 sm:items-end">
+          <div className="flex flex-row flex-nowrap gap-3 items-end">
             <label className="flex flex-col text-sm font-medium text-gray-700">
               From
               <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
@@ -371,37 +375,33 @@ export default function OfferEconomicsPage() {
               <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
                 className="mt-1 rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
             </label>
-            <label className="flex flex-col text-sm font-medium text-gray-700">
-              Country
-              <select value={country} onChange={(e) => setCountry(e.target.value)}
-                className="mt-1 rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                <option value="ALL">All countries</option>
-                {availableCountries.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </label>
           </div>
         </div>
 
-        {/* Sync controls */}
-        <div className="flex flex-wrap gap-3 mb-4">
+        {/* Controls */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <button onClick={handleSync} disabled={syncing}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50">
             {syncing ? 'Syncing…' : 'Sync from Kajabi (range)'}
           </button>
-          <button onClick={() => loadCountries(true)} disabled={countryLoading}
-            className="rounded-md bg-white border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50">
-            {countryLoading ? 'Loading countries…' : 'Refresh countries'}
-          </button>
+          {lastSynced && (
+            <span className="text-xs text-gray-400">Data synced {DateHelpers.formatTimeAgo(lastSynced)}</span>
+          )}
         </div>
 
         {syncMsg && <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{syncMsg}</div>}
         {syncErr && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">Sync error: {syncErr}</div>}
-        {countryErr && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Couldn't load countries from Kajabi: {countryErr}. Revenue metrics are unaffected.</div>}
         {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800">{error}</div>}
-
-        {countryLoading && availableCountries.length === 0 && !loading && hasData && (
-          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-            Loading billing countries from Kajabi… revenue metrics below are ready now; the country filter will activate when this finishes.
+        {truncated && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Result set hit the {MAX_ROWS.toLocaleString()}-row cap — figures may be incomplete. Narrow the date range.
+          </div>
+        )}
+        {!loading && hasData && missingOffers.length > 0 && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <strong>{missingOffers.length} offer{missingOffers.length !== 1 ? 's' : ''} with sales are not in the <code>offers</code> table.</strong>{' '}
+            They still appear (by Kajabi offer ID), but for these, price and installment count are unknown, so
+            “Collected” shows “—”. Add them in <a href="/offers" className="underline font-medium">Offers</a> for full metrics.
           </div>
         )}
 
@@ -418,7 +418,7 @@ export default function OfferEconomicsPage() {
           <>
             {/* Summary cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-              <SummaryCard label="Units sold" value={totals.units.toLocaleString()} sub={`${offerRows.length} offers`} colorClass="text-blue-700" />
+              <SummaryCard label="Units sold" value={totals.units.toLocaleString()} sub={`${offerRows.length} offer${offerRows.length !== 1 ? 's' : ''}`} colorClass="text-blue-700" />
               <SummaryCard label="Gross Revenue" value={formatMoney(totals.grossCents)} sub="charges only" colorClass="text-green-700" />
               <SummaryCard label="Refunds" value={totals.refundCents > 0 ? formatMoney(-totals.refundCents) : '$0.00'} sub={formatPct(totals.refundPct)} colorClass={totals.refundCents > 0 ? 'text-red-600' : 'text-gray-400'} />
               <SummaryCard label="Net Revenue" value={formatMoney(totals.net)} sub="gross − refunds" colorClass={totals.net >= 0 ? 'text-emerald-700' : 'text-red-700'} />
@@ -426,7 +426,7 @@ export default function OfferEconomicsPage() {
 
             {/* By offer */}
             <section className="mb-8">
-              <h2 className="text-lg font-semibold text-gray-800 mb-3">By Offer{country !== 'ALL' ? ` — ${country}` : ''}</h2>
+              <h2 className="text-lg font-semibold text-gray-800 mb-3">By Offer</h2>
               <div className="bg-white rounded-xl shadow overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full divide-y divide-gray-100">
@@ -438,10 +438,10 @@ export default function OfferEconomicsPage() {
                         <Th label="Gross" sortable k="grossCents" />
                         <Th label="Net" sortable k="net" />
                         <Th label="Refund %" sortable k="refundPct" />
-                        <Th label="AOV" sortable k="aov" />
-                        <Th label="Avg pmts" sortable k="avgPayments" />
-                        <Th label="Inst-2 %" sortable k="inst2Completion" />
-                        <Th label="Collected" sortable k="collectionRate" />
+                        <Th label="Avg $/unit" sortable k="aov" title="Average cash collected per buyer to date (not full order value)" />
+                        <Th label="Avg pmts" sortable k="avgPayments" title="Average payments made per buyer (payment plans)" />
+                        <Th label="Inst-2 %" sortable k="inst2Completion" title="Share of eligible plan buyers who made their 2nd payment" />
+                        <Th label="Collected" sortable k="collectionRate" title="Avg payments ÷ scheduled installments (needs offer in offers table)" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -454,7 +454,8 @@ export default function OfferEconomicsPage() {
                             </td>
                             <td className="px-4 py-3 text-sm font-medium text-gray-800">
                               {r.name}
-                              {r.isMultipay && <span className="ml-2 text-xs text-purple-600">{r.installments}×</span>}
+                              {r.isMultipay && <span className="ml-2 text-xs text-purple-600">{r.installments}×{r.installmentsKnown ? '' : '?'}</span>}
+                              {!r.inOffersTable && <span className="ml-2 text-xs text-amber-600" title="Not in offers table">⚠</span>}
                               {r.cancelled > 0 && <span className="ml-2 text-xs text-gray-400">{r.cancelled} cancelled</span>}
                             </td>
                             <td className="px-4 py-3 text-sm text-center tabular-nums text-gray-700">{r.units}</td>
@@ -470,7 +471,7 @@ export default function OfferEconomicsPage() {
                             <tr className="bg-gray-50">
                               <td colSpan={10} className="px-6 py-4">
                                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                                  Installment completion — {r.name}
+                                  Installment completion — {r.name}{!r.installmentsKnown && ' (installment count estimated from data)'}
                                 </p>
                                 <table className="w-full max-w-2xl text-sm">
                                   <thead>
@@ -502,7 +503,7 @@ export default function OfferEconomicsPage() {
                         </React.Fragment>
                       ))}
                       {offerRows.length === 0 && (
-                        <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">No offers in this window/country.</td></tr>
+                        <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">No offers in this window.</td></tr>
                       )}
                     </tbody>
                     <tfoot className="bg-gray-50 border-t-2 border-gray-200">
@@ -520,8 +521,9 @@ export default function OfferEconomicsPage() {
                 </div>
               </div>
               <p className="mt-2 text-xs text-gray-400">
-                Inst-2 % = share of eligible payment-plan buyers who made their 2nd payment. Collected = cash received ÷ full offer price × units.
-                Click a payment-plan row for the per-installment breakdown.
+                <strong>Avg $/unit</strong> = cash collected ÷ buyers (for plans this is cash-to-date, not full price; narrow windows also include recurring charges from earlier buyers).{' '}
+                <strong>Inst-2 %</strong> = share of eligible plan buyers who made their 2nd payment (30-day spacing assumed).{' '}
+                <strong>Collected</strong> = avg payments ÷ scheduled installments (payment plans in the offers table only). Click a plan row for the per-installment breakdown.
               </p>
             </section>
           </>

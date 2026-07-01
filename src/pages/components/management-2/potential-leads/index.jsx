@@ -218,6 +218,7 @@ export default function PotentialLeads() {
   // Whether a row belongs to a given status category.
   const rowMatchesStatus = useCallback((row, lt, key) => {
     switch (key) {
+      case 'lt0': return lt === 'lt0';
       case 'lt1': return lt === 'lt1';
       case 'lt2': return lt === 'lt2';
       case 'lt3': return lt === 'lt3';
@@ -305,7 +306,7 @@ export default function PotentialLeads() {
     {
       value: 'other',
       label: 'Other',
-      desc: 'Incomplete — no email, or email only',
+      desc: 'Incomplete — no phone number',
       cls: 'bg-slate-100 text-slate-600 ring-slate-200',
       count: stats.noStage,
     },
@@ -348,7 +349,7 @@ export default function PotentialLeads() {
           </div>
         </div>
         <p className="text-[13px] text-slate-500">
-          Open iClosed contacts (Potential / Qualified). Status column shows CRM pipeline stage (LT1–LT5), not iClosed scheduling status.
+          Open iClosed contacts (Potential / Qualified). Status column shows CRM pipeline stage (LT0–LT5), not iClosed scheduling status.
         </p>
 
         {/* Global filters — scope the KPIs, chart AND table below. */}

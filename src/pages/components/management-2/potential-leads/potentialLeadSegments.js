@@ -58,6 +58,7 @@ export function segmentForRow(row, ltStatus) {
  * they can drive both the Recharts lines and the toggle dots.
  */
 export const LT_TREND_KEYS = [
+  { key: 'lt0', label: 'LT0', color: '#f59e0b' },
   { key: 'lt1', label: 'LT1', color: '#64748b' },
   { key: 'lt2', label: 'LT2', color: '#0ea5e9' },
   { key: 'lt3', label: 'LT3', color: '#6366f1' },
@@ -89,14 +90,15 @@ export function buildLtTrend(rows, ltForRow, start, end, isUnassigned) {
   const unassignedFn = isUnassigned || ((r) => !r.assigned_setter_id);
   const days = start && end ? enumerateDaysUTC(start, end) : getLastDaysUTC(14);
   const byDay = Object.fromEntries(
-    days.map((d) => [d, { date: d, lt1: 0, lt2: 0, lt3: 0, other: 0, unassigned: 0 }]),
+    days.map((d) => [d, { date: d, lt0: 0, lt1: 0, lt2: 0, lt3: 0, other: 0, unassigned: 0 }]),
   );
   (rows || []).forEach((r) => {
     const k = dayKey(r.created_at);
     if (k == null || !byDay[k]) return;
     const lt = ltForRow(r);
     if (HIDDEN_LT_STATUSES.has(lt)) return; // skip booked (LT4/LT5)
-    if (lt === LT_STATUS.LT1) byDay[k].lt1 += 1;
+    if (lt === LT_STATUS.LT0) byDay[k].lt0 += 1;
+    else if (lt === LT_STATUS.LT1) byDay[k].lt1 += 1;
     else if (lt === LT_STATUS.LT2) byDay[k].lt2 += 1;
     else if (lt === LT_STATUS.LT3) byDay[k].lt3 += 1;
     else byDay[k].other += 1;

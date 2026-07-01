@@ -479,7 +479,7 @@ export default function SetterPotentialLeads({ setterId, datePreset = 'today', s
           </button>
         </div>
         <p className="text-[13px] text-slate-500">
-          Open iClosed leads assigned to this setter. Status shows CRM pipeline stage (LT1–LT5).
+          Open iClosed leads assigned to this setter. Status shows CRM pipeline stage (LT0–LT5).
         </p>
 
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold">
