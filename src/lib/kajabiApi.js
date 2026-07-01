@@ -252,53 +252,6 @@ export async function searchOffers({ search = '', page = 1, perPage = 100 } = {}
   return { data, links: json.links || {}, meta: json.meta };
 }
 
-// ── Contact → country map ───────────────────────────────────────────────────
-// Kajabi stores billing country on the CONTACT (`address_country`). Purchases/
-// transactions reference a CUSTOMER id; each contact carries a `customer`
-// relationship, so we map `customer_id → country`.
-//
-// We page the whole contacts list once and cache the result for the browser
-// session (module-level). Pass { force: true } to refetch. NOTE: sparse
-// `fields[contacts]` is intentionally NOT used — under JSON:API it would also
-// strip the `customer` relationship we need for the mapping.
-let _contactCountryCache = null;
-
-export async function fetchContactCountryMap({ force = false, maxPages = 500 } = {}) {
-  if (_contactCountryCache && !force) return _contactCountryCache;
-
-  const map = new Map();
-  let page = 1;
-  for (; page <= maxPages; page++) {
-    const params = new URLSearchParams({
-      'page[number]': String(page),
-      'page[size]': '100',
-      sort: '-created_at',
-    });
-    params.set('filter[site_id]', KAJABI_SITE_ID);
-
-    const res = await kajabiFetch(`contacts?${params}`);
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Kajabi API ${res.status}: ${text}`);
-    }
-    const json = await parseJsonResponse(res);
-    const data = json.data || [];
-    if (data.length === 0) break;
-
-    for (const c of data) {
-      const customerId = c.relationships?.customer?.data?.id;
-      const country = c.attributes?.address_country;
-      if (customerId != null && country && !map.has(String(customerId))) {
-        map.set(String(customerId), country);
-      }
-    }
-    if (data.length < 100) break;
-  }
-
-  _contactCountryCache = map;
-  return map;
-}
-
 export async function fetchOffer(id) {
   if (!id) return null;
   const params = new URLSearchParams({ 'fields[offers]': 'internal_title,checkout_url' });

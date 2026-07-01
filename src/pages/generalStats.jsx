@@ -1141,16 +1141,12 @@ async function fetchMonthlyStats() {
   const currentYear = now.getUTCFullYear();
   const currentMonth = now.getUTCMonth();
 
-  // Start from July (month 6) of current or previous year
-  let startYear = currentMonth >= 6 ? currentYear : currentYear - 1;
-  const startMonth = 6;
-  const totalMonths = (currentYear - startYear) * 12 + (currentMonth - startMonth) + 1;
+  // Rolling window of the last 12 months, ending with the current month
+  const totalMonths = 12;
 
   const monthRanges = [];
-  for (let i = 0; i < totalMonths; i++) {
-    const year = startYear + Math.floor((startMonth + i) / 12);
-    const month = (startMonth + i) % 12;
-    const monthDate = new Date(Date.UTC(year, month, 15));
+  for (let i = totalMonths - 1; i >= 0; i--) {
+    const monthDate = new Date(Date.UTC(currentYear, currentMonth - i, 15));
     const range = getMonthRangeInTimezone(monthDate, 'UTC');
     if (!range) continue;
     const startDateStr = formatDateUTCStart(range.startDate);
@@ -2450,7 +2446,7 @@ export default function StatsDashboard() {
         {comparisonView === 'monthly' && (
           <ComparisonTable
             data={monthlyStats}
-            title="Monthly Comparison (Since July)"
+            title="Monthly Comparison (Last 12 Months)"
             description="Track monthly performance trends"
             periodLabel="Month"
             loading={loadingMonthly}
